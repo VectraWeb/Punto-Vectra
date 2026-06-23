@@ -1,0 +1,843 @@
+// App.js — Andi MVP (Producción)
+// PWA de gestión de mesas con sincronización en tiempo real vía Firebase Firestore
+// Incluye máquina de estados en vivo para mozos
+
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import {
+  Plus, Users, Phone, X, Trash2, Settings, Sun, Moon,
+  ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw,
+} from 'lucide-react';
+import {
+  collection, doc, onSnapshot, setDoc, deleteDoc,
+  serverTimestamp, query, where,
+} from 'firebase/firestore';
+import { db } from './services/firebase';
+
+// ─── Paleta ──────────────────────────────────────────────────────────────────
+const C = {
+  cream: '#f5efe6',
+  creamDeep: '#ebe3d5',
+  forest: '#1f3a2e',
+  forestSoft: '#2d5544',
+  terra: '#c4602f',
+  terraSoft: '#e09368',
+  espresso: '#2a1f1a',
+  muted: '#8b7d6b',
+  free: '#6f8d4d',
+  soon: '#d4a04a',
+  white: '#fffdf8',
+};
+
+// ─── Máquina de estados en vivo ──────────────────────────────────────────────
+export const LIVE_STATES = {
+  comiendo_entrada: { label: 'Entrada', color: '#c4602f', dot: '#a04020' },
+  plato_principal: { label: 'Principal', color: '#7b1f2e', dot: '#5c1520' },
+  en_postre_cafe: { label: 'Postre / Café', color: '#c49a35', dot: '#a07820' },
+  para_limpiar: { label: 'A limpiar', color: '#e67e22', dot: '#c05e0a' },
+};
+
+// ─── Servicios ───────────────────────────────────────────────────────────────
+const SERVICES = {
+  mediodia: { name: 'Mediodía', start: '11:30', end: '15:00', icon: Sun },
+  cena: { name: 'Cena', start: '19:30', end: '01:00', icon: Moon },
+};
+
+const DEFAULT_CONFIG = { cap2: 12, cap4: 12, cap5: 5, cap8: 2 };
+
+// ─── Utilidades de tiempo ────────────────────────────────────────────────────
+const t2m = (time, service) => {
+  if (!time) return 0;
+  const [h, m] = time.split(':').map(Number);
+  if (service === 'cena' && h < 12) return (h + 24) * 60 + m;
+  return h * 60 + m;
+};
+
+const m2t = (mins) => {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+const genSlots = (service) => {
+  const start = t2m(SERVICES[service].start, service);
+  const end = t2m(SERVICES[service].end, service);
+  const slots = [];
+  for (let m = start; m <= end; m += 15) slots.push(m2t(m));
+  return slots;
+};
+
+const buildTables = (cfg) => {
+  const tables = [];
+  let n = 1;
+  const groups = [
+    { count: cfg.cap2 || 0, capacity: 2 },
+    { count: cfg.cap4 || 0, capacity: 4 },
+    { count: cfg.cap5 || 0, capacity: 5 },
+    { count: cfg.cap8 || 0, capacity: 8 },
+  ];
+  for (const { count, capacity } of groups) {
+    for (let i = 0; i < count; i++) {
+      tables.push({ id: `m${n}`, name: `M${n}`, capacity });
+      n++;
+    }
+  }
+  return tables;
+};
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const formatDate = (iso) => {
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+};
+const detectService = () => { const h = new Date().getHours(); return (h >= 11 && h < 17) ? 'mediodia' : 'cena'; };
+const detectTime = (svc) => {
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const slots = genSlots(svc);
+  const target = svc === 'cena' && h < 12 ? (h + 24) * 60 + m : h * 60 + m;
+  let best = slots[0], bestDiff = Infinity;
+  for (const s of slots) {
+    const diff = Math.abs(t2m(s, svc) - target);
+    if (diff < bestDiff) { best = s; bestDiff = diff; }
+  }
+  return best;
+};
+
+// ─── Firestore helpers ───────────────────────────────────────────────────────
+const resCol = (date) => collection(db, 'reservations', date, 'items');
+const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
+const cfgRef = () => doc(db, 'config', 'restaurant');
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// App Principal
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function App() {
+  const [date, setDate] = useState(todayISO());
+  const [service, setService] = useState(detectService());
+  const [currentTime, setCurrentTime] = useState(() => detectTime(detectService()));
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [reservations, setReservations] = useState([]);
+  const [online, setOnline] = useState(navigator.onLine);
+
+  // Modales
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [preTable, setPreTable] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
+
+  const tables = useMemo(() => buildTables(config), [config]);
+  const slots = useMemo(() => genSlots(service), [service]);
+
+  // ── Online/Offline indicator ───────────────────────────────────────────────
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
+
+  // ── Corregir currentTime si cambia de servicio ─────────────────────────────
+  useEffect(() => {
+    if (!slots.includes(currentTime)) setCurrentTime(slots[Math.floor(slots.length / 2)]);
+  }, [service]);
+
+  // ── Cargar configuración del restaurante desde Firestore ───────────────────
+  useEffect(() => {
+    const unsub = onSnapshot(cfgRef(), (snap) => {
+      if (snap.exists()) setConfig(snap.data());
+    });
+    return unsub;
+  }, []);
+
+  // ── Escucha en tiempo real de reservas para la fecha seleccionada ──────────
+  useEffect(() => {
+    const unsub = onSnapshot(
+      resCol(date),
+      (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setReservations(data);
+      },
+      (err) => { console.error('[Andi] Firestore error:', err); }
+    );
+    return unsub;
+  }, [date]);
+
+  // ── Persistir configuración ────────────────────────────────────────────────
+  const saveConfig = useCallback(async (c) => {
+    setConfig(c);
+    try { await setDoc(cfgRef(), c, { merge: true }); } catch (e) { console.error(e); }
+  }, []);
+
+  // ── CRUD de reservas ───────────────────────────────────────────────────────
+  const saveRes = useCallback(async (data) => {
+    // Generar ID seguro (alfanumérico)
+    const id = data.id || `res_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const targetDate = data.date || date;
+
+    if (!targetDate || typeof targetDate !== 'string') {
+      console.error('[Andi] Error: Fecha inválida para guardar reserva:', targetDate);
+      throw new Error('Fecha inválida');
+    }
+
+    try {
+      await setDoc(resDocRef(targetDate, id), {
+        ...data,
+        id,
+        date: targetDate, // Asegurar que la fecha esté en el doc
+        liveState: data.liveState || null,
+        duration: data.duration || 120, // Fallback de seguridad
+        updatedAt: serverTimestamp(),
+        createdAt: data.createdAt || serverTimestamp(),
+      });
+    } catch (e) { 
+      console.error('[Andi] Error crítico en setDoc:', e);
+      throw e; 
+    }
+  }, [date]);
+
+  const deleteRes = useCallback(async (id) => {
+    try { await deleteDoc(resDocRef(date, id)); } catch (e) { console.error(e); }
+  }, [date]);
+
+  // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
+  const updateLiveState = useCallback(async (res, liveState) => {
+    const targetDate = res.date || date;
+    setShowLiveMenu(null); // Cierre optimista (inmediato)
+    try {
+      await setDoc(resDocRef(targetDate, res.id), { liveState, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (e) { 
+      console.error('[Andi] Error en updateLiveState:', e);
+      alert('Error al actualizar el estado. Reintente.');
+    }
+  }, [date]);
+
+  // ── Cálculos ───────────────────────────────────────────────────────────────
+  const nowMin = t2m(currentTime, service);
+  const svcRes = reservations.filter(r => r.service === service);
+
+  const tableStatus = useCallback((id) => {
+    const active = svcRes.find(r =>
+      r.tableId === id &&
+      nowMin >= t2m(r.time, r.service) &&
+      nowMin < t2m(r.time, r.service) + r.duration
+    );
+    if (active) return { status: 'busy', res: active };
+
+    const soon = svcRes.find(r => {
+      if (r.tableId !== id) return false;
+      const s = t2m(r.time, r.service);
+      return s > nowMin && s <= nowMin + 30;
+    });
+    if (soon) return { status: 'soon', res: soon };
+    return { status: 'free' };
+  }, [svcRes, nowMin]);
+
+  const stats = useMemo(() => {
+    let free = 0, busy = 0, soon = 0, seatsBusy = 0;
+    tables.forEach(t => {
+      const s = tableStatus(t.id);
+      if (s.status === 'free') free++;
+      else if (s.status === 'busy') { busy++; seatsBusy += (s.res.partySize || 0); }
+      else soon++;
+    });
+    return { free, busy, soon, seatsBusy };
+  }, [tables, tableStatus]);
+
+  const sortedRes = useMemo(() =>
+    [...svcRes].sort((a, b) => t2m(a.time, a.service) - t2m(b.time, b.service)),
+    [svcRes]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleSave = useCallback(async (data) => {
+    // --- Algoritmo de Auto-asignación Inteligente (Best Fit) ---
+    let assignedId = data.tableId;
+
+    if (!assignedId || assignedId === 'pendiente') {
+      const start = t2m(data.time, service);
+      const end = start + (data.duration || 120); // Fallback amplio sin límite estricto
+
+      // 1. Buscar mesas libres con capacidad suficiente
+      const candidateTables = tables.filter(t => {
+        // a. Capacidad mínima necesaria
+        if (t.capacity < data.partySize) return false;
+
+        // b. Disponibilidad estricta: No debe haber solapamiento con otras reservas
+        const hasConflict = reservations.some(r => {
+          if (r.tableId !== t.id || r.service !== service) return false;
+          // Ignorar si estamos editando la misma reserva (aunque aquí suele ser nueva)
+          if (r.id === data.id) return false;
+
+          const rStart = t2m(r.time, r.service);
+          const rEnd = rStart + r.duration;
+          // Solapamiento: (inicio < finR) && (fin > inicioR)
+          return (start < rEnd) && (end > rStart);
+        });
+
+        return !hasConflict;
+      });
+
+      // 2. Manejo Condicional: Si no hay mesas individuales que soporten al grupo
+      if (candidateTables.length === 0) {
+        // En lugar de bloquear, marcamos para que el personal gestione la unión manualmente
+        assignedId = 'requiere_union';
+      } else {
+        // 3. Optimización de Espacio (Best Fit): Elegir la menor que cumpla
+        candidateTables.sort((a, b) => a.capacity - b.capacity);
+        assignedId = candidateTables[0].id;
+      }
+    }
+
+    // 4. Persistencia Optimista con Feedback
+    // Cerramos el modal inmediatamente para mejorar la percepción de velocidad
+    setShowModal(false);
+    setEditing(null);
+    setPreTable(null);
+
+    try {
+      await saveRes({ ...data, tableId: assignedId, service, date });
+      // Feedback de éxito (no bloqueante para el cierre)
+      console.log('Reserva confirmada con éxito');
+    } catch (error) {
+      // Si falla, re-abrimos o notificamos el error crítico
+      console.error("[handleSave] Error crítico:", error);
+      alert('Error crítico al procesar la reserva en la base de datos. Verifica tu conexión.');
+    }
+  }, [saveRes, service, date, tables, reservations]);
+
+  const handleDelete = useCallback((id) => {
+    deleteRes(id);
+    setShowModal(false); setEditing(null);
+  }, [deleteRes]);
+
+  const goNow = () => {
+    setDate(todayISO());
+    const s = detectService();
+    setService(s);
+    setCurrentTime(detectTime(s));
+  };
+
+  const shiftDate = (days) => {
+    const d = new Date(date + 'T12:00:00');
+    d.setDate(d.getDate() + days);
+    setDate(d.toISOString().slice(0, 10));
+  };
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ minHeight: '100vh', background: C.cream, color: C.espresso, fontFamily: '"Manrope", system-ui, sans-serif', paddingBottom: '120px' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Manrope:wght@300;400;500;600;700&display=swap');
+        * { box-sizing: border-box; }
+        input, select, textarea { font-family: inherit; }
+        input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; background: ${C.creamDeep}; border-radius: 3px; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; background: ${C.terra}; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 6px rgba(196,96,47,0.4); }
+        input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; background: ${C.terra}; border-radius: 50%; cursor: pointer; border: none; }
+        button:active { transform: scale(0.97); }
+        button { transition: transform 0.1s; }
+        .live-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+      `}</style>
+
+      {/* ── HEADER ── */}
+      <header style={{ background: C.forest, color: C.cream, padding: '24px 20px 28px', borderBottomLeftRadius: '28px', borderBottomRightRadius: '28px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+          <div>
+            <p style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', opacity: 0.55, margin: 0 }}>Recepción</p>
+            <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: '34px', fontStyle: 'italic', fontWeight: 600, margin: '2px 0 0', lineHeight: 1, letterSpacing: '-0.02em' }}>Andi</h1>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {/* Indicador online/offline */}
+            <div title={online ? 'Conectado' : 'Sin conexión — cambios en cola'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '10px', fontSize: '11px' }}>
+              {online
+                ? <><Wifi size={13} color="#6fd98d" /><span style={{ color: '#6fd98d' }}>Online</span></>
+                : <><WifiOff size={13} color={C.soon} /><span style={{ color: C.soon }}>Offline</span></>
+              }
+            </div>
+            <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
+              <Settings size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Navegación de fecha */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={() => shiftDate(-1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
+            <ChevronLeft size={16} />
+          </button>
+          <button onClick={goNow} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer', textTransform: 'capitalize', fontSize: '14px', fontWeight: 500 }}>
+            {formatDate(date)}
+          </button>
+          <button onClick={() => shiftDate(1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </header>
+
+      {/* ── SELECTOR DE SERVICIO ── */}
+      <div style={{ padding: '20px 16px 8px', display: 'flex', gap: '8px' }}>
+        {Object.entries(SERVICES).map(([k, s]) => {
+          const Icon = s.icon;
+          const active = service === k;
+          return (
+            <button key={k} onClick={() => setService(k)} style={{
+              flex: 1, padding: '14px 8px',
+              background: active ? C.forest : 'transparent',
+              color: active ? C.cream : C.forest,
+              border: `1.5px solid ${C.forest}`,
+              borderRadius: '14px', cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600 }}>
+                <Icon size={14} />{s.name}
+              </div>
+              <span style={{ fontSize: '10px', opacity: 0.7 }}>{s.start} — {s.end}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── SLIDER DE TIEMPO ── */}
+      <div style={{ padding: '12px 20px 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
+          <span style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: C.muted, fontWeight: 600 }}>Viendo a las</span>
+          <div style={{ fontFamily: '"Fraunces", serif', fontSize: '40px', fontWeight: 700, color: C.forest, letterSpacing: '-0.03em', lineHeight: 1 }}>
+            {currentTime}
+          </div>
+        </div>
+        <input type="range" min={0} max={slots.length - 1} step={1}
+          value={Math.max(0, slots.indexOf(currentTime))}
+          onChange={(e) => setCurrentTime(slots[parseInt(e.target.value)])}
+          style={{ width: '100%' }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: C.muted, marginTop: '4px' }}>
+          <span>{SERVICES[service].start}</span>
+          <span style={{ opacity: 0.5 }}>cada 15 min</span>
+          <span>{SERVICES[service].end}</span>
+        </div>
+      </div>
+
+      {/* ── STATS ── */}
+      <div style={{ padding: '0 16px 16px', display: 'flex', gap: '8px' }}>
+        <Stat color={C.free} label="Libres" value={stats.free} />
+        <Stat color={C.terra} label="Ocupadas" value={stats.busy} />
+        <Stat color={C.soon} label="En 30min" value={stats.soon} />
+      </div>
+
+      {/* ── GRILLA DE MESAS ── */}
+      <div style={{ padding: '0 16px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '8px 0 12px' }}>
+          <h2 style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Mesas</h2>
+          <span style={{ fontSize: '11px', color: C.muted }}>{tables.length} mesas · {tables.reduce((s, t) => s + t.capacity, 0)} plazas</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+          {tables.map(t => {
+            const s = tableStatus(t.id);
+            const live = s.status === 'busy' && s.res.liveState ? LIVE_STATES[s.res.liveState] : null;
+
+            let bg, fg, border, sub;
+            if (s.status === 'free') {
+              bg = C.white; fg = C.forest; border = C.creamDeep; sub = `${t.capacity}p`;
+            } else if (s.status === 'busy') {
+              bg = live?.color || C.terra; fg = C.white; border = live?.color || C.terra;
+              sub = s.res.customerName?.split(' ')[0] || '—';
+            } else {
+              bg = C.soon; fg = C.white; border = C.soon; sub = `→ ${s.res.time}`;
+            }
+
+            return (
+              <button key={t.id} onClick={() => {
+                if (s.status === 'free') {
+                  setPreTable(t); setEditing(null); setShowModal(true);
+                } else {
+                  setShowLiveMenu(s.res);
+                }
+              }} style={{
+                aspectRatio: '1', background: bg, color: fg,
+                border: `1.5px solid ${border}`, borderRadius: '14px',
+                cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', padding: '4px',
+                position: 'relative',
+              }}>
+                {live && (
+                  <span style={{ position: 'absolute', top: '5px', right: '5px', width: '8px', height: '8px', borderRadius: '50%', background: live.dot, border: '1.5px solid rgba(255,255,255,0.5)' }} />
+                )}
+                <div style={{ fontFamily: '"Fraunces", serif', fontSize: '17px', fontWeight: 600 }}>{t.name}</div>
+                <div style={{ fontSize: '10px', opacity: 0.85, marginTop: '2px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
+                  {live ? live.label : sub}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── LISTADO DE RESERVAS ── */}
+      <div style={{ padding: '0 16px 24px' }}>
+        <h2 style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: '8px 0 12px' }}>
+          Reservas · {SERVICES[service].name}
+        </h2>
+        {sortedRes.length === 0 ? (
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
+            Sin reservas para este servicio
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {sortedRes.map(r => {
+              const table = tables.find(t => t.id === r.tableId);
+              const isPast = t2m(r.time, r.service) + r.duration < nowMin;
+              const live = r.liveState ? LIVE_STATES[r.liveState] : null;
+              return (
+                <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
+                  background: C.white, border: `1px solid ${C.creamDeep}`,
+                  borderRadius: '14px', cursor: 'pointer', textAlign: 'left',
+                  color: C.espresso, opacity: isPast ? 0.5 : 1,
+                }}>
+                  {/* Indicador de hora con color de liveState */}
+                  <div style={{
+                    width: '52px', minWidth: '52px', height: '52px', borderRadius: '12px',
+                    background: live?.color || C.forest, color: C.cream,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: '"Fraunces", serif', fontSize: '15px', fontWeight: 600,
+                    flexDirection: 'column', gap: '1px',
+                  }}>
+                    <span>{r.time}</span>
+                    {live && <span style={{ fontSize: '8px', opacity: 0.85 }}>{live.label}</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
+                    <div style={{ fontSize: '11px', color: C.muted, display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', flexWrap: 'wrap' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{r.partySize}</span>
+                      <span>·</span>
+                      <span style={{ fontWeight: 600, color: C.forest }}>{table?.name || '—'}</span>
+                      <span>·</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.duration}min</span>
+                      {r.phone && (<><span>·</span><span>{r.phone}</span></>)}
+                    </div>
+                    {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
+                  </div>
+                  {/* Botón rápido de estado en vivo */}
+                  {!isPast && (
+                    <button onClick={(e) => { e.stopPropagation(); setShowLiveMenu(r); }} style={{
+                      flexShrink: 0, background: live?.color || C.creamDeep,
+                      border: 'none', borderRadius: '10px', padding: '6px 8px',
+                      cursor: 'pointer', color: live ? C.white : C.muted,
+                      fontSize: '10px', fontWeight: 600, display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', gap: '2px', minWidth: '52px',
+                    }}>
+                      <RefreshCw size={12} />
+                      <span>{live ? live.label : 'Estado'}</span>
+                    </button>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── FAB: Nueva reserva ── */}
+      <button onClick={() => { setEditing(null); setPreTable(null); setShowModal(true); }} style={{
+        position: 'fixed', bottom: '24px', right: '24px',
+        width: '60px', height: '60px', borderRadius: '30px',
+        background: C.terra, color: '#fff', border: 'none',
+        boxShadow: '0 8px 24px rgba(196,96,47,0.4)', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+      }}>
+        <Plus size={26} />
+      </button>
+
+      {/* ── MODAL: Estado en vivo ── */}
+      {showLiveMenu && (
+        <LiveStateModal
+          res={showLiveMenu}
+          tables={tables}
+          onSelect={(state) => updateLiveState(showLiveMenu, state)}
+          onEdit={() => { setEditing(showLiveMenu); setShowLiveMenu(null); setShowModal(true); }}
+          onClose={() => setShowLiveMenu(null)}
+        />
+      )}
+
+      {/* ── MODAL: Reserva ── */}
+      {showModal && (
+        <ResModal
+          editing={editing}
+          preTable={preTable}
+          tables={tables}
+          slots={slots}
+          service={service}
+          date={date}
+          reservations={reservations}
+          currentTime={currentTime}
+          defaultDuration={SERVICES[service].defaultDuration}
+          tableStatus={tableStatus}
+          onSave={handleSave}
+          onDelete={handleDelete}
+          onClose={() => { setShowModal(false); setEditing(null); setPreTable(null); }}
+        />
+      )}
+
+      {/* ── MODAL: Configuración ── */}
+      {showSettings && (
+        <SettingsModal
+          config={config}
+          onSave={saveConfig}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LiveStateModal — Selector de estado en vivo para mozos
+// ═══════════════════════════════════════════════════════════════════════════════
+function LiveStateModal({ res, tables, onSelect, onEdit, onClose }) {
+  const table = tables.find(t => t.id === res.tableId);
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ marginBottom: '16px' }}>
+        <p style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: C.muted, margin: '0 0 4px' }}>Estado de mesa</p>
+        <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>
+          {res.customerName}
+        </h3>
+        <p style={{ fontSize: '12px', color: C.muted, margin: '4px 0 0' }}>
+          {table?.name} · {res.partySize} comensales · {res.time}
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+        {Object.entries(LIVE_STATES).map(([key, state]) => {
+          const active = res.liveState === key;
+          return (
+            <button key={key} onClick={() => onSelect(key)} style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '14px 16px', borderRadius: '14px', cursor: 'pointer',
+              border: `2px solid ${active ? state.color : C.creamDeep}`,
+              background: active ? state.color : C.white,
+              color: active ? '#fff' : C.espresso,
+              fontWeight: active ? 600 : 400, fontSize: '14px',
+            }}>
+              <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: state.dot, flexShrink: 0 }} />
+              {state.label}
+              {active && <span style={{ marginLeft: 'auto', fontSize: '11px', opacity: 0.8 }}>● actual</span>}
+            </button>
+          );
+        })}
+        {/* BOTÓN DE FINALIZACIÓN DIRECTA */}
+        <button onClick={() => onSelect('liberada')} style={{
+          display: 'flex', alignItems: 'center', gap: '12px',
+          padding: '14px 16px', borderRadius: '14px', cursor: 'pointer',
+          border: `2px solid #6f8d4d`,
+          background: '#6f8d4d',
+          color: '#fff',
+          fontWeight: 600, fontSize: '14px',
+          marginTop: '8px'
+        }}>
+          Finalizar y Liberar Mesa
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button onClick={onEdit} style={{ flex: 1, padding: '12px', background: C.creamDeep, border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '13px', color: C.espresso }}>
+          Editar reserva
+        </button>
+        <button onClick={onClose} style={{ padding: '12px 20px', background: C.forest, border: 'none', borderRadius: '12px', cursor: 'pointer', color: C.cream, fontSize: '13px' }}>
+          Cerrar
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ResModal — Modal de creación / edición de reserva
+// ═══════════════════════════════════════════════════════════════════════════════
+function ResModal({ editing, preTable, tables, slots, service, date, reservations, currentTime, defaultDuration, onSave, onDelete, onClose }) {
+  const [form, setForm] = useState(() => editing ? { ...editing } : {
+    customerName: '', phone: '', partySize: 2,
+    tableId: 'pendiente',
+    time: slots[Math.floor(slots.length / 3)] || slots[0],
+    duration: defaultDuration,
+    notes: '', liveState: null,
+  });
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // --- LÓGICA SIMPLIFICADA ---
+
+  // 1. Time Travel Validation: Evitar seleccionar horas pasadas si es hoy (para el listado)
+  const isToday = date === todayISO();
+  const availableSlots = useMemo(() => {
+    if (!isToday) return slots;
+    const nowMin = t2m(currentTime, service);
+    return slots.filter(s => t2m(s, service) >= nowMin);
+  }, [slots, isToday, currentTime, service]);
+
+  // 2. Validación: Solo exige Nombre, Horario y Comensales
+  const isValid =
+    form.customerName.trim().length >= 2 &&
+    form.time !== '' &&
+    form.partySize > 0;
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>
+          {editing ? 'Editar reserva' : 'Nueva reserva'}
+        </h3>
+        <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <Field label="Nombre">
+          <input value={form.customerName} onChange={e => set('customerName', e.target.value)}
+            placeholder="Nombre del cliente" style={inp} autoFocus />
+        </Field>
+
+        <Field label="Teléfono (opcional)">
+          <input value={form.phone} onChange={e => set('phone', e.target.value)}
+            placeholder="+54 9 11 ..." type="tel" style={inp} />
+        </Field>
+
+        {/* Reorganización Visual: Comensales y Horario en el mismo nivel */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <Field label="Comensales">
+            <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => <option key={n} value={n}>{n} personas</option>)}
+            </select>
+          </Field>
+          <Field label="Horario">
+            <select value={form.time} onChange={e => set('time', e.target.value)} style={inp}>
+              {availableSlots.length > 0 ? (
+                availableSlots.map(s => <option key={s} value={s}>{s}</option>)
+              ) : (
+                <option value="" disabled>Servicio finalizado</option>
+              )}
+            </select>
+          </Field>
+        </div>
+
+        <Field label="Notas (opcional)">
+          <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
+            placeholder="Alergias, pedidos especiales..." rows={2}
+            style={{ ...inp, resize: 'vertical' }} />
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+        {editing && (
+          <button onClick={() => onDelete(editing.id)} style={{
+            padding: '14px', background: 'transparent', border: `1.5px solid #e06060`,
+            borderRadius: '12px', cursor: 'pointer', color: '#e06060',
+          }}>
+            <Trash2 size={18} />
+          </button>
+        )}
+        <button
+          onClick={() => isValid && onSave({ ...form, service })}
+          disabled={!isValid}
+          style={{
+            flex: 1, padding: '14px',
+            background: isValid ? C.terra : C.creamDeep,
+            border: 'none', borderRadius: '12px',
+            cursor: isValid ? 'pointer' : 'not-allowed',
+            color: isValid ? C.white : C.muted,
+            fontSize: '15px', fontWeight: 600,
+            opacity: isValid ? 1 : 0.6,
+            transition: 'all 0.3s'
+          }}
+        >
+          {editing ? 'Guardar cambios' : 'Confirmar reserva'}
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SettingsModal — Configuración del restaurante
+// ═══════════════════════════════════════════════════════════════════════════════
+function SettingsModal({ config, onSave, onClose }) {
+  const [local, setLocal] = useState({ ...config });
+  const set = (k, v) => setLocal(l => ({ ...l, [k]: v }));
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Configuración</h3>
+        <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
+      </div>
+      <p style={{ fontSize: '12px', color: C.muted, marginBottom: '16px' }}>Cantidad de mesas por capacidad. Los cambios se sincronizan a todos los dispositivos.</p>
+      {[['cap2', 'Mesas de 2'], ['cap4', 'Mesas de 4'], ['cap5', 'Mesas de 5'], ['cap8', 'Mesas de 8']].map(([k, label]) => (
+        <Counter key={k} label={label} value={local[k] || 0} onChange={v => set(k, v)} />
+      ))}
+      <button onClick={() => { onSave(local); onClose(); }} style={{
+        width: '100%', marginTop: '20px', padding: '14px',
+        background: C.forest, border: 'none', borderRadius: '12px',
+        cursor: 'pointer', color: C.cream, fontSize: '15px', fontWeight: 600,
+      }}>Guardar configuración</button>
+    </Overlay>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Subcomponentes
+// ═══════════════════════════════════════════════════════════════════════════════
+function Overlay({ children, onClose }) {
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
+      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end',
+      justifyContent: 'center', zIndex: 200, padding: '0',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: C.cream, borderRadius: '24px 24px 0 0',
+        padding: '28px 20px 40px', width: '100%', maxWidth: '480px',
+        maxHeight: '92vh', overflowY: 'auto',
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ color, label, value }) {
+  return (
+    <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '12px', textAlign: 'center' }}>
+      <div style={{ fontFamily: '"Fraunces", serif', fontSize: '28px', fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.05em' }}>{label}</div>
+    </div>
+  );
+}
+
+function Counter({ label, value, onChange }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: `1px solid ${C.creamDeep}` }}>
+      <span style={{ fontSize: '14px', fontWeight: 500 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <button onClick={() => onChange(Math.max(0, value - 1))} style={{ width: '32px', height: '32px', borderRadius: '50%', background: C.creamDeep, border: 'none', cursor: 'pointer', fontSize: '18px', color: C.espresso }}>−</button>
+        <span style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontWeight: 600, color: C.forest, minWidth: '28px', textAlign: 'center' }}>{value}</span>
+        <button onClick={() => onChange(value + 1)} style={{ width: '32px', height: '32px', borderRadius: '50%', background: C.terra, border: 'none', cursor: 'pointer', fontSize: '18px', color: '#fff' }}>+</button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.muted, fontWeight: 600, marginBottom: '6px' }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inp = {
+  width: '100%', padding: '12px 14px', fontSize: '14px',
+  background: C.white, border: `1.5px solid ${C.creamDeep}`,
+  borderRadius: '12px', color: C.espresso, outline: 'none',
+};

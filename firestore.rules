@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Verifica si el usuario está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // --- REGLAS PARA CONFIGURACIÓN DEL RESTAURANTE ---
+    match /config/restaurant {
+      allow read: if true; // Cualquier cliente puede ver la capacidad/configuración del salón
+      allow write: if isAuthenticated(); // Solo el staff puede cambiar la configuración de mesas
+    }
+
+    // --- REGLAS PARA COLECCIÓN DE MESAS ---
+    // (Incluso si es una colección futura o para el estado actual)
+    match /mesas/{mesaId} {
+      allow read: if true; // Lectura global para ver el plano del salón
+      
+      allow update: if 
+        isAuthenticated() || // El staff tiene control total
+        (
+          // Un cliente solo puede actualizar si está reservando la mesa (ej: cambiando estado de libre a reservada)
+          request.resource.data.status == 'reservada' && 
+          resource.data.status == 'libre'
+        );
+      
+      allow create, delete: if isAuthenticated(); // Solo el staff gestiona la existencia de mesas
+    }
+
+    // --- REGLAS PARA RESERVAS ---
+    // Estructura: reservations/{date}/items/{reservationId}
+    match /reservations/{date}/items/{reservationId} {
+      // Los clientes pueden crear su propia reserva (ej: desde QR)
+      allow create: if true; 
+      
+      // La lectura y eliminación de listas de reservas es exclusiva del personal
+      allow read, delete: if isAuthenticated();
+      
+      // Los mozos (staff) pueden actualizar estados en vivo de las reservas
+      allow update: if isAuthenticated();
+    }
+  }
+}
