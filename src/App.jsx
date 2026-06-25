@@ -296,16 +296,9 @@ export default function App() {
         </div>
 
         {/* Navegación de fecha */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button onClick={() => shiftDate(-1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-            <ChevronLeft size={16} />
-          </button>
-          <button onClick={goNow} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer', textTransform: 'capitalize', fontSize: '14px', fontWeight: 500 }}>
-            {formatDate(date)}
-          </button>
-          <button onClick={() => shiftDate(1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-            <ChevronRight size={16} />
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', color: C.cream, fontSize: '15px', fontWeight: 600, textAlign: 'center', fontFamily: 'inherit', cursor: 'pointer', boxSizing: 'border-box', outline: 'none' }} />
         </div>
       </header>
 
@@ -744,3 +737,7 @@ const inp = {
   background: C.white, border: `1.5px solid ${C.creamDeep}`,
   borderRadius: '12px', color: C.espresso, outline: 'none',
 };
+Añadir comentario
+Comentando en líneas 1-739
+Cancelar
+Comentar
