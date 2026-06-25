@@ -737,7 +737,3 @@ const inp = {
   background: C.white, border: `1.5px solid ${C.creamDeep}`,
   borderRadius: '12px', color: C.espresso, outline: 'none',
 };
-Añadir comentario
-Comentando en líneas 1-739
-Cancelar
-Comentar
