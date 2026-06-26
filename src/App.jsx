@@ -784,11 +784,11 @@ function Overlay({ children, onClose }) {
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
-      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end',
-      justifyContent: 'center', zIndex: 200, padding: '0',
+      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', zIndex: 200, padding: '16px',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: C.cream, borderRadius: '24px 24px 0 0',
+        background: C.cream, borderRadius: '24px',
         padding: '28px 20px 40px', width: '100%', maxWidth: '480px',
         maxHeight: '92vh', overflowY: 'auto',
       }}>
