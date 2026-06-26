@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Plus, Users, Phone, X, Trash2, Settings, Sun, Moon,
-  ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw,
+  ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw, BarChart3,
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, deleteDoc,
@@ -129,6 +129,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const calendarRef = useRef(null);
 
   const tables = useMemo(() => buildTables(config), [config]);
@@ -196,7 +197,10 @@ export default function App() {
   // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
   const updateLiveState = useCallback(async (res, liveState) => {
     try {
-      await setDoc(resDocRef(date, res.id), { liveState, updatedAt: serverTimestamp() }, { merge: true });
+      const patch = { liveState, updatedAt: serverTimestamp() };
+      if (liveState === 'comiendo_entrada' && !res.seatedAt) patch.seatedAt = serverTimestamp();
+      if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
+      await setDoc(resDocRef(date, res.id), patch, { merge: true });
     } catch (e) { console.error(e); }
     setShowLiveMenu(null);
   }, [date]);
@@ -232,6 +236,61 @@ export default function App() {
     });
     return { free, busy, soon, seatsBusy };
   }, [tables, tableStatus]);
+
+  const analyticsData = useMemo(() => {
+    const toMin = (ts) => {
+      if (!ts) return null;
+      if (typeof ts === 'number') return ts;
+      if (ts.seconds != null) return ts.seconds * 60 + (ts.nanoseconds || 0) / 6e10;
+      const d = ts?.toDate ? ts.toDate() : new Date(ts);
+      return d.getTime() / 60000;
+    };
+
+    const closed = reservations.filter(r => r.seatedAt);
+    const withDuration = closed.filter(r => r.leftAt && r.seatedAt);
+
+    const stays = withDuration.map(r => {
+      const start = toMin(r.seatedAt);
+      const end = toMin(r.leftAt);
+      return { ...r, stayMin: Math.max(0, Math.round(end - start)) };
+    });
+
+    const totalCustomers = closed.reduce((s, r) => s + (r.partySize || 0), 0);
+    const avgStay = stays.length > 0
+      ? Math.round(stays.reduce((s, r) => s + r.stayMin, 0) / stays.length)
+      : 0;
+
+    const byTable = {};
+    stays.forEach(r => {
+      if (!byTable[r.tableId]) byTable[r.tableId] = { total: 0, count: 0 };
+      byTable[r.tableId].total += r.stayMin;
+      byTable[r.tableId].count++;
+    });
+    const tableAvgs = Object.entries(byTable)
+      .map(([id, v]) => ({ id, avg: Math.round(v.total / v.count), count: v.count }))
+      .sort((a, b) => b.count - a.count);
+
+    const hourBuckets = {};
+    stays.forEach(r => {
+      const start = toMin(r.seatedAt);
+      const h = Math.floor(start / 60) % 24;
+      const key = `${String(h).padStart(2, '0')}:00`;
+      hourBuckets[key] = (hourBuckets[key] || 0) + (r.partySize || 0);
+    });
+    const peakHours = Object.entries(hourBuckets)
+      .sort((a, b) => b[1] - a[1]);
+
+    const byService = { mediodia: { count: 0, stays: [] }, cena: { count: 0, stays: [] } };
+    stays.forEach(r => {
+      const svc = r.service || service;
+      if (byService[svc]) {
+        byService[svc].count += (r.partySize || 0);
+        byService[svc].stays.push(r.stayMin);
+      }
+    });
+
+    return { totalCustomers, avgStay, tableAvgs, peakHours, byService, stays };
+  }, [reservations, service]);
 
   const sortedRes = useMemo(() =>
     [...svcRes].sort((a, b) => t2m(a.time, a.service) - t2m(b.time, b.service)),
@@ -291,6 +350,9 @@ export default function App() {
                 : <><WifiOff size={13} color={C.soon} /><span style={{ color: C.soon }}>Offline</span></>
               }
             </div>
+            <button onClick={() => setShowAnalytics(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
+              <BarChart3 size={18} />
+            </button>
             <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
               <Settings size={18} />
             </button>
@@ -521,6 +583,15 @@ export default function App() {
           config={config}
           onSave={saveConfig}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* ── MODAL: Analíticas ── */}
+      {showAnalytics && (
+        <AnalyticsPanel
+          data={analyticsData}
+          tables={tables}
+          onClose={() => setShowAnalytics(false)}
         />
       )}
     </div>
@@ -780,6 +851,103 @@ function CalendarPicker({ date, onSelect, onClose, colors: C }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Subcomponentes
 // ═══════════════════════════════════════════════════════════════════════════════
+function AnalyticsPanel({ data, tables, onClose }) {
+  const { totalCustomers, avgStay, tableAvgs, peakHours, byService } = data;
+  const maxPeak = peakHours.length > 0 ? peakHours[0][1] : 1;
+  const medAvg = byService.mediodia.stays.length > 0
+    ? Math.round(byService.mediodia.stays.reduce((a, b) => a + b, 0) / byService.mediodia.stays.length) : 0;
+  const cenAvg = byService.cena.stays.length > 0
+    ? Math.round(byService.cena.stays.reduce((a, b) => a + b, 0) / byService.cena.stays.length) : 0;
+
+  const fmtMin = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m}min`;
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Analíticas</h3>
+        <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
+      </div>
+
+      {totalCustomers === 0 ? (
+        <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
+          Sin datos aún — marcá estados en las reservas para ver analytics
+        </div>
+      ) : (
+        <>
+          {/* KPIs principales */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '26px', fontWeight: 700, color: C.terra, lineHeight: 1 }}>{totalCustomers}</div>
+              <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.05em' }}>Clientes</div>
+            </div>
+            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '26px', fontWeight: 700, color: C.forest, lineHeight: 1 }}>{fmtMin(avgStay)}</div>
+              <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.05em' }}>Perm. promedio</div>
+            </div>
+          </div>
+
+          {/* Permanencia por mesa */}
+          {tableAvgs.length > 0 && (
+            <div style={{ marginBottom: '20px' }}>
+              <h4 style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>Permanencia por mesa</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {tableAvgs.map(t => {
+                  const table = tables.find(tb => tb.id === t.id);
+                  const pct = Math.min(100, (t.avg / (avgStay * 1.5 || 1)) * 100);
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, minWidth: '50px' }}>{table?.name || t.id}</span>
+                      <div style={{ flex: 1, height: '8px', background: C.creamDeep, borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: C.terra, borderRadius: '4px', transition: 'width 0.3s' }} />
+                      </div>
+                      <span style={{ fontSize: '11px', color: C.muted, minWidth: '48px', textAlign: 'right' }}>{fmtMin(t.avg)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Horas pico */}
+          {peakHours.length > 0 && (
+            <div style={{ marginBottom: '20px' }}>
+              <h4 style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>Horas pico</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {peakHours.map(([h, count]) => {
+                  const pct = (count / maxPeak) * 100;
+                  return (
+                    <div key={h} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, minWidth: '40px' }}>{h}</span>
+                      <div style={{ flex: 1, height: '8px', background: C.creamDeep, borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: C.forestSoft, borderRadius: '4px', transition: 'width 0.3s' }} />
+                      </div>
+                      <span style={{ fontSize: '11px', color: C.muted, minWidth: '24px', textAlign: 'right' }}>{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Distribución por servicio */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: C.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Mediodía</div>
+              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '18px', fontWeight: 700, color: C.terra }}>{byService.mediodia.count} <span style={{ fontSize: '11px', fontWeight: 400, color: C.muted }}>clientes</span></div>
+              <div style={{ fontSize: '11px', color: C.muted, marginTop: '2px' }}>{fmtMin(medAvg)} prom.</div>
+            </div>
+            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
+              <div style={{ fontSize: '10px', color: C.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Cena</div>
+              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '18px', fontWeight: 700, color: C.forest }}>{byService.cena.count} <span style={{ fontSize: '11px', fontWeight: 400, color: C.muted }}>clientes</span></div>
+              <div style={{ fontSize: '11px', color: C.muted, marginTop: '2px' }}>{fmtMin(cenAvg)} prom.</div>
+            </div>
+          </div>
+        </>
+      )}
+    </Overlay>
+  );
+}
+
 function Overlay({ children, onClose }) {
   return (
     <div onClick={onClose} style={{
