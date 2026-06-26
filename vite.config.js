@@ -2,19 +2,25 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      includeAssets: [
+        'favicon.ico',
+        'apple-touch-icon.png'
+      ],
       manifest: {
-        name: 'Andi — Gestión de Mesas',
+        name: 'Andi',
         short_name: 'Andi',
-        description: 'Sistema de reservas y gestión de mesas en tiempo real para mozos y recepción.',
-        theme_color: '#1f3a2e',
-        background_color: '#f5efe6',
+        description: 'Asistente inteligente médico',
+        theme_color: '#0f172a',
+        background_color: '#ffffff',
+        display: 'standalone',
+        orientation: 'portrait',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -29,6 +35,5 @@ export default defineConfig({
         ]
       }
     })
-  ],
+  ]
 })
-

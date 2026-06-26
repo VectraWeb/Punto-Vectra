@@ -5,41 +5,43 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Plus, Users, Phone, X, Trash2, Settings, Sun, Moon,
-  ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw,
+  ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw, BarChart3,
 } from 'lucide-react';
 import {
-  collection, doc, onSnapshot, setDoc, deleteDoc,
+  collection, doc, onSnapshot, setDoc, deleteDoc, getDocs,
   serverTimestamp, query, where,
 } from 'firebase/firestore';
-import { db } from './services/firebase';
+import { db } from './firebase';
 
 // ─── Paleta ──────────────────────────────────────────────────────────────────
 const C = {
-  cream: '#f5efe6',
-  creamDeep: '#ebe3d5',
-  forest: '#1f3a2e',
+  cream:      '#f5efe6',
+  creamDeep:  '#ebe3d5',
+  forest:     '#1f3a2e',
   forestSoft: '#2d5544',
-  terra: '#c4602f',
-  terraSoft: '#e09368',
-  espresso: '#2a1f1a',
-  muted: '#8b7d6b',
-  free: '#6f8d4d',
-  soon: '#d4a04a',
-  white: '#fffdf8',
+  terra:      '#c4602f',
+  terraSoft:  '#e09368',
+  espresso:   '#2a1f1a',
+  muted:      '#8b7d6b',
+  free:       '#6f8d4d',
+  soon:       '#d4a04a',
+  white:      '#fffdf8',
 };
 
 // ─── Máquina de estados en vivo ──────────────────────────────────────────────
 export const LIVE_STATES = {
-  comiendo_entrada: { label: 'Entrada', color: '#c4602f', dot: '#a04020' },
-  plato_principal: { label: 'Principal', color: '#7b1f2e', dot: '#5c1520' },
-  en_postre_cafe: { label: 'Postre / Café', color: '#c49a35', dot: '#a07820' },
-  para_limpiar: { label: 'A limpiar', color: '#e67e22', dot: '#c05e0a' },
+  esperando_cliente:  { label: 'Esperando',       color: '#4a90d9', dot: '#2171c7' },
+  comiendo_entrada:   { label: 'Entrada',          color: '#c4602f', dot: '#a04020' },
+  plato_principal:    { label: 'Principal',        color: '#7b1f2e', dot: '#5c1520' },
+  en_postre_cafe:     { label: 'Postre / Café',    color: '#c49a35', dot: '#a07820' },
+  esperando_cuenta:   { label: 'Cuenta',           color: '#9b59b6', dot: '#7d3f9c' },
+  para_limpiar:       { label: 'A limpiar',        color: '#e67e22', dot: '#c05e0a' },
 };
 
 // ─── Servicios ───────────────────────────────────────────────────────────────
 const SERVICES = {
-  mediodia: { name: 'Mediodía', start: '11:30', end: '15:00', icon: Sun },
-  cena: { name: 'Cena', start: '19:30', end: '01:00', icon: Moon },
+  mediodia: { name: 'Mediodía', start: '11:30', end: '15:00', defaultDuration: 90,  icon: Sun  },
+  cena:     { name: 'Cena',     start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
 };
 
 const DEFAULT_CONFIG = { cap2: 12, cap4: 12, cap5: 5, cap8: 2 };
@@ -60,7 +62,7 @@ const m2t = (mins) => {
 
 const genSlots = (service) => {
   const start = t2m(SERVICES[service].start, service);
-  const end = t2m(SERVICES[service].end, service);
+  const end   = t2m(SERVICES[service].end,   service);
   const slots = [];
   for (let m = start; m <= end; m += 15) slots.push(m2t(m));
   return slots;
@@ -84,16 +86,16 @@ const buildTables = (cfg) => {
   return tables;
 };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const formatDate = (iso) => {
+const todayISO     = ()  => new Date().toISOString().slice(0, 10);
+const formatDate   = (iso) => {
   const d = new Date(iso + 'T12:00:00');
   return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
 };
-const detectService = () => { const h = new Date().getHours(); return (h >= 11 && h < 17) ? 'mediodia' : 'cena'; };
-const detectTime = (svc) => {
+const detectService = ()       => { const h = new Date().getHours(); return (h >= 11 && h < 17) ? 'mediodia' : 'cena'; };
+const detectTime    = (svc)    => {
   const now = new Date();
-  const h = now.getHours();
-  const m = now.getMinutes();
+  const h   = now.getHours();
+  const m   = now.getMinutes();
   const slots = genSlots(svc);
   const target = svc === 'cena' && h < 12 ? (h + 24) * 60 + m : h * 60 + m;
   let best = slots[0], bestDiff = Infinity;
@@ -105,36 +107,41 @@ const detectTime = (svc) => {
 };
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
-const resCol = (date) => collection(db, 'reservations', date, 'items');
+const resCol    = (date) => collection(db, 'reservations', date, 'items');
 const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
-const cfgRef = () => doc(db, 'config', 'restaurant');
+const cfgRef    = () => doc(db, 'config', 'restaurant');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // App Principal
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [date, setDate] = useState(todayISO());
-  const [service, setService] = useState(detectService());
+  const [date,        setDate]        = useState(todayISO);
+  const [service,     setService]     = useState(detectService);
   const [currentTime, setCurrentTime] = useState(() => detectTime(detectService()));
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
-  const [reservations, setReservations] = useState([]);
-  const [online, setOnline] = useState(navigator.onLine);
+  const [config,      setConfig]      = useState(DEFAULT_CONFIG);
+  const [reservations,setReservations]= useState([]);
+  const [online,      setOnline]      = useState(navigator.onLine);
 
   // Modales
-  const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [preTable, setPreTable] = useState(null);
+  const [showModal,    setShowModal]    = useState(false);
+  const [editing,      setEditing]      = useState(null);
+  const [preTable,     setPreTable]     = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
+  const [analyticsRes, setAnalyticsRes] = useState([]);
+  const calendarRef = useRef(null);
 
   const tables = useMemo(() => buildTables(config), [config]);
-  const slots = useMemo(() => genSlots(service), [service]);
+  const slots  = useMemo(() => genSlots(service), [service]);
 
   // ── Online/Offline indicator ───────────────────────────────────────────────
   useEffect(() => {
-    const on = () => setOnline(true);
+    const on  = () => setOnline(true);
     const off = () => setOnline(false);
-    window.addEventListener('online', on);
+    window.addEventListener('online',  on);
     window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
@@ -165,6 +172,26 @@ export default function App() {
     return unsub;
   }, [date]);
 
+  // ── Fetch analytics data para semana/mes ─────────────────────────────────────
+  useEffect(() => {
+    if (!showAnalytics || analyticsPeriod === 'day') { setAnalyticsRes([]); return; }
+    const days = analyticsPeriod === 'week' ? 7 : 30;
+    const dates = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(date + 'T12:00:00');
+      d.setDate(d.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    (async () => {
+      const all = [];
+      for (const d of dates) {
+        const snap = await getDocs(resCol(d));
+        snap.docs.forEach(doc => all.push({ id: doc.id, ...doc.data() }));
+      }
+      setAnalyticsRes(all);
+    })();
+  }, [showAnalytics, analyticsPeriod, date]);
+
   // ── Persistir configuración ────────────────────────────────────────────────
   const saveConfig = useCallback(async (c) => {
     setConfig(c);
@@ -173,29 +200,16 @@ export default function App() {
 
   // ── CRUD de reservas ───────────────────────────────────────────────────────
   const saveRes = useCallback(async (data) => {
-    // Generar ID seguro (alfanumérico)
-    const id = data.id || `res_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const targetDate = data.date || date;
-
-    if (!targetDate || typeof targetDate !== 'string') {
-      console.error('[Andi] Error: Fecha inválida para guardar reserva:', targetDate);
-      throw new Error('Fecha inválida');
-    }
-
+    const id = data.id || `r${Date.now()}`;
     try {
-      await setDoc(resDocRef(targetDate, id), {
+      await setDoc(resDocRef(date, id), {
         ...data,
         id,
-        date: targetDate, // Asegurar que la fecha esté en el doc
         liveState: data.liveState || null,
-        duration: data.duration || 120, // Fallback de seguridad
         updatedAt: serverTimestamp(),
         createdAt: data.createdAt || serverTimestamp(),
       });
-    } catch (e) { 
-      console.error('[Andi] Error crítico en setDoc:', e);
-      throw e; 
-    }
+    } catch (e) { console.error('[Andi] Error guardando reserva:', e); }
   }, [date]);
 
   const deleteRes = useCallback(async (id) => {
@@ -204,108 +218,83 @@ export default function App() {
 
   // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
   const updateLiveState = useCallback(async (res, liveState) => {
-    const targetDate = res.date || date;
-    setShowLiveMenu(null); // Cierre optimista (inmediato)
     try {
-      await setDoc(resDocRef(targetDate, res.id), { liveState, updatedAt: serverTimestamp() }, { merge: true });
-    } catch (e) { 
-      console.error('[Andi] Error en updateLiveState:', e);
-      alert('Error al actualizar el estado. Reintente.');
-    }
+      const patch = { liveState, updatedAt: serverTimestamp() };
+      if (liveState === 'comiendo_entrada' && !res.seatedAt) patch.seatedAt = serverTimestamp();
+      if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
+      await setDoc(resDocRef(date, res.id), patch, { merge: true });
+    } catch (e) { console.error(e); }
+    setShowLiveMenu(null);
   }, [date]);
 
   // ── Cálculos ───────────────────────────────────────────────────────────────
-  const nowMin = t2m(currentTime, service);
-  const svcRes = reservations.filter(r => r.service === service);
+  const nowMin  = t2m(currentTime, service);
+  const svcRes  = reservations.filter(r => r.service === service);
 
   const tableStatus = useCallback((id) => {
     const active = svcRes.find(r =>
-      r.tableId === id &&
-      nowMin >= t2m(r.time, r.service) &&
-      nowMin < t2m(r.time, r.service) + r.duration
+      r.tableId === id && r.liveState && r.liveState !== 'para_limpiar'
     );
     if (active) return { status: 'busy', res: active };
 
-    const soon = svcRes.find(r => {
-      if (r.tableId !== id) return false;
-      const s = t2m(r.time, r.service);
-      return s > nowMin && s <= nowMin + 30;
-    });
+    const soon = svcRes.find(r =>
+      r.tableId === id && r.liveState === 'para_limpiar'
+    );
     if (soon) return { status: 'soon', res: soon };
     return { status: 'free' };
-  }, [svcRes, nowMin]);
+  }, [svcRes]);
 
   const stats = useMemo(() => {
     let free = 0, busy = 0, soon = 0, seatsBusy = 0;
     tables.forEach(t => {
       const s = tableStatus(t.id);
-      if (s.status === 'free') free++;
+      if (s.status === 'free')       free++;
       else if (s.status === 'busy') { busy++; seatsBusy += (s.res.partySize || 0); }
-      else soon++;
+      else                            soon++;
     });
     return { free, busy, soon, seatsBusy };
   }, [tables, tableStatus]);
 
+  const analyticsData = useMemo(() => {
+    const src = analyticsPeriod === 'day' ? reservations : analyticsRes;
+
+    const toMin = (ts) => {
+      if (!ts) return null;
+      if (typeof ts === 'number') return ts > 1e6 ? ts / 60000 : ts;
+      if (ts.seconds != null) return ts.seconds / 60 + (ts.nanoseconds || 0) / 6e10;
+      if (ts.toDate) return ts.toDate().getTime() / 60000;
+      const d = new Date(ts);
+      return isNaN(d.getTime()) ? null : d.getTime() / 60000;
+    };
+
+    const active = src.filter(r => r.seatedAt || r.liveState);
+
+    const stays = active.map(r => {
+      const start = toMin(r.seatedAt) || t2m(r.time, r.service);
+      if (start == null) return null;
+      const end = r.leftAt ? toMin(r.leftAt) : null;
+      const stayMin = end != null ? Math.round(end - start) : null;
+      return { ...r, stayMin };
+    }).filter(Boolean);
+
+    const withDuration = stays.filter(r => r.stayMin != null && r.stayMin >= 0 && r.stayMin <= 600);
+    const totalCustomers = active.reduce((s, r) => s + (r.partySize || 0), 0);
+    const avgStay = withDuration.length > 0
+      ? Math.round(withDuration.reduce((s, r) => s + r.stayMin, 0) / withDuration.length)
+      : 0;
+
+    return { totalCustomers, avgStay };
+  }, [reservations, analyticsRes, analyticsPeriod, service]);
+
   const sortedRes = useMemo(() =>
     [...svcRes].sort((a, b) => t2m(a.time, a.service) - t2m(b.time, b.service)),
-    [svcRes]);
+  [svcRes]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleSave = useCallback(async (data) => {
-    // --- Algoritmo de Auto-asignación Inteligente (Best Fit) ---
-    let assignedId = data.tableId;
-
-    if (!assignedId || assignedId === 'pendiente') {
-      const start = t2m(data.time, service);
-      const end = start + (data.duration || 120); // Fallback amplio sin límite estricto
-
-      // 1. Buscar mesas libres con capacidad suficiente
-      const candidateTables = tables.filter(t => {
-        // a. Capacidad mínima necesaria
-        if (t.capacity < data.partySize) return false;
-
-        // b. Disponibilidad estricta: No debe haber solapamiento con otras reservas
-        const hasConflict = reservations.some(r => {
-          if (r.tableId !== t.id || r.service !== service) return false;
-          // Ignorar si estamos editando la misma reserva (aunque aquí suele ser nueva)
-          if (r.id === data.id) return false;
-
-          const rStart = t2m(r.time, r.service);
-          const rEnd = rStart + r.duration;
-          // Solapamiento: (inicio < finR) && (fin > inicioR)
-          return (start < rEnd) && (end > rStart);
-        });
-
-        return !hasConflict;
-      });
-
-      // 2. Manejo Condicional: Si no hay mesas individuales que soporten al grupo
-      if (candidateTables.length === 0) {
-        // En lugar de bloquear, marcamos para que el personal gestione la unión manualmente
-        assignedId = 'requiere_union';
-      } else {
-        // 3. Optimización de Espacio (Best Fit): Elegir la menor que cumpla
-        candidateTables.sort((a, b) => a.capacity - b.capacity);
-        assignedId = candidateTables[0].id;
-      }
-    }
-
-    // 4. Persistencia Optimista con Feedback
-    // Cerramos el modal inmediatamente para mejorar la percepción de velocidad
-    setShowModal(false);
-    setEditing(null);
-    setPreTable(null);
-
-    try {
-      await saveRes({ ...data, tableId: assignedId, service, date });
-      // Feedback de éxito (no bloqueante para el cierre)
-      console.log('Reserva confirmada con éxito');
-    } catch (error) {
-      // Si falla, re-abrimos o notificamos el error crítico
-      console.error("[handleSave] Error crítico:", error);
-      alert('Error crítico al procesar la reserva en la base de datos. Verifica tu conexión.');
-    }
-  }, [saveRes, service, date, tables, reservations]);
+  const handleSave = useCallback((data) => {
+    saveRes({ ...data, duration: data.duration || SERVICES[service].defaultDuration, service, date });
+    setShowModal(false); setEditing(null); setPreTable(null);
+  }, [saveRes, service, date]);
 
   const handleDelete = useCallback((id) => {
     deleteRes(id);
@@ -355,6 +344,9 @@ export default function App() {
                 : <><WifiOff size={13} color={C.soon} /><span style={{ color: C.soon }}>Offline</span></>
               }
             </div>
+            <button onClick={() => setShowAnalytics(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
+              <BarChart3 size={18} />
+            </button>
             <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
               <Settings size={18} />
             </button>
@@ -362,23 +354,27 @@ export default function App() {
         </div>
 
         {/* Navegación de fecha */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button onClick={() => shiftDate(-1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-            <ChevronLeft size={16} />
+        <div ref={calendarRef} style={{ position: 'relative', width: '100%' }}>
+          <button onClick={() => setShowCalendar(!showCalendar)} style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', color: C.cream, fontSize: '15px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>{formatDate(date)}</span>
           </button>
-          <button onClick={goNow} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer', textTransform: 'capitalize', fontSize: '14px', fontWeight: 500 }}>
-            {formatDate(date)}
-          </button>
-          <button onClick={() => shiftDate(1)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-            <ChevronRight size={16} />
-          </button>
+
+          {showCalendar && (
+            <CalendarPicker
+              date={date}
+              onSelect={(d) => { setDate(d); setShowCalendar(false); }}
+              onClose={() => setShowCalendar(false)}
+              colors={C}
+            />
+          )}
         </div>
       </header>
 
       {/* ── SELECTOR DE SERVICIO ── */}
       <div style={{ padding: '20px 16px 8px', display: 'flex', gap: '8px' }}>
         {Object.entries(SERVICES).map(([k, s]) => {
-          const Icon = s.icon;
+          const Icon   = s.icon;
           const active = service === k;
           return (
             <button key={k} onClick={() => setService(k)} style={{
@@ -420,9 +416,9 @@ export default function App() {
 
       {/* ── STATS ── */}
       <div style={{ padding: '0 16px 16px', display: 'flex', gap: '8px' }}>
-        <Stat color={C.free} label="Libres" value={stats.free} />
-        <Stat color={C.terra} label="Ocupadas" value={stats.busy} />
-        <Stat color={C.soon} label="En 30min" value={stats.soon} />
+        <Stat color={C.free}  label="Libres"   value={stats.free}  />
+        <Stat color={C.terra} label="Ocupadas" value={stats.busy}  />
+        <Stat color={C.soon}  label="En 30min" value={stats.soon}  />
       </div>
 
       {/* ── GRILLA DE MESAS ── */}
@@ -485,9 +481,9 @@ export default function App() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {sortedRes.map(r => {
-              const table = tables.find(t => t.id === r.tableId);
-              const isPast = t2m(r.time, r.service) + r.duration < nowMin;
-              const live = r.liveState ? LIVE_STATES[r.liveState] : null;
+              const table   = tables.find(t => t.id === r.tableId);
+              const isPast  = !r.liveState || r.liveState === 'para_limpiar';
+              const live    = r.liveState ? LIVE_STATES[r.liveState] : null;
               return (
                 <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
                   display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
@@ -513,7 +509,7 @@ export default function App() {
                       <span>·</span>
                       <span style={{ fontWeight: 600, color: C.forest }}>{table?.name || '—'}</span>
                       <span>·</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.duration}min</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
                       {r.phone && (<><span>·</span><span>{r.phone}</span></>)}
                     </div>
                     {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
@@ -568,11 +564,6 @@ export default function App() {
           tables={tables}
           slots={slots}
           service={service}
-          date={date}
-          reservations={reservations}
-          currentTime={currentTime}
-          defaultDuration={SERVICES[service].defaultDuration}
-          tableStatus={tableStatus}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => { setShowModal(false); setEditing(null); setPreTable(null); }}
@@ -585,6 +576,16 @@ export default function App() {
           config={config}
           onSave={saveConfig}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* ── MODAL: Analíticas ── */}
+      {showAnalytics && (
+        <AnalyticsPanel
+          data={analyticsData}
+          period={analyticsPeriod}
+          onPeriodChange={setAnalyticsPeriod}
+          onClose={() => setShowAnalytics(false)}
         />
       )}
     </div>
@@ -626,18 +627,6 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose }) {
             </button>
           );
         })}
-        {/* BOTÓN DE FINALIZACIÓN DIRECTA */}
-        <button onClick={() => onSelect('liberada')} style={{
-          display: 'flex', alignItems: 'center', gap: '12px',
-          padding: '14px 16px', borderRadius: '14px', cursor: 'pointer',
-          border: `2px solid #6f8d4d`,
-          background: '#6f8d4d',
-          color: '#fff',
-          fontWeight: 600, fontSize: '14px',
-          marginTop: '8px'
-        }}>
-          Finalizar y Liberar Mesa
-        </button>
       </div>
 
       <div style={{ display: 'flex', gap: '8px' }}>
@@ -655,32 +644,17 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResModal — Modal de creación / edición de reserva
 // ═══════════════════════════════════════════════════════════════════════════════
-function ResModal({ editing, preTable, tables, slots, service, date, reservations, currentTime, defaultDuration, onSave, onDelete, onClose }) {
+function ResModal({ editing, preTable, tables, slots, service, onSave, onDelete, onClose }) {
   const [form, setForm] = useState(() => editing ? { ...editing } : {
     customerName: '', phone: '', partySize: 2,
-    tableId: 'pendiente',
+    tableId: preTable?.id || '',
     time: slots[Math.floor(slots.length / 3)] || slots[0],
-    duration: defaultDuration,
     notes: '', liveState: null,
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // --- LÓGICA SIMPLIFICADA ---
-
-  // 1. Time Travel Validation: Evitar seleccionar horas pasadas si es hoy (para el listado)
-  const isToday = date === todayISO();
-  const availableSlots = useMemo(() => {
-    if (!isToday) return slots;
-    const nowMin = t2m(currentTime, service);
-    return slots.filter(s => t2m(s, service) >= nowMin);
-  }, [slots, isToday, currentTime, service]);
-
-  // 2. Validación: Solo exige Nombre, Horario y Comensales
-  const isValid =
-    form.customerName.trim().length >= 2 &&
-    form.time !== '' &&
-    form.partySize > 0;
+  const valid = form.customerName.trim() && form.tableId && form.time && form.partySize > 0;
 
   return (
     <Overlay onClose={onClose}>
@@ -704,20 +678,24 @@ function ResModal({ editing, preTable, tables, slots, service, date, reservation
             placeholder="+54 9 11 ..." type="tel" style={inp} />
         </Field>
 
-        {/* Reorganización Visual: Comensales y Horario en el mismo nivel */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <Field label="Comensales">
             <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => <option key={n} value={n}>{n} personas</option>)}
+              {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} personas</option>)}
             </select>
           </Field>
+          <Field label="Mesa">
+            <select value={form.tableId} onChange={e => set('tableId', e.target.value)} style={inp}>
+              <option value="">— elegir —</option>
+              {tables.map(t => <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
           <Field label="Horario">
             <select value={form.time} onChange={e => set('time', e.target.value)} style={inp}>
-              {availableSlots.length > 0 ? (
-                availableSlots.map(s => <option key={s} value={s}>{s}</option>)
-              ) : (
-                <option value="" disabled>Servicio finalizado</option>
-              )}
+              {slots.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
         </div>
@@ -738,20 +716,11 @@ function ResModal({ editing, preTable, tables, slots, service, date, reservation
             <Trash2 size={18} />
           </button>
         )}
-        <button
-          onClick={() => isValid && onSave({ ...form, service })}
-          disabled={!isValid}
-          style={{
-            flex: 1, padding: '14px',
-            background: isValid ? C.terra : C.creamDeep,
-            border: 'none', borderRadius: '12px',
-            cursor: isValid ? 'pointer' : 'not-allowed',
-            color: isValid ? C.white : C.muted,
-            fontSize: '15px', fontWeight: 600,
-            opacity: isValid ? 1 : 0.6,
-            transition: 'all 0.3s'
-          }}
-        >
+        <button onClick={() => valid && onSave({ ...form, service })} style={{
+          flex: 1, padding: '14px', background: valid ? C.terra : C.creamDeep,
+          border: 'none', borderRadius: '12px', cursor: valid ? 'pointer' : 'not-allowed',
+          color: valid ? C.white : C.muted, fontSize: '15px', fontWeight: 600,
+        }}>
           {editing ? 'Guardar cambios' : 'Confirmar reserva'}
         </button>
       </div>
@@ -772,7 +741,7 @@ function SettingsModal({ config, onSave, onClose }) {
         <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
       </div>
       <p style={{ fontSize: '12px', color: C.muted, marginBottom: '16px' }}>Cantidad de mesas por capacidad. Los cambios se sincronizan a todos los dispositivos.</p>
-      {[['cap2', 'Mesas de 2'], ['cap4', 'Mesas de 4'], ['cap5', 'Mesas de 5'], ['cap8', 'Mesas de 8']].map(([k, label]) => (
+      {[['cap2','Mesas de 2'],['cap4','Mesas de 4'],['cap5','Mesas de 5'],['cap8','Mesas de 8']].map(([k, label]) => (
         <Counter key={k} label={label} value={local[k] || 0} onChange={v => set(k, v)} />
       ))}
       <button onClick={() => { onSave(local); onClose(); }} style={{
@@ -785,17 +754,147 @@ function SettingsModal({ config, onSave, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CalendarPicker — Calendario desplegable centrado
+// ═══════════════════════════════════════════════════════════════════════════════
+function CalendarPicker({ date, onSelect, onClose, colors: C }) {
+  const [viewDate, setViewDate] = useState(() => {
+    const d = new Date(date + 'T12:00:00');
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const daysInMonth = new Date(viewDate.year, viewDate.month + 1, 0).getDate();
+  const startDay = new Date(viewDate.year, viewDate.month, 1).getDay();
+  const today = new Date();
+
+  const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const weekdays = ['Do','Lu','Ma','Mi','Ju','Vi','Sá'];
+
+  const prev = () => setViewDate(v => v.month === 0 ? { year: v.year - 1, month: 11 } : { ...v, month: v.month - 1 });
+  const next = () => setViewDate(v => v.month === 11 ? { year: v.year + 1, month: 0 } : { ...v, month: v.month + 1 });
+
+  const cells = [];
+  for (let i = 0; i < startDay; i++) cells.push(<div key={`e${i}`} />);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${viewDate.year}-${String(viewDate.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const sel = iso === date;
+    const isToday = viewDate.year === today.getFullYear() && viewDate.month === today.getMonth() && d === today.getDate();
+    cells.push(
+      <button key={d} onClick={() => onSelect(iso)} style={{
+        aspectRatio: '1', borderRadius: '10px', border: 'none', cursor: 'pointer',
+        background: sel ? C.terra : isToday ? 'rgba(196,96,47,0.15)' : 'transparent',
+        color: sel ? '#fff' : C.espresso,
+        fontWeight: sel ? 700 : isToday ? 600 : 400,
+        fontSize: '14px', fontFamily: 'inherit',
+      }}>{d}</button>
+    );
+  }
+
+  return (
+    <div ref={ref} style={{
+      position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
+      background: C.white, borderRadius: '16px', boxShadow: '0 8px 32px rgba(31,58,46,0.2)',
+      padding: '16px', width: '300px', zIndex: 300,
+    }}>
+      {/* Header del mes */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <button onClick={prev} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.espresso, padding: '4px' }}>
+          <ChevronLeft size={18} />
+        </button>
+        <span style={{ fontFamily: '"Fraunces", serif', fontSize: '18px', fontStyle: 'italic', fontWeight: 600, color: C.forest }}>
+          {months[viewDate.month]} {viewDate.year}
+        </span>
+        <button onClick={next} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.espresso, padding: '4px' }}>
+          <ChevronRight size={18} />
+        </button>
+      </div>
+      {/* Días de la semana */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '4px' }}>
+        {weekdays.map(w => (
+          <div key={w} style={{ textAlign: 'center', fontSize: '11px', color: C.muted, fontWeight: 600, padding: '4px 0' }}>{w}</div>
+        ))}
+      </div>
+      {/* Grid de días */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
+        {cells}
+      </div>
+      {/* Botón Hoy */}
+      <button onClick={() => {
+        const d = new Date();
+        onSelect(d.toISOString().slice(0, 10));
+      }} style={{
+        width: '100%', marginTop: '10px', padding: '8px', borderRadius: '10px',
+        background: C.creamDeep, border: 'none', cursor: 'pointer',
+        color: C.forest, fontSize: '13px', fontWeight: 600, fontFamily: 'inherit',
+      }}>Hoy</button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Subcomponentes
 // ═══════════════════════════════════════════════════════════════════════════════
+function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
+  const { totalCustomers, avgStay } = data;
+  const fmtMin = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m}min`;
+  const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']];
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Analíticas</h3>
+        <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
+      </div>
+
+      {/* Selector de período */}
+      <div style={{ display: 'flex', gap: '4px', background: C.creamDeep, borderRadius: '12px', padding: '4px', marginBottom: '24px' }}>
+        {periods.map(([key, label]) => (
+          <button key={key} onClick={() => onPeriodChange(key)} style={{
+            flex: 1, padding: '8px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+            background: period === key ? C.white : 'transparent',
+            color: period === key ? C.forest : C.muted,
+            fontWeight: period === key ? 600 : 400,
+            fontSize: '13px', fontFamily: 'inherit',
+            boxShadow: period === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {totalCustomers === 0 ? (
+        <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
+          Sin datos para este período
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.terra, lineHeight: 1 }}>{totalCustomers}</div>
+            <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Clientes</div>
+          </div>
+          <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.forest, lineHeight: 1 }}>{fmtMin(avgStay)}</div>
+            <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Perm. promedio</div>
+          </div>
+        </div>
+      )}
+    </Overlay>
+  );
+}
+
 function Overlay({ children, onClose }) {
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
-      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end',
-      justifyContent: 'center', zIndex: 200, padding: '0',
+      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', zIndex: 200, padding: '16px',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: C.cream, borderRadius: '24px 24px 0 0',
+        background: C.cream, borderRadius: '24px',
         padding: '28px 20px 40px', width: '100%', maxWidth: '480px',
         maxHeight: '92vh', overflowY: 'auto',
       }}>
