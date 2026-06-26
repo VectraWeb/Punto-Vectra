@@ -132,6 +132,7 @@ export default function App() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
   const [analyticsRes, setAnalyticsRes] = useState([]);
+  const [mainTab, setMainTab] = useState('mesas');
   const calendarRef = useRef(null);
 
   const tables = useMemo(() => buildTables(config), [config]);
@@ -421,101 +422,112 @@ export default function App() {
         <Stat color={C.soon}  label="En 30min" value={stats.soon}  />
       </div>
 
-      {/* ── GRILLA DE MESAS ── */}
-      <div style={{ padding: '0 16px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '8px 0 12px' }}>
-          <h2 style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Mesas</h2>
-          <span style={{ fontSize: '11px', color: C.muted }}>{tables.length} mesas · {tables.reduce((s, t) => s + t.capacity, 0)} plazas</span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-          {tables.map(t => {
-            const s = tableStatus(t.id);
-            const live = s.status === 'busy' && s.res.liveState ? LIVE_STATES[s.res.liveState] : null;
-
-            let bg, fg, border, sub;
-            if (s.status === 'free') {
-              bg = C.white; fg = C.forest; border = C.creamDeep; sub = `${t.capacity}p`;
-            } else if (s.status === 'busy') {
-              bg = live?.color || C.terra; fg = C.white; border = live?.color || C.terra;
-              sub = s.res.customerName?.split(' ')[0] || '—';
-            } else {
-              bg = C.soon; fg = C.white; border = C.soon; sub = `→ ${s.res.time}`;
-            }
-
-            return (
-              <button key={t.id} onClick={() => {
-                if (s.status === 'free') {
-                  setPreTable(t); setEditing(null); setShowModal(true);
-                } else {
-                  setShowLiveMenu(s.res);
-                }
-              }} style={{
-                aspectRatio: '1', background: bg, color: fg,
-                border: `1.5px solid ${border}`, borderRadius: '14px',
-                cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', padding: '4px',
-                position: 'relative',
-              }}>
-                {live && (
-                  <span style={{ position: 'absolute', top: '5px', right: '5px', width: '8px', height: '8px', borderRadius: '50%', background: live.dot, border: '1.5px solid rgba(255,255,255,0.5)' }} />
-                )}
-                <div style={{ fontFamily: '"Fraunces", serif', fontSize: '17px', fontWeight: 600 }}>{t.name}</div>
-                <div style={{ fontSize: '10px', opacity: 0.85, marginTop: '2px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
-                  {live ? live.label : sub}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+      {/* ── TABS: MESAS / RESERVAS ── */}
+      <div style={{ padding: '0 16px', display: 'flex', gap: '4px', marginBottom: '12px' }}>
+        {[['mesas', 'Mesas', `${tables.length} mesas`], ['reservas', 'Reservas', `${sortedRes.length} items`]].map(([key, label, sub]) => (
+          <button key={key} onClick={() => setMainTab(key)} style={{
+            flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
+            background: mainTab === key ? C.forest : C.creamDeep,
+            color: mainTab === key ? C.cream : C.muted,
+            fontFamily: 'inherit', textAlign: 'left',
+          }}>
+            <div style={{ fontSize: '14px', fontWeight: 600 }}>{label}</div>
+            <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '1px' }}>{sub}</div>
+          </button>
+        ))}
       </div>
 
-      {/* ── LISTADO DE RESERVAS ── */}
-      <div style={{ padding: '0 16px 24px' }}>
-        <h2 style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: '8px 0 12px' }}>
-          Reservas · {SERVICES[service].name}
-        </h2>
-        {sortedRes.length === 0 ? (
-          <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
-            Sin reservas para este servicio
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {sortedRes.map(r => {
-              const table   = tables.find(t => t.id === r.tableId);
-              const isPast  = !r.liveState || r.liveState === 'para_limpiar';
-              const live    = r.liveState ? LIVE_STATES[r.liveState] : null;
+      {/* ── GRILLA DE MESAS ── */}
+      {mainTab === 'mesas' && (
+        <div style={{ padding: '0 16px 24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+            {tables.map(t => {
+              const s = tableStatus(t.id);
+              const live = s.status === 'busy' && s.res.liveState ? LIVE_STATES[s.res.liveState] : null;
+
+              let bg, fg, border, sub;
+              if (s.status === 'free') {
+                bg = C.white; fg = C.forest; border = C.creamDeep; sub = `${t.capacity}p`;
+              } else if (s.status === 'busy') {
+                bg = live?.color || C.terra; fg = C.white; border = live?.color || C.terra;
+                sub = s.res.customerName?.split(' ')[0] || '—';
+              } else {
+                bg = C.soon; fg = C.white; border = C.soon; sub = `→ ${s.res.time}`;
+              }
+
               return (
-                <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
-                  display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
-                  background: C.white, border: `1px solid ${C.creamDeep}`,
-                  borderRadius: '14px', cursor: 'pointer', textAlign: 'left',
-                  color: C.espresso, opacity: isPast ? 0.5 : 1,
+                <button key={t.id} onClick={() => {
+                  if (s.status === 'free') {
+                    setPreTable(t); setEditing(null); setShowModal(true);
+                  } else {
+                    setShowLiveMenu(s.res);
+                  }
+                }} style={{
+                  aspectRatio: '1', background: bg, color: fg,
+                  border: `1.5px solid ${border}`, borderRadius: '14px',
+                  cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', padding: '4px',
+                  position: 'relative',
                 }}>
-                  {/* Indicador de hora con color de liveState */}
-                  <div style={{
-                    width: '52px', minWidth: '52px', height: '52px', borderRadius: '12px',
-                    background: live?.color || C.forest, color: C.cream,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: '"Fraunces", serif', fontSize: '15px', fontWeight: 600,
-                    flexDirection: 'column', gap: '1px',
+                  {live && (
+                    <span style={{ position: 'absolute', top: '5px', right: '5px', width: '8px', height: '8px', borderRadius: '50%', background: live.dot, border: '1.5px solid rgba(255,255,255,0.5)' }} />
+                  )}
+                  <div style={{ fontFamily: '"Fraunces", serif', fontSize: '17px', fontWeight: 600 }}>{t.name}</div>
+                  <div style={{ fontSize: '10px', opacity: 0.85, marginTop: '2px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
+                    {live ? live.label : sub}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── LISTADO DE RESERVAS ── */}
+      {mainTab === 'reservas' && (
+        <div style={{ padding: '0 16px 24px' }}>
+          {sortedRes.length === 0 ? (
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
+              Sin reservas para este servicio
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {sortedRes.map(r => {
+                const table   = tables.find(t => t.id === r.tableId);
+                const isPast  = !r.liveState || r.liveState === 'para_limpiar';
+                const live    = r.liveState ? LIVE_STATES[r.liveState] : null;
+                return (
+                  <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
+                    background: C.white, border: `1px solid ${C.creamDeep}`,
+                    borderRadius: '14px', cursor: 'pointer', textAlign: 'left',
+                    color: C.espresso, opacity: isPast ? 0.5 : 1,
                   }}>
-                    <span>{r.time}</span>
-                    {live && <span style={{ fontSize: '8px', opacity: 0.85 }}>{live.label}</span>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
-                    <div style={{ fontSize: '11px', color: C.muted, display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', flexWrap: 'wrap' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{r.partySize}</span>
-                      <span>·</span>
-                      <span style={{ fontWeight: 600, color: C.forest }}>{table?.name || '—'}</span>
-                      <span>·</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
-                      {r.phone && (<><span>·</span><span>{r.phone}</span></>)}
+                    {/* Indicador de hora con color de liveState */}
+                    <div style={{
+                      width: '52px', minWidth: '52px', height: '52px', borderRadius: '12px',
+                      background: live?.color || C.forest, color: C.cream,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: '"Fraunces", serif', fontSize: '15px', fontWeight: 600,
+                      flexDirection: 'column', gap: '1px',
+                    }}>
+                      <span>{r.time}</span>
+                      {live && <span style={{ fontSize: '8px', opacity: 0.85 }}>{live.label}</span>}
                     </div>
-                    {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
-                  </div>
-                  {/* Botón rápido de estado en vivo */}
-                  {!isPast && (
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
+                      <div style={{ fontSize: '11px', color: C.muted, display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', flexWrap: 'wrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{r.partySize}</span>
+                        <span>·</span>
+                        <span style={{ fontWeight: 600, color: C.forest }}>{table?.name || '—'}</span>
+                        <span>·</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
+                        {r.phone && (<><span>·</span><span>{r.phone}</span></>)}
+                      </div>
+                      {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
+                    </div>
+                    {/* Botón rápido de estado en vivo */}
+                    {!isPast && (
                     <button onClick={(e) => { e.stopPropagation(); setShowLiveMenu(r); }} style={{
                       flexShrink: 0, background: live?.color || C.creamDeep,
                       border: 'none', borderRadius: '10px', padding: '6px 8px',
@@ -533,6 +545,7 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── FAB: Nueva reserva ── */}
       <button onClick={() => { setEditing(null); setPreTable(null); setShowModal(true); }} style={{
