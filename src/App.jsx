@@ -17,8 +17,8 @@ import { db } from './firebase';
 const C = {
   cream:      '#f5efe6',
   creamDeep:  '#ebe3d5',
-  forest:     '#9B4B2A',
-  forestSoft: '#b5623e',
+  forest:     '#7a3a1e',
+  forestSoft: '#9B4B2A',
   terra:      '#c4602f',
   terraSoft:  '#e09368',
   espresso:   '#2a1f1a',
