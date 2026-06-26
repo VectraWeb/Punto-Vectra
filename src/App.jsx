@@ -1,4 +1,4 @@
-// App.jsx — Andi MVP (Producción)
+// App.js — Andi MVP (Producción)
 // PWA de gestión de mesas con sincronización en tiempo real vía Firebase Firestore
 // Incluye máquina de estados en vivo para mozos
 
@@ -295,26 +295,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Navegación de fecha unificada */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', position: 'relative' }}>
-          <button 
-            onClick={() => document.getElementById('hidden-date-picker').showPicker()} 
-            style={{ 
-              width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.15)', 
-              border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', 
-              color: C.cream, fontSize: '15px', fontWeight: 600, textAlign: 'center', 
-              fontFamily: 'inherit', cursor: 'pointer', outline: 'none' 
-            }}
-          >
-            {formatDate(date)}
-          </button>
-          <input 
-            id="hidden-date-picker"
-            type="date" 
-            value={date} 
-            onChange={e => setDate(e.target.value)}
-            style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }} 
-          />
+        {/* Navegación de fecha */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', color: C.cream, fontSize: '15px', fontWeight: 600, textAlign: 'center', fontFamily: 'inherit', cursor: 'pointer', boxSizing: 'border-box', outline: 'none' }} />
         </div>
       </header>
 
