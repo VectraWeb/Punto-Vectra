@@ -233,20 +233,16 @@ export default function App() {
 
   const tableStatus = useCallback((id) => {
     const active = svcRes.find(r =>
-      r.tableId === id &&
-      nowMin >= t2m(r.time, r.service) &&
-      nowMin <  t2m(r.time, r.service) + r.duration
+      r.tableId === id && r.liveState && r.liveState !== 'para_limpiar'
     );
     if (active) return { status: 'busy', res: active };
 
-    const soon = svcRes.find(r => {
-      if (r.tableId !== id) return false;
-      const s = t2m(r.time, r.service);
-      return s > nowMin && s <= nowMin + 30;
-    });
+    const soon = svcRes.find(r =>
+      r.tableId === id && r.liveState === 'para_limpiar'
+    );
     if (soon) return { status: 'soon', res: soon };
     return { status: 'free' };
-  }, [svcRes, nowMin]);
+  }, [svcRes]);
 
   const stats = useMemo(() => {
     let free = 0, busy = 0, soon = 0, seatsBusy = 0;
@@ -296,7 +292,7 @@ export default function App() {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleSave = useCallback((data) => {
-    saveRes({ ...data, service, date });
+    saveRes({ ...data, duration: data.duration || SERVICES[service].defaultDuration, service, date });
     setShowModal(false); setEditing(null); setPreTable(null);
   }, [saveRes, service, date]);
 
@@ -486,7 +482,7 @@ export default function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {sortedRes.map(r => {
               const table   = tables.find(t => t.id === r.tableId);
-              const isPast  = t2m(r.time, r.service) + r.duration < nowMin;
+              const isPast  = !r.liveState || r.liveState === 'para_limpiar';
               const live    = r.liveState ? LIVE_STATES[r.liveState] : null;
               return (
                 <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
@@ -513,7 +509,7 @@ export default function App() {
                       <span>·</span>
                       <span style={{ fontWeight: 600, color: C.forest }}>{table?.name || '—'}</span>
                       <span>·</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.duration}min</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
                       {r.phone && (<><span>·</span><span>{r.phone}</span></>)}
                     </div>
                     {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
@@ -568,7 +564,6 @@ export default function App() {
           tables={tables}
           slots={slots}
           service={service}
-          defaultDuration={SERVICES[service].defaultDuration}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => { setShowModal(false); setEditing(null); setPreTable(null); }}
@@ -610,7 +605,7 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose }) {
           {res.customerName}
         </h3>
         <p style={{ fontSize: '12px', color: C.muted, margin: '4px 0 0' }}>
-          {table?.name} · {res.partySize} comensales · {res.time} ({res.duration}min)
+          {table?.name} · {res.partySize} comensales · {res.time}
         </p>
       </div>
 
@@ -649,12 +644,11 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResModal — Modal de creación / edición de reserva
 // ═══════════════════════════════════════════════════════════════════════════════
-function ResModal({ editing, preTable, tables, slots, service, defaultDuration, onSave, onDelete, onClose }) {
+function ResModal({ editing, preTable, tables, slots, service, onSave, onDelete, onClose }) {
   const [form, setForm] = useState(() => editing ? { ...editing } : {
     customerName: '', phone: '', partySize: 2,
     tableId: preTable?.id || '',
     time: slots[Math.floor(slots.length / 3)] || slots[0],
-    duration: defaultDuration,
     notes: '', liveState: null,
   });
 
@@ -698,15 +692,11 @@ function ResModal({ editing, preTable, tables, slots, service, defaultDuration, 
           </Field>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
           <Field label="Horario">
             <select value={form.time} onChange={e => set('time', e.target.value)} style={inp}>
               {slots.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-          </Field>
-          <Field label={`Duración: ${form.duration}min`}>
-            <input type="range" min={30} max={240} step={15} value={form.duration}
-              onChange={e => set('duration', parseInt(e.target.value))} style={{ width: '100%', marginTop: '8px' }} />
           </Field>
         </div>
 
