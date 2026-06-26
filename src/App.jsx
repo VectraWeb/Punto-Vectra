@@ -262,12 +262,13 @@ export default function App() {
 
     const byTable = {};
     stays.forEach(r => {
-      if (!byTable[r.tableId]) byTable[r.tableId] = { total: 0, count: 0 };
+      if (!byTable[r.tableId]) byTable[r.tableId] = { total: 0, count: 0, stays: [] };
       byTable[r.tableId].total += r.stayMin;
       byTable[r.tableId].count++;
+      byTable[r.tableId].stays.push(r);
     });
     const tableAvgs = Object.entries(byTable)
-      .map(([id, v]) => ({ id, avg: Math.round(v.total / v.count), count: v.count }))
+      .map(([id, v]) => ({ id, avg: Math.round(v.total / v.count), count: v.count, stays: v.stays }))
       .sort((a, b) => b.count - a.count);
 
     const hourBuckets = {};
@@ -853,6 +854,7 @@ function CalendarPicker({ date, onSelect, onClose, colors: C }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function AnalyticsPanel({ data, tables, onClose }) {
   const { totalCustomers, avgStay, tableAvgs, peakHours, byService } = data;
+  const [selectedTable, setSelectedTable] = useState(null);
   const maxPeak = peakHours.length > 0 ? peakHours[0][1] : 1;
   const medAvg = byService.mediodia.stays.length > 0
     ? Math.round(byService.mediodia.stays.reduce((a, b) => a + b, 0) / byService.mediodia.stays.length) : 0;
@@ -894,13 +896,41 @@ function AnalyticsPanel({ data, tables, onClose }) {
                 {tableAvgs.map(t => {
                   const table = tables.find(tb => tb.id === t.id);
                   const pct = Math.min(100, (t.avg / (avgStay * 1.5 || 1)) * 100);
+                  const isOpen = selectedTable === t.id;
                   return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, minWidth: '50px' }}>{table?.name || t.id}</span>
-                      <div style={{ flex: 1, height: '8px', background: C.creamDeep, borderRadius: '4px', overflow: 'hidden' }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: C.terra, borderRadius: '4px', transition: 'width 0.3s' }} />
-                      </div>
-                      <span style={{ fontSize: '11px', color: C.muted, minWidth: '48px', textAlign: 'right' }}>{fmtMin(t.avg)}</span>
+                    <div key={t.id}>
+                      <button onClick={() => setSelectedTable(isOpen ? null : t.id)} style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                        background: isOpen ? C.creamDeep : 'transparent', border: 'none',
+                        borderRadius: '8px', padding: '6px', cursor: 'pointer', textAlign: 'left',
+                      }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, minWidth: '50px' }}>{table?.name || t.id}</span>
+                        <div style={{ flex: 1, height: '8px', background: C.creamDeep, borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: C.terra, borderRadius: '4px', transition: 'width 0.3s' }} />
+                        </div>
+                        <span style={{ fontSize: '11px', color: C.muted, minWidth: '48px', textAlign: 'right' }}>{fmtMin(t.avg)}</span>
+                        <ChevronRight size={14} style={{ color: C.muted, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                      </button>
+                      {isOpen && (
+                        <div style={{ padding: '4px 8px 8px 56px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {t.stays.sort((a, b) => (b.seatedAt?.seconds || 0) - (a.seatedAt?.seconds || 0)).map(r => (
+                            <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: C.white, borderRadius: '10px', border: `1px solid ${C.creamDeep}` }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 600, fontSize: '13px', color: C.espresso, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
+                                <div style={{ fontSize: '11px', color: C.muted, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
+                                  <span>·</span>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{r.partySize}p</span>
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <div style={{ fontFamily: '"Fraunces", serif', fontSize: '14px', fontWeight: 700, color: C.terra }}>{fmtMin(r.stayMin)}</div>
+                                <div style={{ fontSize: '10px', color: C.muted }}>real</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
