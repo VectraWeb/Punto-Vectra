@@ -949,7 +949,7 @@ function Field({ label, children }) {
 }
 
 const inp = {
-  width: '100%', padding: '12px 14px', fontSize: '14px',
+  width: '100%', padding: '12px 14px', fontSize: '16px',
   background: C.white, border: `1.5px solid ${C.creamDeep}`,
   borderRadius: '12px', color: C.espresso, outline: 'none',
 };
