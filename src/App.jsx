@@ -247,32 +247,35 @@ export default function App() {
       return isNaN(d.getTime()) ? null : d.getTime() / 60000;
     };
 
-    const closed = reservations.filter(r => r.seatedAt);
-    const withDuration = closed.filter(r => r.leftAt && r.seatedAt);
+    const seated = reservations.filter(r => r.seatedAt);
 
-    const stays = withDuration.map(r => {
+    const stays = seated.map(r => {
       const start = toMin(r.seatedAt);
-      const end = toMin(r.leftAt);
-      if (start == null || end == null) return null;
-      const stayMin = Math.round(end - start);
-      if (stayMin < 0 || stayMin > 600) return null;
+      if (start == null) return null;
+      const end = r.leftAt ? toMin(r.leftAt) : null;
+      const stayMin = end != null ? Math.round(end - start) : null;
       return { ...r, stayMin };
     }).filter(Boolean);
 
-    const totalCustomers = closed.reduce((s, r) => s + (r.partySize || 0), 0);
-    const avgStay = stays.length > 0
-      ? Math.round(stays.reduce((s, r) => s + r.stayMin, 0) / stays.length)
+    const withDuration = stays.filter(r => r.stayMin != null && r.stayMin >= 0 && r.stayMin <= 600);
+    const totalCustomers = seated.reduce((s, r) => s + (r.partySize || 0), 0);
+    const avgStay = withDuration.length > 0
+      ? Math.round(withDuration.reduce((s, r) => s + r.stayMin, 0) / withDuration.length)
       : 0;
 
     const byTable = {};
     stays.forEach(r => {
       if (!byTable[r.tableId]) byTable[r.tableId] = { total: 0, count: 0, stays: [] };
-      byTable[r.tableId].total += r.stayMin;
-      byTable[r.tableId].count++;
+      if (r.stayMin != null) { byTable[r.tableId].total += r.stayMin; byTable[r.tableId].count++; }
       byTable[r.tableId].stays.push(r);
     });
     const tableAvgs = Object.entries(byTable)
-      .map(([id, v]) => ({ id, avg: Math.round(v.total / v.count), count: v.count, stays: v.stays }))
+      .map(([id, v]) => ({
+        id,
+        avg: v.count > 0 ? Math.round(v.total / v.count) : 0,
+        count: v.stays.length,
+        stays: v.stays,
+      }))
       .sort((a, b) => b.count - a.count);
 
     const hourBuckets = {};
@@ -287,11 +290,12 @@ export default function App() {
       .sort((a, b) => b[1] - a[1]);
 
     const byService = { mediodia: { count: 0, stays: [] }, cena: { count: 0, stays: [] } };
-    stays.forEach(r => {
+    seated.forEach(r => {
       const svc = r.service || service;
       if (byService[svc]) {
         byService[svc].count += (r.partySize || 0);
-        byService[svc].stays.push(r.stayMin);
+        const stay = stays.find(s => s.id === r.id);
+        if (stay?.stayMin != null) byService[svc].stays.push(stay.stayMin);
       }
     });
 
@@ -938,8 +942,10 @@ function AnalyticsPanel({ data, tables, onClose }) {
                                 </div>
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                <div style={{ fontFamily: '"Fraunces", serif', fontSize: '14px', fontWeight: 700, color: C.terra }}>{fmtMin(r.stayMin)}</div>
-                                <div style={{ fontSize: '10px', color: C.muted }}>real</div>
+                                <div style={{ fontFamily: '"Fraunces", serif', fontSize: '14px', fontWeight: 700, color: r.stayMin != null ? C.terra : C.forestSoft }}>
+                                  {r.stayMin != null ? fmtMin(r.stayMin) : 'En curso'}
+                                </div>
+                                <div style={{ fontSize: '10px', color: C.muted }}>{r.stayMin != null ? 'real' : 'sentado'}</div>
                               </div>
                             </div>
                           ))}
