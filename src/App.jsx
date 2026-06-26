@@ -240,10 +240,11 @@ export default function App() {
   const analyticsData = useMemo(() => {
     const toMin = (ts) => {
       if (!ts) return null;
-      if (typeof ts === 'number') return ts;
-      if (ts.seconds != null) return ts.seconds * 60 + (ts.nanoseconds || 0) / 6e10;
-      const d = ts?.toDate ? ts.toDate() : new Date(ts);
-      return d.getTime() / 60000;
+      if (typeof ts === 'number') return ts > 1e6 ? ts / 60000 : ts;
+      if (ts.seconds != null) return ts.seconds / 60 + (ts.nanoseconds || 0) / 6e10;
+      if (ts.toDate) return ts.toDate().getTime() / 60000;
+      const d = new Date(ts);
+      return isNaN(d.getTime()) ? null : d.getTime() / 60000;
     };
 
     const closed = reservations.filter(r => r.seatedAt);
@@ -252,8 +253,11 @@ export default function App() {
     const stays = withDuration.map(r => {
       const start = toMin(r.seatedAt);
       const end = toMin(r.leftAt);
-      return { ...r, stayMin: Math.max(0, Math.round(end - start)) };
-    });
+      if (start == null || end == null) return null;
+      const stayMin = Math.round(end - start);
+      if (stayMin < 0 || stayMin > 600) return null;
+      return { ...r, stayMin };
+    }).filter(Boolean);
 
     const totalCustomers = closed.reduce((s, r) => s + (r.partySize || 0), 0);
     const avgStay = stays.length > 0
@@ -274,6 +278,7 @@ export default function App() {
     const hourBuckets = {};
     stays.forEach(r => {
       const start = toMin(r.seatedAt);
+      if (start == null) return;
       const h = Math.floor(start / 60) % 24;
       const key = `${String(h).padStart(2, '0')}:00`;
       hourBuckets[key] = (hourBuckets[key] || 0) + (r.partySize || 0);
@@ -913,7 +918,16 @@ function AnalyticsPanel({ data, tables, onClose }) {
                       </button>
                       {isOpen && (
                         <div style={{ padding: '4px 8px 8px 56px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {t.stays.sort((a, b) => (b.seatedAt?.seconds || 0) - (a.seatedAt?.seconds || 0)).map(r => (
+                          {t.stays.sort((a, b) => {
+                            const toS = (ts) => {
+                              if (!ts) return 0;
+                              if (typeof ts === 'number') return ts > 1e6 ? ts / 1000 : ts;
+                              if (ts.seconds != null) return ts.seconds;
+                              if (ts.toDate) return ts.toDate().getTime() / 1000;
+                              return 0;
+                            };
+                            return toS(b.seatedAt) - toS(a.seatedAt);
+                          }).map(r => (
                             <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: C.white, borderRadius: '10px', border: `1px solid ${C.creamDeep}` }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontWeight: 600, fontSize: '13px', color: C.espresso, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
