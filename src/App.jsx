@@ -247,10 +247,10 @@ export default function App() {
       return isNaN(d.getTime()) ? null : d.getTime() / 60000;
     };
 
-    const seated = reservations.filter(r => r.seatedAt);
+    const active = reservations.filter(r => r.seatedAt || r.liveState);
 
-    const stays = seated.map(r => {
-      const start = toMin(r.seatedAt);
+    const stays = active.map(r => {
+      const start = toMin(r.seatedAt) || (t2m(r.time, r.service));
       if (start == null) return null;
       const end = r.leftAt ? toMin(r.leftAt) : null;
       const stayMin = end != null ? Math.round(end - start) : null;
@@ -258,7 +258,7 @@ export default function App() {
     }).filter(Boolean);
 
     const withDuration = stays.filter(r => r.stayMin != null && r.stayMin >= 0 && r.stayMin <= 600);
-    const totalCustomers = seated.reduce((s, r) => s + (r.partySize || 0), 0);
+    const totalCustomers = active.reduce((s, r) => s + (r.partySize || 0), 0);
     const avgStay = withDuration.length > 0
       ? Math.round(withDuration.reduce((s, r) => s + r.stayMin, 0) / withDuration.length)
       : 0;
@@ -280,7 +280,7 @@ export default function App() {
 
     const hourBuckets = {};
     stays.forEach(r => {
-      const start = toMin(r.seatedAt);
+      const start = toMin(r.seatedAt) || t2m(r.time, r.service);
       if (start == null) return;
       const h = Math.floor(start / 60) % 24;
       const key = `${String(h).padStart(2, '0')}:00`;
@@ -290,7 +290,7 @@ export default function App() {
       .sort((a, b) => b[1] - a[1]);
 
     const byService = { mediodia: { count: 0, stays: [] }, cena: { count: 0, stays: [] } };
-    seated.forEach(r => {
+    active.forEach(r => {
       const svc = r.service || service;
       if (byService[svc]) {
         byService[svc].count += (r.partySize || 0);
