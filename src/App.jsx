@@ -8,7 +8,7 @@ import {
   ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw, BarChart3,
 } from 'lucide-react';
 import {
-  collection, doc, onSnapshot, setDoc, deleteDoc,
+  collection, doc, onSnapshot, setDoc, deleteDoc, getDocs,
   serverTimestamp, query, where,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -130,6 +130,8 @@ export default function App() {
   const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
+  const [analyticsRes, setAnalyticsRes] = useState([]);
   const calendarRef = useRef(null);
 
   const tables = useMemo(() => buildTables(config), [config]);
@@ -169,6 +171,26 @@ export default function App() {
     );
     return unsub;
   }, [date]);
+
+  // ── Fetch analytics data para semana/mes ─────────────────────────────────────
+  useEffect(() => {
+    if (!showAnalytics || analyticsPeriod === 'day') { setAnalyticsRes([]); return; }
+    const days = analyticsPeriod === 'week' ? 7 : 30;
+    const dates = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(date + 'T12:00:00');
+      d.setDate(d.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    (async () => {
+      const all = [];
+      for (const d of dates) {
+        const snap = await getDocs(resCol(d));
+        snap.docs.forEach(doc => all.push({ id: doc.id, ...doc.data() }));
+      }
+      setAnalyticsRes(all);
+    })();
+  }, [showAnalytics, analyticsPeriod, date]);
 
   // ── Persistir configuración ────────────────────────────────────────────────
   const saveConfig = useCallback(async (c) => {
@@ -238,6 +260,8 @@ export default function App() {
   }, [tables, tableStatus]);
 
   const analyticsData = useMemo(() => {
+    const src = analyticsPeriod === 'day' ? reservations : analyticsRes;
+
     const toMin = (ts) => {
       if (!ts) return null;
       if (typeof ts === 'number') return ts > 1e6 ? ts / 60000 : ts;
@@ -247,10 +271,10 @@ export default function App() {
       return isNaN(d.getTime()) ? null : d.getTime() / 60000;
     };
 
-    const active = reservations.filter(r => r.seatedAt || r.liveState);
+    const active = src.filter(r => r.seatedAt || r.liveState);
 
     const stays = active.map(r => {
-      const start = toMin(r.seatedAt) || (t2m(r.time, r.service));
+      const start = toMin(r.seatedAt) || t2m(r.time, r.service);
       if (start == null) return null;
       const end = r.leftAt ? toMin(r.leftAt) : null;
       const stayMin = end != null ? Math.round(end - start) : null;
@@ -263,44 +287,8 @@ export default function App() {
       ? Math.round(withDuration.reduce((s, r) => s + r.stayMin, 0) / withDuration.length)
       : 0;
 
-    const byTable = {};
-    stays.forEach(r => {
-      if (!byTable[r.tableId]) byTable[r.tableId] = { total: 0, count: 0, stays: [] };
-      if (r.stayMin != null) { byTable[r.tableId].total += r.stayMin; byTable[r.tableId].count++; }
-      byTable[r.tableId].stays.push(r);
-    });
-    const tableAvgs = Object.entries(byTable)
-      .map(([id, v]) => ({
-        id,
-        avg: v.count > 0 ? Math.round(v.total / v.count) : 0,
-        count: v.stays.length,
-        stays: v.stays,
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    const hourBuckets = {};
-    stays.forEach(r => {
-      const start = toMin(r.seatedAt) || t2m(r.time, r.service);
-      if (start == null) return;
-      const h = Math.floor(start / 60) % 24;
-      const key = `${String(h).padStart(2, '0')}:00`;
-      hourBuckets[key] = (hourBuckets[key] || 0) + (r.partySize || 0);
-    });
-    const peakHours = Object.entries(hourBuckets)
-      .sort((a, b) => b[1] - a[1]);
-
-    const byService = { mediodia: { count: 0, stays: [] }, cena: { count: 0, stays: [] } };
-    active.forEach(r => {
-      const svc = r.service || service;
-      if (byService[svc]) {
-        byService[svc].count += (r.partySize || 0);
-        const stay = stays.find(s => s.id === r.id);
-        if (stay?.stayMin != null) byService[svc].stays.push(stay.stayMin);
-      }
-    });
-
-    return { totalCustomers, avgStay, tableAvgs, peakHours, byService, stays };
-  }, [reservations, service]);
+    return { totalCustomers, avgStay };
+  }, [reservations, analyticsRes, analyticsPeriod, service]);
 
   const sortedRes = useMemo(() =>
     [...svcRes].sort((a, b) => t2m(a.time, a.service) - t2m(b.time, b.service)),
@@ -600,7 +588,8 @@ export default function App() {
       {showAnalytics && (
         <AnalyticsPanel
           data={analyticsData}
-          tables={tables}
+          period={analyticsPeriod}
+          onPeriodChange={setAnalyticsPeriod}
           onClose={() => setShowAnalytics(false)}
         />
       )}
@@ -861,16 +850,10 @@ function CalendarPicker({ date, onSelect, onClose, colors: C }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Subcomponentes
 // ═══════════════════════════════════════════════════════════════════════════════
-function AnalyticsPanel({ data, tables, onClose }) {
-  const { totalCustomers, avgStay, tableAvgs, peakHours, byService } = data;
-  const [selectedTable, setSelectedTable] = useState(null);
-  const maxPeak = peakHours.length > 0 ? peakHours[0][1] : 1;
-  const medAvg = byService.mediodia.stays.length > 0
-    ? Math.round(byService.mediodia.stays.reduce((a, b) => a + b, 0) / byService.mediodia.stays.length) : 0;
-  const cenAvg = byService.cena.stays.length > 0
-    ? Math.round(byService.cena.stays.reduce((a, b) => a + b, 0) / byService.cena.stays.length) : 0;
-
+function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
+  const { totalCustomers, avgStay } = data;
   const fmtMin = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m}min`;
+  const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']];
 
   return (
     <Overlay onClose={onClose}>
@@ -879,120 +862,35 @@ function AnalyticsPanel({ data, tables, onClose }) {
         <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
       </div>
 
+      {/* Selector de período */}
+      <div style={{ display: 'flex', gap: '4px', background: C.creamDeep, borderRadius: '12px', padding: '4px', marginBottom: '24px' }}>
+        {periods.map(([key, label]) => (
+          <button key={key} onClick={() => onPeriodChange(key)} style={{
+            flex: 1, padding: '8px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+            background: period === key ? C.white : 'transparent',
+            color: period === key ? C.forest : C.muted,
+            fontWeight: period === key ? 600 : 400,
+            fontSize: '13px', fontFamily: 'inherit',
+            boxShadow: period === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+          }}>{label}</button>
+        ))}
+      </div>
+
       {totalCustomers === 0 ? (
         <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
-          Sin datos aún — marcá estados en las reservas para ver analytics
+          Sin datos para este período
         </div>
       ) : (
-        <>
-          {/* KPIs principales */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
-              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '26px', fontWeight: 700, color: C.terra, lineHeight: 1 }}>{totalCustomers}</div>
-              <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.05em' }}>Clientes</div>
-            </div>
-            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
-              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '26px', fontWeight: 700, color: C.forest, lineHeight: 1 }}>{fmtMin(avgStay)}</div>
-              <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.05em' }}>Perm. promedio</div>
-            </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.terra, lineHeight: 1 }}>{totalCustomers}</div>
+            <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Clientes</div>
           </div>
-
-          {/* Permanencia por mesa */}
-          {tableAvgs.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>Permanencia por mesa</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {tableAvgs.map(t => {
-                  const table = tables.find(tb => tb.id === t.id);
-                  const pct = Math.min(100, (t.avg / (avgStay * 1.5 || 1)) * 100);
-                  const isOpen = selectedTable === t.id;
-                  return (
-                    <div key={t.id}>
-                      <button onClick={() => setSelectedTable(isOpen ? null : t.id)} style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                        background: isOpen ? C.creamDeep : 'transparent', border: 'none',
-                        borderRadius: '8px', padding: '6px', cursor: 'pointer', textAlign: 'left',
-                      }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, minWidth: '50px' }}>{table?.name || t.id}</span>
-                        <div style={{ flex: 1, height: '8px', background: C.creamDeep, borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: C.terra, borderRadius: '4px', transition: 'width 0.3s' }} />
-                        </div>
-                        <span style={{ fontSize: '11px', color: C.muted, minWidth: '48px', textAlign: 'right' }}>{fmtMin(t.avg)}</span>
-                        <ChevronRight size={14} style={{ color: C.muted, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
-                      </button>
-                      {isOpen && (
-                        <div style={{ padding: '4px 8px 8px 56px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          {t.stays.sort((a, b) => {
-                            const toS = (ts) => {
-                              if (!ts) return 0;
-                              if (typeof ts === 'number') return ts > 1e6 ? ts / 1000 : ts;
-                              if (ts.seconds != null) return ts.seconds;
-                              if (ts.toDate) return ts.toDate().getTime() / 1000;
-                              return 0;
-                            };
-                            return toS(b.seatedAt) - toS(a.seatedAt);
-                          }).map(r => (
-                            <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: C.white, borderRadius: '10px', border: `1px solid ${C.creamDeep}` }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontWeight: 600, fontSize: '13px', color: C.espresso, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
-                                <div style={{ fontSize: '11px', color: C.muted, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
-                                  <span>·</span>
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{r.partySize}p</span>
-                                </div>
-                              </div>
-                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                <div style={{ fontFamily: '"Fraunces", serif', fontSize: '14px', fontWeight: 700, color: r.stayMin != null ? C.terra : C.forestSoft }}>
-                                  {r.stayMin != null ? fmtMin(r.stayMin) : 'En curso'}
-                                </div>
-                                <div style={{ fontSize: '10px', color: C.muted }}>{r.stayMin != null ? 'real' : 'sentado'}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Horas pico */}
-          {peakHours.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>Horas pico</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {peakHours.map(([h, count]) => {
-                  const pct = (count / maxPeak) * 100;
-                  return (
-                    <div key={h} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: C.espresso, minWidth: '40px' }}>{h}</span>
-                      <div style={{ flex: 1, height: '8px', background: C.creamDeep, borderRadius: '4px', overflow: 'hidden' }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: C.forestSoft, borderRadius: '4px', transition: 'width 0.3s' }} />
-                      </div>
-                      <span style={{ fontSize: '11px', color: C.muted, minWidth: '24px', textAlign: 'right' }}>{count}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Distribución por servicio */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
-              <div style={{ fontSize: '10px', color: C.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Mediodía</div>
-              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '18px', fontWeight: 700, color: C.terra }}>{byService.mediodia.count} <span style={{ fontSize: '11px', fontWeight: 400, color: C.muted }}>clientes</span></div>
-              <div style={{ fontSize: '11px', color: C.muted, marginTop: '2px' }}>{fmtMin(medAvg)} prom.</div>
-            </div>
-            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '14px', textAlign: 'center' }}>
-              <div style={{ fontSize: '10px', color: C.muted, letterSpacing: '0.05em', marginBottom: '4px' }}>Cena</div>
-              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '18px', fontWeight: 700, color: C.forest }}>{byService.cena.count} <span style={{ fontSize: '11px', fontWeight: 400, color: C.muted }}>clientes</span></div>
-              <div style={{ fontSize: '11px', color: C.muted, marginTop: '2px' }}>{fmtMin(cenAvg)} prom.</div>
-            </div>
+          <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.forest, lineHeight: 1 }}>{fmtMin(avgStay)}</div>
+            <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Perm. promedio</div>
           </div>
-        </>
+        </div>
       )}
     </Overlay>
   );
