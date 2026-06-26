@@ -44,7 +44,7 @@ const SERVICES = {
   cena:     { name: 'Cena',     start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
 };
 
-const DEFAULT_CONFIG = { cap2: 12, cap4: 12, cap5: 5, cap8: 2 };
+const DEFAULT_CONFIG = { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
 
 // ─── Utilidades de tiempo ────────────────────────────────────────────────────
 const t2m = (time, service) => {
@@ -110,6 +110,15 @@ const detectTime    = (svc)    => {
 const resCol    = (date) => collection(db, 'reservations', date, 'items');
 const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
 const cfgRef    = () => doc(db, 'config', 'restaurant');
+
+// ─── Utilidad N8N ────────────────────────────────────────────────────────────
+const notificarN8N = (datos) => {
+  fetch('http://localhost:5678/webhook-test/23b4cd63-a7e2-456b-a191-75a2e7416672', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  }).catch(err => console.error('[Andi] Error silencioso al notificar a n8n:', err));
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // App Principal
@@ -209,7 +218,19 @@ export default function App() {
         updatedAt: serverTimestamp(),
         createdAt: data.createdAt || serverTimestamp(),
       });
-    } catch (e) { console.error('[Andi] Error guardando reserva:', e); }
+      
+      // Notificación silenciosa en segundo plano
+      notificarN8N({
+        cliente_nombre: data.customerName,
+        telefono: data.phone || '',
+        cantidad_personas: data.partySize,
+        fecha: targetDate,
+        hora: data.time || ''
+      });
+    } catch (e) { 
+      console.error('[Andi] Error crítico en setDoc:', e);
+      throw e; 
+    }
   }, [date]);
 
   const deleteRes = useCallback(async (id) => {

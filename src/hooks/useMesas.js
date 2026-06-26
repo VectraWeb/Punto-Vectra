@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { subscribeToTableStates, subscribeToRestaurantConfig } from '../services/db_helpers';
 
-const CONFIG_POR_DEFECTO = { cap2: 12, cap4: 12, cap5: 5, cap8: 2 };
+const CONFIG_POR_DEFECTO = { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
 
 /**
  * Convierte un valor updatedAt (Timestamp Firebase o ISO String de n8n)

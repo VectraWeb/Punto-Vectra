@@ -213,7 +213,7 @@ async function findAndBookTable({ date, time, service, partySize, name }, phone)
   try {
     // 1. Cargar configuración de mesas
     const cfgSnap = await db.doc('config/restaurant').get();
-    const cfg     = cfgSnap.exists ? cfgSnap.data() : { cap2: 12, cap4: 12, cap5: 5, cap8: 2 };
+    const cfg     = cfgSnap.exists ? cfgSnap.data() : { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
     const tables  = buildTables(cfg);
 
     // 2. Cargar reservas del día
