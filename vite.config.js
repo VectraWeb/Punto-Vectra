@@ -8,15 +8,16 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: [
-        'favicon.ico',
+        'favicon.svg',
         'apple-touch-icon.png'
       ],
       manifest: {
-        name: 'Andi',
+        name: 'Andi — Gestión de Mesas',
         short_name: 'Andi',
-        description: 'Asistente inteligente médico',
-        theme_color: '#0f172a',
-        background_color: '#ffffff',
+        description: 'Sistema de reservas y gestión de mesas en tiempo real',
+        lang: 'es-AR',
+        theme_color: '#7a3a1e',
+        background_color: '#f5efe6',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
