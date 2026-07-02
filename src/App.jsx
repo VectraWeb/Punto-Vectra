@@ -250,12 +250,44 @@ export default function App() {
     } catch (e) { console.error(e); }
   }, [date]);
 
+  const finalizeReservation = useCallback(async (res) => {
+    const toMs = (ts) => {
+      if (!ts) return Date.now();
+      if (typeof ts === 'number') return ts;
+      if (ts.toMillis) return ts.toMillis();
+      if (ts.seconds) return ts.seconds * 1000;
+      return new Date(ts).getTime();
+    };
+    
+    const startTs = toMs(res.seatedAt || res.createdAt);
+    const duracionMinutos = Math.round((Date.now() - startTs) / 60000);
+    const tableName = tables.find(t => t.id === res.tableId)?.name || res.tableId;
+
+    notificarN8N({
+      evento: 'reserva_finalizada',
+      cliente_nombre: res.customerName,
+      mesa: tableName,
+      duracion_total_minutos: duracionMinutos
+    });
+
+    try {
+      await setDoc(resDocRef(date, res.id), {
+        liveState: 'finalizada',
+        endTime: serverTimestamp(),
+        duracion_total_minutos: duracionMinutos,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (e) { console.error(e); }
+
+    setShowLiveMenu(null);
+  }, [date, tables]);
+
   // ── Cálculos ───────────────────────────────────────────────────────────────
   const nowMin  = t2m(currentTime, service);
   const svcRes  = reservations.filter(r => r.service === service);
 
   const tableStatus = useCallback((id) => {
-    const tableRes = svcRes.filter(r => r.tableId === id);
+    const tableRes = svcRes.filter(r => r.tableId === id && r.liveState !== 'finalizada');
     if (tableRes.length === 0) return { status: 'free' };
 
     const cleaning = tableRes.find(r => r.liveState === 'para_limpiar');
@@ -603,6 +635,7 @@ export default function App() {
           onSelect={(state) => updateLiveState(showLiveMenu, state)}
           onEdit={() => { setEditing(showLiveMenu); setShowLiveMenu(null); setShowModal(true); }}
           onClose={() => setShowLiveMenu(null)}
+          onFinalize={() => finalizeReservation(showLiveMenu)}
         />
       )}
 
@@ -645,7 +678,7 @@ export default function App() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // LiveStateModal — Selector de estado en vivo para mozos
 // ═══════════════════════════════════════════════════════════════════════════════
-function LiveStateModal({ res, tables, onSelect, onEdit, onClose }) {
+function LiveStateModal({ res, tables, onSelect, onEdit, onClose, onFinalize }) {
   const table = tables.find(t => t.id === res.tableId);
   return (
     <Overlay onClose={onClose}>
@@ -678,6 +711,14 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose }) {
           );
         })}
       </div>
+
+      {res.liveState === 'para_limpiar' && (
+        <div style={{ marginBottom: '16px' }}>
+          <button onClick={onFinalize} style={{ width: '100%', padding: '14px', background: C.free, border: 'none', borderRadius: '12px', cursor: 'pointer', color: '#fff', fontSize: '14px', fontWeight: 600 }}>
+            Finalizar Reserva y Liberar Mesa
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '8px' }}>
         <button onClick={onEdit} style={{ flex: 1, padding: '12px', background: C.creamDeep, border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '13px', color: C.espresso }}>
