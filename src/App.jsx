@@ -223,6 +223,16 @@ export default function App() {
 
     try {
       await runTransaction(db, async (transaction) => {
+        // Si la mesa estaba "A limpiar", eliminar esa reserva y su guard PRIMERO
+        // para evitar que bloqueen el guard check de la nueva reserva
+        if (_prevResId) {
+          transaction.delete(resDocRef(date, _prevResId));
+          if (_prevGuardId) {
+            const prevGuardPath = doc(db, 'reservations', date, 'guards', _prevGuardId);
+            transaction.delete(prevGuardPath);
+          }
+        }
+
         const guardSnap = await transaction.get(guardPath);
 
         // Si el guard existe y no es nuestra propia reserva, hay conflicto
@@ -236,15 +246,6 @@ export default function App() {
         if (_oldGuardId) {
           const oldGuardPath = doc(db, 'reservations', date, 'guards', _oldGuardId);
           transaction.delete(oldGuardPath);
-        }
-
-        // Si la mesa estaba "A limpiar", eliminar esa reserva y su guard en la misma transacción
-        if (_prevResId) {
-          transaction.delete(resDocRef(date, _prevResId));
-          if (_prevGuardId) {
-            const prevGuardPath = doc(db, 'reservations', date, 'guards', _prevGuardId);
-            transaction.delete(prevGuardPath);
-          }
         }
 
         transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
@@ -689,19 +690,25 @@ export default function App() {
                       {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
                     </div>
                     {!isDone && (
-                      <button onClick={(e) => {
-                        e.stopPropagation();
-                        setShowLiveMenu(r);
-                      }} style={{
-                        flexShrink: 0, background: badgeColor,
-                        border: 'none', borderRadius: '10px', padding: '6px 8px',
-                        cursor: 'pointer', color: C.white,
-                        fontSize: '10px', fontWeight: 600, display: 'flex', flexDirection: 'column',
-                        alignItems: 'center', gap: '2px', minWidth: '52px',
-                      }}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowLiveMenu(r);
+                        }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setShowLiveMenu(r); } }}
+                        style={{
+                          flexShrink: 0, background: badgeColor,
+                          border: 'none', borderRadius: '10px', padding: '6px 8px',
+                          cursor: 'pointer', color: C.white,
+                          fontSize: '10px', fontWeight: 600, display: 'flex', flexDirection: 'column',
+                          alignItems: 'center', gap: '2px', minWidth: '52px',
+                        }}
+                      >
                         {started ? <RefreshCw size={12} /> : <span style={{ fontSize: '14px' }}>▶</span>}
                         <span>{badgeLabel}</span>
-                      </button>
+                      </div>
                     )}
                   </button>
                 );
