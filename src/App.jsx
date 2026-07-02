@@ -240,13 +240,13 @@ export default function App() {
 
   // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
   const updateLiveState = useCallback(async (res, liveState) => {
+    setShowLiveMenu({ ...res, liveState });
     try {
       const patch = { liveState, updatedAt: serverTimestamp() };
       if (liveState === 'comiendo_entrada' && !res.seatedAt) patch.seatedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
       await setDoc(resDocRef(date, res.id), patch, { merge: true });
     } catch (e) { console.error(e); }
-    setShowLiveMenu(null);
   }, [date]);
 
   // ── Cálculos ───────────────────────────────────────────────────────────────
@@ -254,27 +254,31 @@ export default function App() {
   const svcRes  = reservations.filter(r => r.service === service);
 
   const tableStatus = useCallback((id) => {
-    const active = svcRes.find(r =>
-      r.tableId === id && r.liveState && r.liveState !== 'para_limpiar'
-    );
+    const tableRes = svcRes.filter(r => r.tableId === id);
+    if (tableRes.length === 0) return { status: 'free' };
+
+    const cleaning = tableRes.find(r => r.liveState === 'para_limpiar');
+    if (cleaning) return { status: 'soon', res: cleaning };
+
+    const active = tableRes.find(r => r.liveState && r.liveState !== 'para_limpiar');
     if (active) return { status: 'busy', res: active };
 
-    const soon = svcRes.find(r =>
-      r.tableId === id && r.liveState === 'para_limpiar'
-    );
-    if (soon) return { status: 'soon', res: soon };
+    const pending = tableRes.find(r => !r.liveState);
+    if (pending) return { status: 'reserved', res: pending };
+
     return { status: 'free' };
   }, [svcRes]);
 
   const stats = useMemo(() => {
-    let free = 0, busy = 0, soon = 0, seatsBusy = 0;
+    let free = 0, busy = 0, soon = 0, reserved = 0, seatsBusy = 0;
     tables.forEach(t => {
       const s = tableStatus(t.id);
-      if (s.status === 'free')       free++;
-      else if (s.status === 'busy') { busy++; seatsBusy += (s.res.partySize || 0); }
-      else                            soon++;
+      if (s.status === 'free')        free++;
+      else if (s.status === 'reserved') reserved++;
+      else if (s.status === 'busy')  { busy++; seatsBusy += (s.res.partySize || 0); }
+      else                             soon++;
     });
-    return { free, busy, soon, seatsBusy };
+    return { free, busy, soon, reserved, seatsBusy };
   }, [tables, tableStatus]);
 
   const analyticsData = useMemo(() => {
@@ -343,9 +347,9 @@ export default function App() {
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Manrope:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; }
         input, select, textarea { font-family: inherit; }
-        input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; background: ${C.creamDeep}; border-radius: 3px; outline: none; }
-        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; background: ${C.terra}; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 6px rgba(196,96,47,0.4); }
-        input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; background: ${C.terra}; border-radius: 50%; cursor: pointer; border: none; }
+        input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; background: ${C.creamDeep}; border-radius: 3px; outline: none; touch-action: pan-x; -webkit-tap-highlight-color: transparent; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 28px; height: 28px; background: ${C.terra}; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 6px rgba(196,96,47,0.4); touch-action: none; }
+        input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; background: ${C.terra}; border-radius: 50%; cursor: pointer; border: none; touch-action: none; }
         button:active { transform: scale(0.97); }
         button { transition: transform 0.1s; }
         .live-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
@@ -440,7 +444,8 @@ export default function App() {
       <div style={{ padding: '0 16px 16px', display: 'flex', gap: '8px' }}>
         <Stat color={C.free}  label="Libres"   value={stats.free}  />
         <Stat color={C.terra} label="Ocupadas" value={stats.busy}  />
-        <Stat color={C.soon}  label="En 30min" value={stats.soon}  />
+        <Stat color={C.forestSoft} label="Próximas" value={stats.reserved}  />
+        <Stat color={C.soon}  label="A limpiar" value={stats.soon}  />
       </div>
 
       {/* ── TABS: MESAS / RESERVAS ── */}
@@ -469,17 +474,22 @@ export default function App() {
               let bg, fg, border, sub;
               if (s.status === 'free') {
                 bg = C.white; fg = C.forest; border = C.creamDeep; sub = `${t.capacity}p`;
+              } else if (s.status === 'reserved') {
+                bg = '#e8ddd0'; fg = C.forest; border = C.terra;
+                sub = `→ ${s.res.time}`;
               } else if (s.status === 'busy') {
                 bg = live?.color || C.terra; fg = C.white; border = live?.color || C.terra;
                 sub = s.res.customerName?.split(' ')[0] || '—';
               } else {
-                bg = C.soon; fg = C.white; border = C.soon; sub = `→ ${s.res.time}`;
+                bg = C.soon; fg = C.white; border = C.soon; sub = 'A limpiar';
               }
 
               return (
                 <button key={t.id} onClick={() => {
                   if (s.status === 'free') {
                     setPreTable(t); setEditing(null); setShowModal(true);
+                  } else if (s.status === 'reserved') {
+                    setEditing(s.res); setShowModal(true);
                   } else {
                     setShowLiveMenu(s.res);
                   }
@@ -515,25 +525,28 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {sortedRes.map(r => {
                 const table   = tables.find(t => t.id === r.tableId);
-                const isPast  = !r.liveState || r.liveState === 'para_limpiar';
-                const live    = r.liveState ? LIVE_STATES[r.liveState] : null;
+                const started = r.liveState && r.liveState !== 'para_limpiar';
+                const isDone  = r.liveState === 'para_limpiar';
+                const live    = started ? LIVE_STATES[r.liveState] : null;
+                const badgeLabel = started ? live.label : 'Próxima';
+                const badgeColor = started ? live.color : C.forestSoft;
                 return (
                   <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
                     display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
                     background: C.white, border: `1px solid ${C.creamDeep}`,
                     borderRadius: '14px', cursor: 'pointer', textAlign: 'left',
-                    color: C.espresso, opacity: isPast ? 0.5 : 1,
+                    color: C.espresso, opacity: isDone ? 0.5 : 1,
                   }}>
-                    {/* Indicador de hora con color de liveState */}
+                    {/* Indicador de hora con color */}
                     <div style={{
                       width: '52px', minWidth: '52px', height: '52px', borderRadius: '12px',
-                      background: live?.color || C.forest, color: C.cream,
+                      background: badgeColor, color: C.cream,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontFamily: '"Fraunces", serif', fontSize: '15px', fontWeight: 600,
                       flexDirection: 'column', gap: '1px',
                     }}>
                       <span>{r.time}</span>
-                      {live && <span style={{ fontSize: '8px', opacity: 0.85 }}>{live.label}</span>}
+                      <span style={{ fontSize: '8px', opacity: 0.85 }}>{badgeLabel}</span>
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
@@ -547,17 +560,19 @@ export default function App() {
                       </div>
                       {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
                     </div>
-                    {/* Botón rápido de estado en vivo */}
-                    {!isPast && (
-                    <button onClick={(e) => { e.stopPropagation(); setShowLiveMenu(r); }} style={{
-                      flexShrink: 0, background: live?.color || C.creamDeep,
+                    {!isDone && (
+                    <button onClick={(e) => {
+                      e.stopPropagation();
+                      setShowLiveMenu(r);
+                    }} style={{
+                      flexShrink: 0, background: badgeColor,
                       border: 'none', borderRadius: '10px', padding: '6px 8px',
-                      cursor: 'pointer', color: live ? C.white : C.muted,
+                      cursor: 'pointer', color: C.white,
                       fontSize: '10px', fontWeight: 600, display: 'flex', flexDirection: 'column',
                       alignItems: 'center', gap: '2px', minWidth: '52px',
                     }}>
-                      <RefreshCw size={12} />
-                      <span>{live ? live.label : 'Estado'}</span>
+                      {started ? <RefreshCw size={12} /> : <span style={{ fontSize: '14px' }}>▶</span>}
+                      <span>{badgeLabel}</span>
                     </button>
                   )}
                 </button>
@@ -683,7 +698,7 @@ function ResModal({ editing, preTable, tables, slots, service, onSave, onDelete,
     customerName: '', phone: '', partySize: 2,
     tableId: preTable?.id || '',
     time: slots[Math.floor(slots.length / 3)] || slots[0],
-    notes: '', liveState: null,
+    notes: '',
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
