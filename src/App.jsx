@@ -603,11 +603,22 @@ export default function App() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {sortedRes.map(r => {
                 const table   = tables.find(t => t.id === r.tableId);
-                const started = r.liveState && r.liveState !== 'para_limpiar';
-                const isDone  = r.liveState === 'para_limpiar';
+                const isDone  = r.liveState === 'para_limpiar' || r.liveState === 'finalizada';
+                const started = r.liveState && !isDone;
                 const live    = started ? LIVE_STATES[r.liveState] : null;
-                const badgeLabel = started ? live.label : 'Próxima';
-                const badgeColor = started ? live.color : C.forestSoft;
+                
+                let badgeLabel = 'Próxima';
+                let badgeColor = C.forestSoft;
+                if (r.liveState === 'finalizada') {
+                  badgeLabel = 'Finalizada';
+                  badgeColor = C.muted;
+                } else if (r.liveState === 'para_limpiar') {
+                  badgeLabel = 'A limpiar';
+                  badgeColor = C.soon;
+                } else if (live) {
+                  badgeLabel = live.label;
+                  badgeColor = live.color;
+                }
                 return (
                   <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
                     display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
