@@ -142,6 +142,10 @@ export default function App() {
   const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
   const [analyticsRes, setAnalyticsRes] = useState([]);
   const [mainTab, setMainTab] = useState('mesas');
+  const [optimisticStates, setOptimisticStates] = useState({});
+  const [quickActionMenu, setQuickActionMenu] = useState(null);
+  const pressTimer = useRef(null);
+  const isLongPress = useRef(false);
   const calendarRef = useRef(null);
 
   const tables = useMemo(() => buildTables(config), [config]);
@@ -241,16 +245,25 @@ export default function App() {
 
   // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
   const updateLiveState = useCallback(async (res, liveState) => {
-    setShowLiveMenu({ ...res, liveState });
+    setShowLiveMenu(null);
+    setOptimisticStates(prev => ({ ...prev, [res.id]: liveState }));
     try {
       const patch = { liveState, updatedAt: serverTimestamp() };
       if (liveState === 'comiendo_entrada' && !res.seatedAt) patch.seatedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
       await setDoc(resDocRef(date, res.id), patch, { merge: true });
-    } catch (e) { console.error(e); }
+      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
+    } catch (e) { 
+      console.warn('[Andi] Fallo en la actualización optimista, revirtiendo estado...', e);
+      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
+    }
   }, [date]);
 
   const finalizeReservation = useCallback(async (res) => {
+    setQuickActionMenu(null);
+    setShowLiveMenu(null);
+    setOptimisticStates(prev => ({ ...prev, [res.id]: 'finalizada' }));
+
     const toMs = (ts) => {
       if (!ts) return Date.now();
       if (typeof ts === 'number') return ts;
@@ -277,14 +290,18 @@ export default function App() {
         duracion_total_minutos: duracionMinutos,
         updatedAt: serverTimestamp()
       }, { merge: true });
-    } catch (e) { console.error(e); }
-
-    setShowLiveMenu(null);
+      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
+    } catch (e) { 
+      console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
+      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
+    }
   }, [date, tables]);
 
   // ── Cálculos ───────────────────────────────────────────────────────────────
   const nowMin  = t2m(currentTime, service);
-  const svcRes  = reservations.filter(r => r.service === service);
+  const svcRes  = reservations
+    .map(r => optimisticStates[r.id] !== undefined ? { ...r, liveState: optimisticStates[r.id] } : r)
+    .filter(r => r.service === service);
 
   const tableStatus = useCallback((id) => {
     const tableRes = svcRes.filter(r => r.tableId === id && r.liveState !== 'finalizada');
@@ -518,15 +535,45 @@ export default function App() {
               }
 
               return (
-                <button key={t.id} onClick={() => {
-                  if (s.status === 'free') {
-                    setPreTable(t); setEditing(null); setShowModal(true);
-                  } else if (s.status === 'reserved') {
-                    setEditing(s.res); setShowModal(true);
-                  } else {
-                    setShowLiveMenu(s.res);
-                  }
-                }} style={{
+                <button 
+                  key={t.id} 
+                  onContextMenu={(e) => {
+                    if (s.status !== 'free') e.preventDefault();
+                  }}
+                  onClick={(e) => {
+                    if (isLongPress.current) { isLongPress.current = false; return; }
+                    if (s.status === 'free') {
+                      setPreTable(t); setEditing(null); setShowModal(true);
+                    } else if (s.status === 'reserved') {
+                      setEditing(s.res); setShowModal(true);
+                    } else {
+                      setShowLiveMenu(s.res);
+                    }
+                  }}
+                  onTouchStart={(e) => {
+                    if (s.status === 'free') return;
+                    isLongPress.current = false;
+                    const res = s.res;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    pressTimer.current = setTimeout(() => {
+                      isLongPress.current = true;
+                      setQuickActionMenu({ res, rect });
+                    }, 400);
+                  }}
+                  onTouchEnd={() => { if (pressTimer.current) clearTimeout(pressTimer.current); }}
+                  onMouseDown={(e) => {
+                    if (s.status === 'free') return;
+                    isLongPress.current = false;
+                    const res = s.res;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    pressTimer.current = setTimeout(() => {
+                      isLongPress.current = true;
+                      setQuickActionMenu({ res, rect });
+                    }, 400);
+                  }}
+                  onMouseUp={() => { if (pressTimer.current) clearTimeout(pressTimer.current); }}
+                  onMouseLeave={() => { if (pressTimer.current) clearTimeout(pressTimer.current); }}
+                  style={{
                   aspectRatio: '1', background: bg, color: fg,
                   border: `1.5px solid ${border}`, borderRadius: '14px',
                   cursor: 'pointer', display: 'flex', flexDirection: 'column',
@@ -671,6 +718,63 @@ export default function App() {
           onClose={() => setShowAnalytics(false)}
         />
       )}
+
+      {/* ── MENU CONTEXTUAL RÁPIDO (LONG PRESS) ── */}
+      {quickActionMenu && (() => {
+        const getNextStates = (current) => {
+          if (!current) return ['esperando_cliente', 'comiendo_entrada'];
+          if (current === 'esperando_cliente') return ['comiendo_entrada'];
+          if (current === 'comiendo_entrada') return ['plato_principal'];
+          if (current === 'plato_principal') return ['en_postre_cafe'];
+          if (current === 'en_postre_cafe') return ['esperando_cuenta', 'para_limpiar'];
+          if (current === 'esperando_cuenta') return ['para_limpiar'];
+          if (current === 'para_limpiar') return ['finalizar'];
+          return [];
+        };
+        const nextStates = getNextStates(quickActionMenu.res.liveState);
+        return (
+          <>
+            <div 
+              style={{ position: 'fixed', inset: 0, zIndex: 40 }} 
+              onClick={(e) => { e.stopPropagation(); setQuickActionMenu(null); }}
+              onTouchStart={(e) => { e.stopPropagation(); setQuickActionMenu(null); }}
+            />
+            <div style={{
+              position: 'fixed', zIndex: 50,
+              top: `${quickActionMenu.rect.top}px`, left: `${quickActionMenu.rect.left + quickActionMenu.rect.width / 2}px`,
+              transform: 'translate(-50%, -100%)',
+              marginTop: '-10px',
+              background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(10px)',
+              border: `1px solid ${C.creamDeep}`, borderRadius: '12px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.15)', padding: '6px',
+              display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '130px'
+            }}>
+              {nextStates.map(stateKey => {
+                if (stateKey === 'finalizar') {
+                  return (
+                    <button key="finalizar" onClick={() => finalizeReservation(quickActionMenu.res)} style={{
+                      background: C.free, color: '#fff', border: 'none', padding: '10px 12px',
+                      fontSize: '13px', fontWeight: 600, cursor: 'pointer', borderRadius: '8px', textAlign: 'center'
+                    }}>
+                      Finalizar
+                    </button>
+                  );
+                }
+                const stateObj = LIVE_STATES[stateKey];
+                return (
+                  <button key={stateKey} onClick={() => updateLiveState(quickActionMenu.res, stateKey)} style={{
+                    background: 'transparent', border: 'none', padding: '10px 12px',
+                    fontSize: '13px', fontWeight: 600, color: stateObj.color,
+                    cursor: 'pointer', textAlign: 'center', borderRadius: '8px',
+                  }}>
+                    {stateObj.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
