@@ -219,18 +219,19 @@ export default function App() {
         updatedAt: serverTimestamp(),
         createdAt: data.createdAt || serverTimestamp(),
       });
-      
+
       // Notificación silenciosa en segundo plano
+      // Fix: usar `date` en lugar de `targetDate` (variable inexistente)
       notificarN8N({
         cliente_nombre: data.customerName,
         telefono: data.phone || '',
         cantidad_personas: data.partySize,
-        fecha: targetDate,
+        fecha: date,
         hora: data.time || ''
       });
-    } catch (e) { 
+    } catch (e) {
       console.error('[Andi] Error crítico en setDoc:', e);
-      throw e; 
+      throw e;
     }
   }, [date]);
 
