@@ -219,18 +219,19 @@ export default function App() {
         updatedAt: serverTimestamp(),
         createdAt: data.createdAt || serverTimestamp(),
       });
-      
+
       // Notificación silenciosa en segundo plano
+      // Fix: usar `date` en lugar de `targetDate` (variable inexistente)
       notificarN8N({
         cliente_nombre: data.customerName,
         telefono: data.phone || '',
         cantidad_personas: data.partySize,
-        fecha: targetDate,
+        fecha: date,
         hora: data.time || ''
       });
-    } catch (e) { 
+    } catch (e) {
       console.error('[Andi] Error crítico en setDoc:', e);
-      throw e; 
+      throw e;
     }
   }, [date]);
 
@@ -254,17 +255,30 @@ export default function App() {
   const svcRes  = reservations.filter(r => r.service === service);
 
   const tableStatus = useCallback((id) => {
+    // Mesa con estado en vivo activo (mozo ya la inició)
     const active = svcRes.find(r =>
       r.tableId === id && r.liveState && r.liveState !== 'para_limpiar'
     );
     if (active) return { status: 'busy', res: active };
 
-    const soon = svcRes.find(r =>
+    // Mesa con estado 'para_limpiar' → próxima a liberar
+    const cleaning = svcRes.find(r =>
       r.tableId === id && r.liveState === 'para_limpiar'
     );
-    if (soon) return { status: 'soon', res: soon };
+    if (cleaning) return { status: 'soon', res: cleaning };
+
+    // Fix: reserva confirmada sin liveState aún (recién creada).
+    // Se considera 'busy' si su horario cae dentro de una ventana de ±90 min
+    // respecto al tiempo actual del slider, para que la grilla la pinte ocupada.
+    const booked = svcRes.find(r => {
+      if (r.tableId !== id || r.liveState != null) return false;
+      const diff = Math.abs(t2m(r.time, r.service) - nowMin);
+      return diff <= 90;
+    });
+    if (booked) return { status: 'busy', res: booked };
+
     return { status: 'free' };
-  }, [svcRes]);
+  }, [svcRes, nowMin]);
 
   const stats = useMemo(() => {
     let free = 0, busy = 0, soon = 0, seatsBusy = 0;
