@@ -30,8 +30,8 @@ export const db = initializeFirestore(app, {
   })
 });
 
-// 🚀 SI ESTÁS EN ENTORNO LOCAL, CONECTAR AL EMULADOR AUTOMÁTICAMENTE
-if (window.location.hostname === "localhost") {
+// 🚀 CONECTAR AL EMULADOR SOLO SI SE ACTIVA EN EL ARCHIVO .env (VITE_USE_EMULATOR=true)
+if (window.location.hostname === "localhost" && import.meta.env.VITE_USE_EMULATOR === "true") {
   connectFirestoreEmulator(db, 'localhost', 8080);
   console.info('[Andi] Conectado con éxito al emulador local de Firestore (Puerto 8080) ✓');
 }

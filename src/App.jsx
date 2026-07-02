@@ -9,39 +9,39 @@ import {
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, deleteDoc, getDocs,
-  serverTimestamp, query, where,
+  serverTimestamp, query, where, runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
 // ─── Paleta ──────────────────────────────────────────────────────────────────
 const C = {
-  cream:      '#f5efe6',
-  creamDeep:  '#ebe3d5',
-  forest:     '#7a3a1e',
+  cream: '#f5efe6',
+  creamDeep: '#ebe3d5',
+  forest: '#7a3a1e',
   forestSoft: '#9B4B2A',
-  terra:      '#c4602f',
-  terraSoft:  '#e09368',
-  espresso:   '#2a1f1a',
-  muted:      '#8b7d6b',
-  free:       '#6f8d4d',
-  soon:       '#d4a04a',
-  white:      '#fffdf8',
+  terra: '#c4602f',
+  terraSoft: '#e09368',
+  espresso: '#2a1f1a',
+  muted: '#8b7d6b',
+  free: '#6f8d4d',
+  soon: '#d4a04a',
+  white: '#fffdf8',
 };
 
 // ─── Máquina de estados en vivo ──────────────────────────────────────────────
 export const LIVE_STATES = {
-  esperando_cliente:  { label: 'Esperando',       color: '#4a90d9', dot: '#2171c7' },
-  comiendo_entrada:   { label: 'Entrada',          color: '#c4602f', dot: '#a04020' },
-  plato_principal:    { label: 'Principal',        color: '#7b1f2e', dot: '#5c1520' },
-  en_postre_cafe:     { label: 'Postre / Café',    color: '#c49a35', dot: '#a07820' },
-  esperando_cuenta:   { label: 'Cuenta',           color: '#9b59b6', dot: '#7d3f9c' },
-  para_limpiar:       { label: 'A limpiar',        color: '#e67e22', dot: '#c05e0a' },
+  esperando_cliente: { label: 'Esperando', color: '#4a90d9', dot: '#2171c7' },
+  comiendo_entrada: { label: 'Entrada', color: '#c4602f', dot: '#a04020' },
+  plato_principal: { label: 'Principal', color: '#7b1f2e', dot: '#5c1520' },
+  en_postre_cafe: { label: 'Postre / Café', color: '#c49a35', dot: '#a07820' },
+  esperando_cuenta: { label: 'Cuenta', color: '#9b59b6', dot: '#7d3f9c' },
+  para_limpiar: { label: 'A limpiar', color: '#e67e22', dot: '#c05e0a' },
 };
 
 // ─── Servicios ───────────────────────────────────────────────────────────────
 const SERVICES = {
-  mediodia: { name: 'Mediodía', start: '11:30', end: '15:00', defaultDuration: 90,  icon: Sun  },
-  cena:     { name: 'Cena',     start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
+  mediodia: { name: 'Mediodía', start: '11:30', end: '15:00', defaultDuration: 90, icon: Sun },
+  cena: { name: 'Cena', start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
 };
 
 const DEFAULT_CONFIG = { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
@@ -62,7 +62,7 @@ const m2t = (mins) => {
 
 const genSlots = (service) => {
   const start = t2m(SERVICES[service].start, service);
-  const end   = t2m(SERVICES[service].end,   service);
+  const end = t2m(SERVICES[service].end, service);
   const slots = [];
   for (let m = start; m <= end; m += 15) slots.push(m2t(m));
   return slots;
@@ -86,16 +86,16 @@ const buildTables = (cfg) => {
   return tables;
 };
 
-const todayISO     = ()  => new Date().toISOString().slice(0, 10);
-const formatDate   = (iso) => {
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const formatDate = (iso) => {
   const d = new Date(iso + 'T12:00:00');
   return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
 };
-const detectService = ()       => { const h = new Date().getHours(); return (h >= 11 && h < 17) ? 'mediodia' : 'cena'; };
-const detectTime    = (svc)    => {
+const detectService = () => { const h = new Date().getHours(); return (h >= 11 && h < 17) ? 'mediodia' : 'cena'; };
+const detectTime = (svc) => {
   const now = new Date();
-  const h   = now.getHours();
-  const m   = now.getMinutes();
+  const h = now.getHours();
+  const m = now.getMinutes();
   const slots = genSlots(svc);
   const target = svc === 'cena' && h < 12 ? (h + 24) * 60 + m : h * 60 + m;
   let best = slots[0], bestDiff = Infinity;
@@ -107,9 +107,11 @@ const detectTime    = (svc)    => {
 };
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
-const resCol    = (date) => collection(db, 'reservations', date, 'items');
+const resCol = (date) => collection(db, 'reservations', date, 'items');
 const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
-const cfgRef    = () => doc(db, 'config', 'restaurant');
+const guardRef = (date, tableId, service, time) =>
+  doc(db, 'reservations', date, 'guards', `${tableId}_${service}_${time.replace(':', '.')}`);
+const cfgRef = () => doc(db, 'config', 'restaurant');
 
 // ─── Utilidad N8N ────────────────────────────────────────────────────────────
 const notificarN8N = (datos) => {
@@ -124,17 +126,17 @@ const notificarN8N = (datos) => {
 // App Principal
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [date,        setDate]        = useState(todayISO);
-  const [service,     setService]     = useState(detectService);
+  const [date, setDate] = useState(todayISO);
+  const [service, setService] = useState(detectService);
   const [currentTime, setCurrentTime] = useState(() => detectTime(detectService()));
-  const [config,      setConfig]      = useState(DEFAULT_CONFIG);
-  const [reservations,setReservations]= useState([]);
-  const [online,      setOnline]      = useState(navigator.onLine);
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [reservations, setReservations] = useState([]);
+  const [online, setOnline] = useState(navigator.onLine);
 
   // Modales
-  const [showModal,    setShowModal]    = useState(false);
-  const [editing,      setEditing]      = useState(null);
-  const [preTable,     setPreTable]     = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [preTable, setPreTable] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
   const [showCalendar, setShowCalendar] = useState(false);
@@ -149,13 +151,13 @@ export default function App() {
   const calendarRef = useRef(null);
 
   const tables = useMemo(() => buildTables(config), [config]);
-  const slots  = useMemo(() => genSlots(service), [service]);
+  const slots = useMemo(() => genSlots(service), [service]);
 
   // ── Online/Offline indicator ───────────────────────────────────────────────
   useEffect(() => {
-    const on  = () => setOnline(true);
+    const on = () => setOnline(true);
     const off = () => setOnline(false);
-    window.addEventListener('online',  on);
+    window.addEventListener('online', on);
     window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
@@ -215,23 +217,52 @@ export default function App() {
   // ── CRUD de reservas ───────────────────────────────────────────────────────
   const saveRes = useCallback(async (data) => {
     const id = data.id || `r${Date.now()}`;
+    const guardPath = guardRef(date, data.tableId, data.service, data.time);
+    // Extraer campos internos para no almacenarlos en Firestore
+    const { _oldGuardId, _prevResId, _prevGuardId, ...cleanData } = data;
+
     try {
-      await setDoc(resDocRef(date, id), {
-        ...data,
-        id,
-        liveState: data.liveState || null,
-        updatedAt: serverTimestamp(),
-        createdAt: data.createdAt || serverTimestamp(),
+      await runTransaction(db, async (transaction) => {
+        const guardSnap = await transaction.get(guardPath);
+
+        // Si el guard existe y no es nuestra propia reserva, hay conflicto
+        if (guardSnap.exists() && guardSnap.data().reservationId !== id) {
+          throw new Error(
+            'Lo sentimos, esa mesa acaba de ser reservada por otro usuario. Por favor, seleccioná otra mesa o elegí otro horario.'
+          );
+        }
+
+        // Si es edición y cambió mesa/horario, limpiar guard viejo
+        if (_oldGuardId) {
+          const oldGuardPath = doc(db, 'reservations', date, 'guards', _oldGuardId);
+          transaction.delete(oldGuardPath);
+        }
+
+        // Si la mesa estaba "A limpiar", eliminar esa reserva y su guard en la misma transacción
+        if (_prevResId) {
+          transaction.delete(resDocRef(date, _prevResId));
+          if (_prevGuardId) {
+            const prevGuardPath = doc(db, 'reservations', date, 'guards', _prevGuardId);
+            transaction.delete(prevGuardPath);
+          }
+        }
+
+        transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
+        transaction.set(resDocRef(date, id), {
+          ...cleanData,
+          id,
+          liveState: cleanData.liveState || null,
+          updatedAt: serverTimestamp(),
+          createdAt: cleanData.createdAt || serverTimestamp(),
+        });
       });
 
-      // Notificación silenciosa en segundo plano
-      // Fix: usar `date` en lugar de `targetDate` (variable inexistente)
       notificarN8N({
-        cliente_nombre: data.customerName,
-        telefono: data.phone || '',
-        cantidad_personas: data.partySize,
+        cliente_nombre: cleanData.customerName,
+        telefono: cleanData.phone || '',
+        cantidad_personas: cleanData.partySize,
         fecha: date,
-        hora: data.time || ''
+        hora: cleanData.time || ''
       });
     } catch (e) {
       console.error('[Andi] Error crítico en setDoc:', e);
@@ -239,8 +270,14 @@ export default function App() {
     }
   }, [date]);
 
-  const deleteRes = useCallback(async (id) => {
-    try { await deleteDoc(resDocRef(date, id)); } catch (e) { console.error(e); }
+  const deleteRes = useCallback(async (resData) => {
+    const guardPath = guardRef(date, resData.tableId, resData.service, resData.time);
+    try {
+      await runTransaction(db, async (transaction) => {
+        transaction.delete(guardPath);
+        transaction.delete(resDocRef(date, resData.id));
+      });
+    } catch (e) { console.error(e); throw e; }
   }, [date]);
 
   // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
@@ -252,10 +289,10 @@ export default function App() {
       if (liveState === 'comiendo_entrada' && !res.seatedAt) patch.seatedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
       await setDoc(resDocRef(date, res.id), patch, { merge: true });
-      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
-    } catch (e) { 
+      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
+    } catch (e) {
       console.warn('[Andi] Fallo en la actualización optimista, revirtiendo estado...', e);
-      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
+      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     }
   }, [date]);
 
@@ -271,7 +308,7 @@ export default function App() {
       if (ts.seconds) return ts.seconds * 1000;
       return new Date(ts).getTime();
     };
-    
+
     const startTs = toMs(res.seatedAt || res.createdAt);
     const duracionMinutos = Math.round((Date.now() - startTs) / 60000);
     const tableName = tables.find(t => t.id === res.tableId)?.name || res.tableId;
@@ -290,16 +327,16 @@ export default function App() {
         duracion_total_minutos: duracionMinutos,
         updatedAt: serverTimestamp()
       }, { merge: true });
-      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
-    } catch (e) { 
+      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
+    } catch (e) {
       console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
-      setOptimisticStates(prev => { const n = {...prev}; delete n[res.id]; return n; });
+      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     }
   }, [date, tables]);
 
   // ── Cálculos ───────────────────────────────────────────────────────────────
-  const nowMin  = t2m(currentTime, service);
-  const svcRes  = reservations
+  const nowMin = t2m(currentTime, service);
+  const svcRes = reservations
     .map(r => optimisticStates[r.id] !== undefined ? { ...r, liveState: optimisticStates[r.id] } : r)
     .filter(r => r.service === service);
 
@@ -323,10 +360,10 @@ export default function App() {
     let free = 0, busy = 0, soon = 0, reserved = 0, seatsBusy = 0;
     tables.forEach(t => {
       const s = tableStatus(t.id);
-      if (s.status === 'free')        free++;
+      if (s.status === 'free') free++;
       else if (s.status === 'reserved') reserved++;
-      else if (s.status === 'busy')  { busy++; seatsBusy += (s.res.partySize || 0); }
-      else                             soon++;
+      else if (s.status === 'busy') { busy++; seatsBusy += (s.res.partySize || 0); }
+      else soon++;
     });
     return { free, busy, soon, reserved, seatsBusy };
   }, [tables, tableStatus]);
@@ -364,17 +401,47 @@ export default function App() {
 
   const sortedRes = useMemo(() =>
     [...svcRes].sort((a, b) => t2m(a.time, a.service) - t2m(b.time, b.service)),
-  [svcRes]);
+    [svcRes]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleSave = useCallback((data) => {
-    saveRes({ ...data, duration: data.duration || SERVICES[service].defaultDuration, service, date });
-    setShowModal(false); setEditing(null); setPreTable(null);
-  }, [saveRes, service, date]);
+  const handleSave = useCallback(async (data) => {
+    // Validar estado de la mesa antes de guardar
+    const s = tableStatus(data.tableId);
+    const isCurrentRes = editing && editing.tableId === data.tableId;
+    const isAllowed = s.status === 'free' || s.status === 'soon' || isCurrentRes;
 
-  const handleDelete = useCallback((id) => {
-    deleteRes(id);
-    setShowModal(false); setEditing(null);
+    if (!isAllowed) {
+      const stateLabel = s.status === 'busy' ? 'Ocupada' : 'Reservada';
+      alert(`La mesa no se puede reservar porque su estado actual es "${stateLabel}". Solo se pueden reservar mesas que estén libres o en estado "A limpiar".`);
+      return;
+    }
+
+    const saveData = { ...data, duration: data.duration || SERVICES[service].defaultDuration, service, date };
+    if (editing) {
+      saveData._oldGuardId = `${editing.tableId}_${editing.service}_${editing.time.replace(':', '.')}`;
+    }
+
+    // Si la mesa está "A limpiar", pasar la reserva anterior para eliminarla en la misma transacción
+    if (!editing && s.status === 'soon' && s.res) {
+      saveData._prevResId = s.res.id;
+      saveData._prevGuardId = `${s.res.tableId}_${s.res.service}_${s.res.time.replace(':', '.')}`;
+    }
+
+    try {
+      await saveRes(saveData);
+      setShowModal(false); setEditing(null); setPreTable(null);
+    } catch (e) {
+      alert(e.message || 'Error al guardar la reserva. Intentá de nuevo.');
+    }
+  }, [saveRes, service, date, editing, tableStatus]);
+
+  const handleDelete = useCallback(async (resData) => {
+    try {
+      await deleteRes(resData);
+      setShowModal(false); setEditing(null);
+    } catch (e) {
+      alert('Error al eliminar la reserva. Intentá de nuevo.');
+    }
   }, [deleteRes]);
 
   const goNow = () => {
@@ -432,7 +499,7 @@ export default function App() {
         {/* Navegación de fecha */}
         <div ref={calendarRef} style={{ position: 'relative', width: '100%' }}>
           <button onClick={() => setShowCalendar(!showCalendar)} style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', color: C.cream, fontSize: '15px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
             <span>{formatDate(date)}</span>
           </button>
 
@@ -450,7 +517,7 @@ export default function App() {
       {/* ── SELECTOR DE SERVICIO ── */}
       <div style={{ padding: '20px 16px 8px', display: 'flex', gap: '8px' }}>
         {Object.entries(SERVICES).map(([k, s]) => {
-          const Icon   = s.icon;
+          const Icon = s.icon;
           const active = service === k;
           return (
             <button key={k} onClick={() => setService(k)} style={{
@@ -492,10 +559,10 @@ export default function App() {
 
       {/* ── STATS ── */}
       <div style={{ padding: '0 16px 16px', display: 'flex', gap: '8px' }}>
-        <Stat color={C.free}  label="Libres"   value={stats.free}  />
-        <Stat color={C.terra} label="Ocupadas" value={stats.busy}  />
-        <Stat color={C.forestSoft} label="Próximas" value={stats.reserved}  />
-        <Stat color={C.soon}  label="A limpiar" value={stats.soon}  />
+        <Stat color={C.free} label="Libres" value={stats.free} />
+        <Stat color={C.terra} label="Ocupadas" value={stats.busy} />
+        <Stat color={C.forestSoft} label="Próximas" value={stats.reserved} />
+        <Stat color={C.soon} label="A limpiar" value={stats.soon} />
       </div>
 
       {/* ── TABS: MESAS / RESERVAS ── */}
@@ -535,43 +602,15 @@ export default function App() {
               }
 
               return (
-                <button 
-                  key={t.id} 
-                  onContextMenu={(e) => {
-                    if (s.status !== 'free') e.preventDefault();
-                  }}
-                  onClick={(e) => {
-                    if (isLongPress.current) { isLongPress.current = false; return; }
-                    if (s.status === 'free') {
-                      setPreTable(t); setEditing(null); setShowModal(true);
-                    } else {
-                      setShowLiveMenu(s.res);
-                    }
-                  }}
-                  onTouchStart={(e) => {
-                    if (s.status === 'free') return;
-                    isLongPress.current = false;
-                    const res = s.res;
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    pressTimer.current = setTimeout(() => {
-                      isLongPress.current = true;
-                      setQuickActionMenu({ res, rect });
-                    }, 400);
-                  }}
-                  onTouchEnd={() => { if (pressTimer.current) clearTimeout(pressTimer.current); }}
-                  onMouseDown={(e) => {
-                    if (s.status === 'free') return;
-                    isLongPress.current = false;
-                    const res = s.res;
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    pressTimer.current = setTimeout(() => {
-                      isLongPress.current = true;
-                      setQuickActionMenu({ res, rect });
-                    }, 400);
-                  }}
-                  onMouseUp={() => { if (pressTimer.current) clearTimeout(pressTimer.current); }}
-                  onMouseLeave={() => { if (pressTimer.current) clearTimeout(pressTimer.current); }}
-                  style={{
+                <button key={t.id} onClick={() => {
+                  if (s.status === 'free') {
+                    setPreTable(t); setEditing(null); setShowModal(true);
+                  } else if (s.status === 'reserved') {
+                    setEditing(s.res); setShowModal(true);
+                  } else {
+                    setShowLiveMenu(s.res);
+                  }
+                }} style={{
                   aspectRatio: '1', background: bg, color: fg,
                   border: `1.5px solid ${border}`, borderRadius: '14px',
                   cursor: 'pointer', display: 'flex', flexDirection: 'column',
@@ -602,11 +641,11 @@ export default function App() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {sortedRes.map(r => {
-                const table   = tables.find(t => t.id === r.tableId);
-                const isDone  = r.liveState === 'para_limpiar' || r.liveState === 'finalizada';
+                const table = tables.find(t => t.id === r.tableId);
+                const isDone = r.liveState === 'para_limpiar' || r.liveState === 'finalizada';
                 const started = r.liveState && !isDone;
-                const live    = started ? LIVE_STATES[r.liveState] : null;
-                
+                const live = started ? LIVE_STATES[r.liveState] : null;
+
                 let badgeLabel = 'Próxima';
                 let badgeColor = C.forestSoft;
                 if (r.liveState === 'finalizada') {
@@ -650,26 +689,26 @@ export default function App() {
                       {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
                     </div>
                     {!isDone && (
-                    <button onClick={(e) => {
-                      e.stopPropagation();
-                      setShowLiveMenu(r);
-                    }} style={{
-                      flexShrink: 0, background: badgeColor,
-                      border: 'none', borderRadius: '10px', padding: '6px 8px',
-                      cursor: 'pointer', color: C.white,
-                      fontSize: '10px', fontWeight: 600, display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', gap: '2px', minWidth: '52px',
-                    }}>
-                      {started ? <RefreshCw size={12} /> : <span style={{ fontSize: '14px' }}>▶</span>}
-                      <span>{badgeLabel}</span>
-                    </button>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                      <button onClick={(e) => {
+                        e.stopPropagation();
+                        setShowLiveMenu(r);
+                      }} style={{
+                        flexShrink: 0, background: badgeColor,
+                        border: 'none', borderRadius: '10px', padding: '6px 8px',
+                        cursor: 'pointer', color: C.white,
+                        fontSize: '10px', fontWeight: 600, display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', gap: '2px', minWidth: '52px',
+                      }}>
+                        {started ? <RefreshCw size={12} /> : <span style={{ fontSize: '14px' }}>▶</span>}
+                        <span>{badgeLabel}</span>
+                      </button>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── FAB: Nueva reserva ── */}
@@ -703,6 +742,7 @@ export default function App() {
           tables={tables}
           slots={slots}
           service={service}
+          tableStatus={tableStatus}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => { setShowModal(false); setEditing(null); setPreTable(null); }}
@@ -743,8 +783,8 @@ export default function App() {
         const nextStates = getNextStates(quickActionMenu.res.liveState);
         return (
           <>
-            <div 
-              style={{ position: 'fixed', inset: 0, zIndex: 40 }} 
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 40 }}
               onClick={(e) => { e.stopPropagation(); setQuickActionMenu(null); }}
               onTouchStart={(e) => { e.stopPropagation(); setQuickActionMenu(null); }}
             />
@@ -848,7 +888,7 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose, onFinalize }) 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResModal — Modal de creación / edición de reserva
 // ═══════════════════════════════════════════════════════════════════════════════
-function ResModal({ editing, preTable, tables, slots, service, onSave, onDelete, onClose }) {
+function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSave, onDelete, onClose }) {
   const [form, setForm] = useState(() => editing ? { ...editing } : {
     customerName: '', phone: '', partySize: 2,
     tableId: preTable?.id || '',
@@ -885,13 +925,28 @@ function ResModal({ editing, preTable, tables, slots, service, onSave, onDelete,
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <Field label="Comensales">
             <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
-              {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => <option key={n} value={n}>{n} personas</option>)}
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => <option key={n} value={n}>{n} personas</option>)}
             </select>
           </Field>
           <Field label="Mesa">
             <select value={form.tableId} onChange={e => set('tableId', e.target.value)} style={inp}>
               <option value="">— elegir —</option>
-              {tables.map(t => <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>)}
+              {tables.map(t => {
+                const s = tableStatus(t.id);
+                const isCurrentRes = editing && editing.tableId === t.id;
+                const isAllowed = s.status === 'free' || s.status === 'soon' || isCurrentRes;
+
+                let labelSuffix = '';
+                if (s.status === 'soon') labelSuffix = ' (A limpiar)';
+                else if (s.status === 'busy') labelSuffix = ' (Ocupada)';
+                else if (s.status === 'reserved' && !isCurrentRes) labelSuffix = ' (Reservada)';
+
+                return (
+                  <option key={t.id} value={t.id} disabled={!isAllowed}>
+                    {t.name} ({t.capacity}p){labelSuffix}
+                  </option>
+                );
+              })}
             </select>
           </Field>
         </div>
@@ -913,7 +968,7 @@ function ResModal({ editing, preTable, tables, slots, service, onSave, onDelete,
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
         {editing && (
-          <button onClick={() => onDelete(editing.id)} style={{
+          <button onClick={() => onDelete(editing)} style={{
             padding: '14px', background: 'transparent', border: `1.5px solid #e06060`,
             borderRadius: '12px', cursor: 'pointer', color: '#e06060',
           }}>
@@ -945,7 +1000,7 @@ function SettingsModal({ config, onSave, onClose }) {
         <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
       </div>
       <p style={{ fontSize: '12px', color: C.muted, marginBottom: '16px' }}>Cantidad de mesas por capacidad. Los cambios se sincronizan a todos los dispositivos.</p>
-      {[['cap2','Mesas de 2'],['cap4','Mesas de 4'],['cap5','Mesas de 5'],['cap8','Mesas de 8']].map(([k, label]) => (
+      {[['cap2', 'Mesas de 2'], ['cap4', 'Mesas de 4'], ['cap5', 'Mesas de 5'], ['cap8', 'Mesas de 8']].map(([k, label]) => (
         <Counter key={k} label={label} value={local[k] || 0} onChange={v => set(k, v)} />
       ))}
       <button onClick={() => { onSave(local); onClose(); }} style={{
@@ -977,8 +1032,8 @@ function CalendarPicker({ date, onSelect, onClose, colors: C }) {
   const startDay = new Date(viewDate.year, viewDate.month, 1).getDay();
   const today = new Date();
 
-  const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const weekdays = ['Do','Lu','Ma','Mi','Ju','Vi','Sá'];
+  const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const weekdays = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá'];
 
   const prev = () => setViewDate(v => v.month === 0 ? { year: v.year - 1, month: 11 } : { ...v, month: v.month - 1 });
   const next = () => setViewDate(v => v.month === 11 ? { year: v.year + 1, month: 0 } : { ...v, month: v.month + 1 });
