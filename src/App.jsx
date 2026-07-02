@@ -544,8 +544,6 @@ export default function App() {
                     if (isLongPress.current) { isLongPress.current = false; return; }
                     if (s.status === 'free') {
                       setPreTable(t); setEditing(null); setShowModal(true);
-                    } else if (s.status === 'reserved') {
-                      setEditing(s.res); setShowModal(true);
                     } else {
                       setShowLiveMenu(s.res);
                     }
