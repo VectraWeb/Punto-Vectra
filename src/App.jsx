@@ -606,8 +606,6 @@ export default function App() {
                 <button key={t.id} onClick={() => {
                   if (s.status === 'free') {
                     setPreTable(t); setEditing(null); setShowModal(true);
-                  } else if (s.status === 'reserved') {
-                    setEditing(s.res); setShowModal(true);
                   } else {
                     setShowLiveMenu(s.res);
                   }
