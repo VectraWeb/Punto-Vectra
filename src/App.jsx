@@ -539,26 +539,6 @@ export default function App() {
         })}
       </div>
 
-      {/* ── SLIDER DE TIEMPO ── */}
-      <div style={{ padding: '12px 20px 16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '10px' }}>
-          <span style={{ fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: C.muted, fontWeight: 600 }}>Viendo a las</span>
-          <div style={{ fontFamily: '"Fraunces", serif', fontSize: '40px', fontWeight: 700, color: C.forest, letterSpacing: '-0.03em', lineHeight: 1 }}>
-            {currentTime}
-          </div>
-        </div>
-        <input type="range" min={0} max={slots.length - 1} step={1}
-          value={Math.max(0, slots.indexOf(currentTime))}
-          onChange={(e) => setCurrentTime(slots[parseInt(e.target.value)])}
-          style={{ width: '100%' }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: C.muted, marginTop: '4px' }}>
-          <span>{SERVICES[service].start}</span>
-          <span style={{ opacity: 0.5 }}>cada 15 min</span>
-          <span>{SERVICES[service].end}</span>
-        </div>
-      </div>
-
       {/* ── STATS ── */}
       <div style={{ padding: '0 16px 16px', display: 'flex', gap: '8px' }}>
         <Stat color={C.free} label="Libres" value={stats.free} />
