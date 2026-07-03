@@ -236,10 +236,13 @@ export default function App() {
         }
 
         // Si el guard existe y no es nuestra propia reserva, hay conflicto
-        if (guardSnap.exists() && guardSnap.data().reservationId !== id) {
-          throw new Error(
-            'Lo sentimos, esa mesa acaba de ser reservada por otro usuario. Por favor, seleccioná otra mesa o elegí otro horario.'
-          );
+        if (guardSnap.exists()) {
+          const guardData = guardSnap.data();
+          if (guardData && guardData.reservationId !== id) {
+            throw new Error(
+              'Lo sentimos, esa mesa acaba de ser reservada por otro usuario. Por favor, seleccioná otra mesa o elegí otro horario.'
+            );
+          }
         }
 
         // Si es edición y cambió mesa/horario, limpiar guard viejo
@@ -938,7 +941,7 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSa
               {tables.filter(t => {
                 const s = tableStatus(t.id);
                 const isCurrentRes = editing && editing.tableId === t.id;
-                return t.capacity >= form.partySize && (s.status === 'free' || isCurrentRes);
+                return t.capacity >= form.partySize && (s.status === 'free' || s.status === 'soon' || isCurrentRes);
               }).map(t => (
                 <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>
               ))}
