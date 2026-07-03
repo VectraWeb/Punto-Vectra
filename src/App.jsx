@@ -223,8 +223,10 @@ export default function App() {
 
     try {
       await runTransaction(db, async (transaction) => {
-        // Si la mesa estaba "A limpiar", eliminar esa reserva y su guard PRIMERO
-        // para evitar que bloqueen el guard check de la nueva reserva
+        // TODOS los reads primero
+        const guardSnap = await transaction.get(guardPath);
+
+        // Si la mesa estaba "A limpiar", eliminar esa reserva y su guard
         if (_prevResId) {
           transaction.delete(resDocRef(date, _prevResId));
           if (_prevGuardId) {
@@ -232,8 +234,6 @@ export default function App() {
             transaction.delete(prevGuardPath);
           }
         }
-
-        const guardSnap = await transaction.get(guardPath);
 
         // Si el guard existe y no es nuestra propia reserva, hay conflicto
         if (guardSnap.exists() && guardSnap.data().reservationId !== id) {
@@ -248,6 +248,7 @@ export default function App() {
           transaction.delete(oldGuardPath);
         }
 
+        // TODOS los writes después
         transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
         transaction.set(resDocRef(date, id), {
           ...cleanData,
