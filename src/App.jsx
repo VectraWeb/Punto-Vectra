@@ -287,7 +287,7 @@ export default function App() {
     setOptimisticStates(prev => ({ ...prev, [res.id]: liveState }));
     try {
       const patch = { liveState, updatedAt: serverTimestamp() };
-      if (liveState === 'comiendo_entrada' && !res.seatedAt) patch.seatedAt = serverTimestamp();
+      if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
       await setDoc(resDocRef(date, res.id), patch, { merge: true });
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
@@ -310,7 +310,7 @@ export default function App() {
       return new Date(ts).getTime();
     };
 
-    const startTs = toMs(res.seatedAt || res.createdAt);
+    const startTs = toMs(res.startedAt || res.createdAt);
     const duracionMinutos = Math.round((Date.now() - startTs) / 60000);
     const tableName = tables.find(t => t.id === res.tableId)?.name || res.tableId;
 
@@ -322,12 +322,7 @@ export default function App() {
     });
 
     try {
-      await setDoc(resDocRef(date, res.id), {
-        liveState: 'finalizada',
-        endTime: serverTimestamp(),
-        duracion_total_minutos: duracionMinutos,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+      await deleteDoc(resDocRef(date, res.id));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
@@ -342,7 +337,7 @@ export default function App() {
     .filter(r => r.service === service);
 
   const tableStatus = useCallback((id) => {
-    const tableRes = svcRes.filter(r => r.tableId === id && r.liveState !== 'finalizada');
+    const tableRes = svcRes.filter(r => r.tableId === id);
     if (tableRes.length === 0) return { status: 'free' };
 
     const cleaning = tableRes.find(r => r.liveState === 'para_limpiar');
@@ -381,10 +376,10 @@ export default function App() {
       return isNaN(d.getTime()) ? null : d.getTime() / 60000;
     };
 
-    const active = src.filter(r => r.seatedAt || r.liveState);
+    const active = src.filter(r => r.startedAt || r.liveState);
 
     const stays = active.map(r => {
-      const start = toMin(r.seatedAt) || t2m(r.time, r.service);
+      const start = toMin(r.startedAt) || t2m(r.time, r.service);
       if (start == null) return null;
       const end = r.leftAt ? toMin(r.leftAt) : null;
       const stayMin = end != null ? Math.round(end - start) : null;
@@ -607,7 +602,7 @@ export default function App() {
                   if (s.status === 'free') {
                     setPreTable(t); setEditing(null); setShowModal(true);
                   } else if (s.status === 'reserved') {
-                    setEditing(s.res); setShowModal(true);
+                    setShowLiveMenu(s.res);
                   } else {
                     setShowLiveMenu(s.res);
                   }
@@ -905,7 +900,8 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSa
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const valid = form.customerName.trim() && form.tableId && form.time && form.partySize > 0;
+  const selectedTable = tables.find(t => t.id === form.tableId);
+  const valid = form.customerName.trim() && form.tableId && form.time && form.partySize > 0 && (!selectedTable || form.partySize <= selectedTable.capacity);
 
   return (
     <Overlay onClose={onClose}>
@@ -938,22 +934,13 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSa
           <Field label="Mesa">
             <select value={form.tableId} onChange={e => set('tableId', e.target.value)} style={inp}>
               <option value="">— elegir —</option>
-              {tables.map(t => {
+              {tables.filter(t => {
                 const s = tableStatus(t.id);
                 const isCurrentRes = editing && editing.tableId === t.id;
-                const isAllowed = s.status === 'free' || s.status === 'soon' || isCurrentRes;
-
-                let labelSuffix = '';
-                if (s.status === 'soon') labelSuffix = ' (A limpiar)';
-                else if (s.status === 'busy') labelSuffix = ' (Ocupada)';
-                else if (s.status === 'reserved' && !isCurrentRes) labelSuffix = ' (Reservada)';
-
-                return (
-                  <option key={t.id} value={t.id} disabled={!isAllowed}>
-                    {t.name} ({t.capacity}p){labelSuffix}
-                  </option>
-                );
-              })}
+                return t.capacity >= form.partySize && (s.status === 'free' || isCurrentRes);
+              }).map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>
+              ))}
             </select>
           </Field>
         </div>
