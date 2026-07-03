@@ -235,10 +235,12 @@ export default function App() {
           }
         }
 
-        // Si el guard existe y no es nuestra propia reserva, hay conflicto
+        // Si el guard existe y no es la reserva que vamos a borrar, hay conflicto
         if (guardSnap.exists()) {
           const guardData = guardSnap.data();
-          if (guardData && guardData.reservationId !== id) {
+          const isOwnGuard = guardData && guardData.reservationId === id;
+          const isPrevGuard = guardData && _prevResId && guardData.reservationId === _prevResId;
+          if (guardData && !isOwnGuard && !isPrevGuard) {
             throw new Error(
               'Lo sentimos, esa mesa acaba de ser reservada por otro usuario. Por favor, seleccioná otra mesa o elegí otro horario.'
             );
