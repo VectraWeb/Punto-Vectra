@@ -148,7 +148,6 @@ export default function ResForm({ onStaffAccess }) {
     customerName: '',
     phone: '',
     partySize: 2,
-    tableId: '',
     time: detectTime(detectService()),
     notes: '',
   });
@@ -178,14 +177,16 @@ export default function ResForm({ onStaffAccess }) {
     }
   }, [service]);
 
-  // ── Mesas disponibles (solo por capacidad, sin validar estado) ──────────
-  const availableTables = useMemo(() => {
-    return tables.filter(t => t.capacity >= form.partySize);
+  // ── Mesas que caben por capacidad ──────────────────────────────────────
+  const fittingTables = useMemo(() => {
+    return tables
+      .filter(t => t.capacity >= form.partySize)
+      .sort((a, b) => a.capacity - b.capacity);
   }, [tables, form.partySize]);
 
   // ── Validación ───────────────────────────────────────────────────────────
   const valid = form.customerName.trim().length >= 2
-    && form.tableId
+    && fittingTables.length > 0
     && form.time
     && form.partySize > 0
     && !submitting;
@@ -196,32 +197,33 @@ export default function ResForm({ onStaffAccess }) {
     setSubmitting(true);
     setError('');
 
-    const id = `r${Date.now()}`;
-    const guardPath = guardRef(date, form.tableId, service, form.time);
-
     try {
-      await runTransaction(db, async (transaction) => {
-        const guardSnap = await transaction.get(guardPath);
-        if (guardSnap.exists()) {
-          throw new Error('Esa mesa ya está reservada para ese horario. Elegí otra mesa u horario.');
+      const assignedTableId = await runTransaction(db, async (transaction) => {
+        for (const t of fittingTables) {
+          const guardPath = guardRef(date, t.id, service, form.time);
+          const guardSnap = await transaction.get(guardPath);
+          if (!guardSnap.exists()) {
+            const id = `r${Date.now()}`;
+            transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
+            transaction.set(resDocRef(date, id), {
+              id,
+              customerName: form.customerName.trim(),
+              phone: form.phone,
+              partySize: form.partySize,
+              tableId: t.id,
+              time: form.time,
+              duration: SERVICES[service].defaultDuration,
+              service,
+              notes: form.notes,
+              liveState: null,
+              date,
+              updatedAt: serverTimestamp(),
+              createdAt: serverTimestamp(),
+            });
+            return t.id;
+          }
         }
-
-        transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
-        transaction.set(resDocRef(date, id), {
-          id,
-          customerName: form.customerName.trim(),
-          phone: form.phone,
-          partySize: form.partySize,
-          tableId: form.tableId,
-          time: form.time,
-          duration: SERVICES[service].defaultDuration,
-          service,
-          notes: form.notes,
-          liveState: null,
-          date,
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-        });
+        throw new Error('No hay mesas disponibles para esa cantidad de personas en ese horario.');
       });
 
       setSuccess(true);
@@ -231,7 +233,6 @@ export default function ResForm({ onStaffAccess }) {
           customerName: '',
           phone: '',
           partySize: 2,
-          tableId: '',
           time: slots[Math.floor(slots.length / 2)] || slots[0],
           notes: '',
         });
@@ -318,23 +319,13 @@ export default function ResForm({ onStaffAccess }) {
           />
         </Field>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <Field label="Comensales">
-            <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
-                <option key={n} value={n}>{n} {n === 1 ? 'persona' : 'personas'}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Mesa">
-            <select value={form.tableId} onChange={e => set('tableId', e.target.value)} style={inp}>
-              <option value="">— elegir —</option>
-              {availableTables.map(t => (
-                <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>
-              ))}
-            </select>
-          </Field>
-        </div>
+        <Field label="Comensales">
+          <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
+              <option key={n} value={n}>{n} {n === 1 ? 'persona' : 'personas'}</option>
+            ))}
+          </select>
+        </Field>
 
         <Field label="Horario">
           <select value={form.time} onChange={e => set('time', e.target.value)} style={inp}>
