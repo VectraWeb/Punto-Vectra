@@ -942,7 +942,7 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSa
   const [form, setForm] = useState(() => editing ? { ...editing } : {
     customerName: '', phone: '', partySize: 2,
     tableId: preTable?.id || '',
-    time: slots[Math.floor(slots.length / 3)] || slots[0],
+    time: new Date().toTimeString().slice(0, 5),
     notes: '',
   });
 
@@ -995,9 +995,7 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSa
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
           <Field label="Horario">
-            <select value={form.time} onChange={e => set('time', e.target.value)} style={inp}>
-              {slots.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <input type="time" value={form.time} onChange={e => set('time', e.target.value)} style={inp} />
           </Field>
         </div>
 
