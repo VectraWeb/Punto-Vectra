@@ -12,6 +12,7 @@ import {
   serverTimestamp, query, where, runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import SalonFloor from './components/SalonFloor';
 
 // ─── Paleta ──────────────────────────────────────────────────────────────────
 const C = {
@@ -44,7 +45,7 @@ const SERVICES = {
   cena: { name: 'Cena', start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
 };
 
-const DEFAULT_CONFIG = { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
+const DEFAULT_CONFIG = { cap2: 34, cap4: 0, cap5: 5, cap8: 2 };
 
 // ─── Utilidades de tiempo ────────────────────────────────────────────────────
 const t2m = (time, service) => {
@@ -72,14 +73,14 @@ const buildTables = (cfg) => {
   const tables = [];
   let n = 1;
   const groups = [
-    { count: cfg.cap2 || 0, capacity: 2 },
-    { count: cfg.cap4 || 0, capacity: 4 },
-    { count: cfg.cap5 || 0, capacity: 5 },
-    { count: cfg.cap8 || 0, capacity: 8 },
+    { count: cfg.cap2 || 0, capacity: 2, shape: 'rectangular' },
+    { count: cfg.cap4 || 0, capacity: 4, shape: 'rectangular' },
+    { count: cfg.cap5 || 0, capacity: 5, shape: 'round' },
+    { count: cfg.cap8 || 0, capacity: 8, shape: 'square' },
   ];
-  for (const { count, capacity } of groups) {
+  for (const { count, capacity, shape } of groups) {
     for (let i = 0; i < count; i++) {
-      tables.push({ id: `m${n}`, name: `M${n}`, capacity });
+      tables.push({ id: `m${n}`, name: `M${n}`, capacity, shape });
       n++;
     }
   }
@@ -144,6 +145,7 @@ export default function App() {
   const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
   const [analyticsRes, setAnalyticsRes] = useState([]);
   const [mainTab, setMainTab] = useState('mesas');
+  const [editingLayout, setEditingLayout] = useState(false);
   const [optimisticStates, setOptimisticStates] = useState({});
   const [quickActionMenu, setQuickActionMenu] = useState(null);
   const pressTimer = useRef(null);
@@ -547,9 +549,9 @@ export default function App() {
         <Stat color={C.soon} label="A limpiar" value={stats.soon} />
       </div>
 
-      {/* ── TABS: MESAS / RESERVAS ── */}
+      {/* ── TABS: MESAS / RESERVAS / PLANO ── */}
       <div style={{ padding: '0 16px', display: 'flex', gap: '4px', marginBottom: '12px' }}>
-        {[['mesas', 'Mesas', `${tables.length} mesas`], ['reservas', 'Reservas', `${sortedRes.length} items`]].map(([key, label, sub]) => (
+        {[['mesas', 'Mesas', `${tables.length} mesas`], ['reservas', 'Reservas', `${sortedRes.length} items`], ['plano', 'Plano', 'Arrastrable']].map(([key, label, sub]) => (
           <button key={key} onClick={() => setMainTab(key)} style={{
             flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
             background: mainTab === key ? C.forest : C.creamDeep,
@@ -564,8 +566,8 @@ export default function App() {
 
       {/* ── GRILLA DE MESAS ── */}
       {mainTab === 'mesas' && (
-        <div style={{ padding: '0 16px 24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+        <div style={{ padding: '0 16px 24px', maxHeight: '60vh', overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: '6px' }}>
             {tables.map(t => {
               const s = tableStatus(t.id);
               const live = s.status === 'busy' && s.res.liveState ? LIVE_STATES[s.res.liveState] : null;
@@ -593,8 +595,8 @@ export default function App() {
                     setShowLiveMenu(s.res);
                   }
                 }} style={{
-                  aspectRatio: '1', background: bg, color: fg,
-                  border: `1.5px solid ${border}`, borderRadius: '14px',
+                  aspectRatio: t.shape === 'rectangular' ? '2/1' : '1', background: bg, color: fg,
+                  border: `1.5px solid ${border}`, borderRadius: t.shape === 'round' ? '50%' : t.shape === 'square' ? '12px' : '10px',
                   cursor: 'pointer', display: 'flex', flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'center', padding: '4px',
                   position: 'relative',
@@ -697,6 +699,25 @@ export default function App() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── PLANO DEL SALON ── */}
+      {mainTab === 'plano' && (
+        <SalonFloor
+          tables={tables}
+          tableStatus={tableStatus}
+          isEditing={editingLayout}
+          onToggleEdit={() => setEditingLayout(prev => !prev)}
+          onTableClick={(t, s) => {
+            if (s.status === 'free') {
+              setPreTable(t); setEditing(null); setShowModal(true);
+            } else if (s.status === 'reserved') {
+              setShowLiveMenu(s.res);
+            } else {
+              setShowLiveMenu(s.res);
+            }
+          }}
+        />
       )}
 
       {/* ── FAB: Nueva reserva ── */}

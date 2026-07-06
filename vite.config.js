@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    define: {
+      'process.env.NODE_ENV': JSON.stringify(mode),
+    },
     resolve: {
       alias: useMock ? {
         'firebase/app': path.resolve(__dirname, './src/firebaseMock.js'),
