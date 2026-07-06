@@ -37,39 +37,11 @@ const t2m = (time, service) => {
   return h * 60 + m;
 };
 
-const m2t = (mins) => {
-  const h = Math.floor(mins / 60) % 24;
-  const m = mins % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-};
-
-const genSlots = (service) => {
-  const start = t2m(SERVICES[service].start, service);
-  const end = t2m(SERVICES[service].end, service);
-  const slots = [];
-  for (let m = start; m <= end; m += 15) slots.push(m2t(m));
-  return slots;
-};
-
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const detectService = () => {
   const h = new Date().getHours();
   return (h >= 11 && h < 17) ? 'mediodia' : 'cena';
-};
-
-const detectTime = (svc) => {
-  const now = new Date();
-  const h = now.getHours();
-  const m = now.getMinutes();
-  const slots = genSlots(svc);
-  const target = svc === 'cena' && h < 12 ? (h + 24) * 60 + m : h * 60 + m;
-  let best = slots[0], bestDiff = Infinity;
-  for (const s of slots) {
-    const diff = Math.abs(t2m(s, svc) - target);
-    if (diff < bestDiff) { best = s; bestDiff = diff; }
-  }
-  return best;
 };
 
 const buildTables = (cfg) => {
@@ -142,13 +114,17 @@ export default function ResForm({ onStaffAccess }) {
   }, [onStaffAccess]);
 
   const tables = useMemo(() => buildTables(config), [config]);
-  const slots = useMemo(() => genSlots(service), [service]);
+
+  const nowHHMM = () => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
 
   const [form, setForm] = useState({
     customerName: '',
     phone: '',
     partySize: 2,
-    time: detectTime(detectService()),
+    time: nowHHMM(),
     notes: '',
   });
 
@@ -171,9 +147,16 @@ export default function ResForm({ onStaffAccess }) {
   }, [date]);
 
   // ── Corregir time si cambia de servicio ──────────────────────────────────
+  const tInRange = (time, svc) => {
+    if (!time) return false;
+    const mins = t2m(time, svc);
+    const start = t2m(SERVICES[svc].start, svc);
+    const end = t2m(SERVICES[svc].end, svc);
+    return mins >= start && mins <= end;
+  };
   useEffect(() => {
-    if (!slots.includes(form.time)) {
-      set('time', slots[Math.floor(slots.length / 2)] || slots[0]);
+    if (!tInRange(form.time, service)) {
+      set('time', nowHHMM());
     }
   }, [service]);
 
@@ -188,6 +171,7 @@ export default function ResForm({ onStaffAccess }) {
   const valid = form.customerName.trim().length >= 2
     && fittingTables.length > 0
     && form.time
+    && tInRange(form.time, service)
     && form.partySize > 0
     && !submitting;
 
@@ -233,7 +217,7 @@ export default function ResForm({ onStaffAccess }) {
           customerName: '',
           phone: '',
           partySize: 2,
-          time: slots[Math.floor(slots.length / 2)] || slots[0],
+          time: nowHHMM(),
           notes: '',
         });
       }, 3000);
@@ -328,9 +312,9 @@ export default function ResForm({ onStaffAccess }) {
         </Field>
 
         <Field label="Horario">
-          <select value={form.time} onChange={e => set('time', e.target.value)} style={inp}>
-            {slots.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <input type="time" value={form.time}
+            onChange={e => set('time', e.target.value)}
+            style={inp} />
         </Field>
 
         <Field label="Notas (opcional)">
