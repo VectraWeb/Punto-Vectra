@@ -280,19 +280,20 @@ export default function SalonFloor({
             <rect x="30" y="30" width={CANVAS_W - 60} height={CANVAS_H - 60}
               fill="none" stroke={PALETTE.espresso} strokeWidth="6" rx="4" />
 
-            <line x1={CANVAS_W - 30} y1="180" x2={CANVAS_W - 30} y2="340" stroke={PALETTE.creamDeep} strokeWidth="8" />
-            <path d={`M ${CANVAS_W - 30} 180 Q ${CANVAS_W - 110} 180 ${CANVAS_W - 110} 260`} fill="none" stroke={PALETTE.espresso} strokeWidth="2" strokeDasharray="6 4" opacity="0.5" />
-            <line x1={CANVAS_W - 30} y1="180" x2={CANVAS_W - 110} y2="180" stroke={PALETTE.espresso} strokeWidth="3" opacity="0.6" />
-            <text x={CANVAS_W - 115} y="218" fontSize="11" fill={PALETTE.muted} fontFamily="inherit" fontWeight="600" opacity="0.7">Entrada</text>
+            <rect x="30" y="30" width="150" height={CANVAS_H - 60} fill="#ddd5c8" stroke={PALETTE.espresso} strokeWidth="4" rx="2" opacity="0.45" />
+            <text x="60" y={CANVAS_H / 2} fontSize="14" fill={PALETTE.muted} fontFamily="inherit" fontWeight="700" opacity="0.6" transform={`rotate(-90, 80, ${CANVAS_H / 2})`} textAnchor="middle">Barra</text>
 
-            <rect x={CANVAS_W - 170} y="30" width="140" height="80" fill="#ddd5c8" stroke={PALETTE.espresso} strokeWidth="3" rx="4" opacity="0.4" />
-            <text x={CANVAS_W - 150} y="76" fontSize="12" fill={PALETTE.muted} fontFamily="inherit" fontWeight="600" opacity="0.5">Cocina</text>
+            <rect x={(CANVAS_W - 200) / 2} y={CANVAS_H - 100} width="200" height="70" fill="#ddd5c8" stroke={PALETTE.espresso} strokeWidth="3" rx="4" opacity="0.45" />
+            <text x={CANVAS_W / 2} y={CANVAS_H - 58} fontSize="12" fill={PALETTE.muted} fontFamily="inherit" fontWeight="600" textAnchor="middle" opacity="0.6">Baños</text>
 
-            <line x1={CANVAS_W - 170} y1="110" x2={CANVAS_W - 170} y2="175" stroke={PALETTE.espresso} strokeWidth="3" opacity="0.3" strokeDasharray="8 4" />
-            <text x={CANVAS_W - 160} y="150" fontSize="10" fill={PALETTE.muted} fontFamily="inherit" opacity="0.4">Bar</text>
+            <rect x={CANVAS_W - 30 - 10} y="30" width="10" height={CANVAS_H - 60} fill="none" stroke={PALETTE.espresso} strokeWidth="0" />
+            <rect x={CANVAS_W - 50} y="30" width="30" height="520" fill="none" stroke={PALETTE.espresso} strokeWidth="2" strokeDasharray="10 6" opacity="0.35" rx="2" />
+            <text x={CANVAS_W - 35} y="290" fontSize="11" fill={PALETTE.muted} fontFamily="inherit" fontWeight="600" opacity="0.45" textAnchor="middle" transform={`rotate(-90, ${CANVAS_W - 35}, 290)`}>Ventanal</text>
 
-            <rect x="30" y={CANVAS_H - 100} width="120" height="70" fill="#ddd5c8" stroke={PALETTE.espresso} strokeWidth="3" rx="4" opacity="0.4" />
-            <text x="50" y={CANVAS_H - 60} fontSize="11" fill={PALETTE.muted} fontFamily="inherit" fontWeight="600" opacity="0.5">Baños</text>
+            <line x1={CANVAS_W - 30} y1="620" x2={CANVAS_W - 30} y2="740" stroke={PALETTE.creamDeep} strokeWidth="10" />
+            <path d={`M ${CANVAS_W - 30} 740 Q ${CANVAS_W - 120} 740 ${CANVAS_W - 120} 680`} fill="none" stroke={PALETTE.espresso} strokeWidth="2" strokeDasharray="6 4" opacity="0.5" />
+            <line x1={CANVAS_W - 30} y1="740" x2={CANVAS_W - 120} y2="740" stroke={PALETTE.espresso} strokeWidth="3" opacity="0.6" />
+            <text x={CANVAS_W - 80} y="720" fontSize="11" fill={PALETTE.muted} fontFamily="inherit" fontWeight="600" opacity="0.7" textAnchor="middle">Entrada</text>
 
             {tables.map((t) => {
               const pos = positions[t.id];
