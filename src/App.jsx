@@ -38,6 +38,7 @@ export const LIVE_STATES = {
   comiendo_entrada: { label: 'Entrada', color: '#c4602f', dot: '#a04020' },
   plato_principal: { label: 'Principal', color: '#7b1f2e', dot: '#5c1520' },
   en_postre_cafe: { label: 'Postre / Café', color: '#c49a35', dot: '#a07820' },
+  sobremesa: { label: 'Sobremesa', color: '#6b8e7b', dot: '#4d6b5a' },
   esperando_cuenta: { label: 'Cuenta', color: '#9b59b6', dot: '#7d3f9c' },
   para_limpiar: { label: 'A limpiar', color: '#e67e22', dot: '#c05e0a' },
 };
@@ -375,6 +376,24 @@ function StaffDashboard({ onLogout }) {
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     }
   }, [date, tables]);
+
+  // ── Resetear estado en vivo (Limpiar mesa) ──────────────────────────────
+  const resetLiveState = useCallback(async (res) => {
+    setShowLiveMenu(null);
+    setOptimisticStates(prev => ({ ...prev, [res.id]: null }));
+    try {
+      await setDoc(resDocRef(date, res.id), {
+        liveState: null,
+        startedAt: null,
+        leftAt: null,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
+    } catch (e) {
+      console.warn('[Andi] Fallo al limpiar mesa, revirtiendo...', e);
+      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
+    }
+  }, [date]);
 
   // ── Cálculos ───────────────────────────────────────────────────────────────
   const nowMin = t2m(currentTime, service);
@@ -781,6 +800,7 @@ function StaffDashboard({ onLogout }) {
           onEdit={() => { setEditing(showLiveMenu); setShowLiveMenu(null); setShowModal(true); }}
           onClose={() => setShowLiveMenu(null)}
           onFinalize={() => finalizeReservation(showLiveMenu)}
+          onReset={() => resetLiveState(showLiveMenu)}
         />
       )}
 
@@ -825,7 +845,8 @@ function StaffDashboard({ onLogout }) {
           if (current === 'esperando_cliente') return ['comiendo_entrada'];
           if (current === 'comiendo_entrada') return ['plato_principal'];
           if (current === 'plato_principal') return ['en_postre_cafe'];
-          if (current === 'en_postre_cafe') return ['esperando_cuenta', 'para_limpiar'];
+          if (current === 'en_postre_cafe') return ['sobremesa', 'esperando_cuenta'];
+          if (current === 'sobremesa') return ['esperando_cuenta'];
           if (current === 'esperando_cuenta') return ['para_limpiar'];
           if (current === 'para_limpiar') return ['finalizar'];
           return [];
@@ -881,7 +902,7 @@ function StaffDashboard({ onLogout }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // LiveStateModal — Selector de estado en vivo para mozos
 // ═══════════════════════════════════════════════════════════════════════════════
-function LiveStateModal({ res, tables, onSelect, onEdit, onClose, onFinalize }) {
+function LiveStateModal({ res, tables, onSelect, onEdit, onClose, onFinalize, onReset }) {
   const table = tables.find(t => t.id === res.tableId);
   return (
     <Overlay onClose={onClose}>
@@ -926,6 +947,9 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose, onFinalize }) 
       <div style={{ display: 'flex', gap: '8px' }}>
         <button onClick={onEdit} style={{ flex: 1, padding: '12px', background: C.creamDeep, border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '13px', color: C.espresso }}>
           Editar reserva
+        </button>
+        <button onClick={onReset} style={{ padding: '12px 16px', background: 'transparent', border: `1.5px solid ${C.muted}`, borderRadius: '12px', cursor: 'pointer', color: C.muted, fontSize: '13px', fontWeight: 500 }}>
+          Limpiar mesa
         </button>
         <button onClick={onClose} style={{ padding: '12px 20px', background: C.forest, border: 'none', borderRadius: '12px', cursor: 'pointer', color: C.cream, fontSize: '13px' }}>
           Cerrar

@@ -22,6 +22,7 @@ const LIVE_STATES = {
   comiendo_entrada:   { label: 'Entrada',          color: '#c4602f' },
   plato_principal:    { label: 'Principal',        color: '#7b1f2e' },
   en_postre_cafe:     { label: 'Postre / Cafe',    color: '#c49a35' },
+  sobremesa:          { label: 'Sobremesa',        color: '#6b8e7b' },
   esperando_cuenta:   { label: 'Cuenta',           color: '#9b59b6' },
   para_limpiar:       { label: 'A limpiar',        color: '#e67e22' },
 };
