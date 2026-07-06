@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Plus, Users, Phone, X, Trash2, Settings, Sun, Moon,
   ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw, BarChart3,
+  LogOut,
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, deleteDoc, getDocs,
@@ -13,6 +14,8 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import SalonFloor from './components/SalonFloor';
+import VistaCliente from './components/VistaCliente';
+import PinGate, { logoutStaff } from './components/PinGate';
 
 // ─── Paleta ──────────────────────────────────────────────────────────────────
 const C = {
@@ -115,8 +118,10 @@ const guardRef = (date, tableId, service, time) =>
 const cfgRef = () => doc(db, 'config', 'restaurant');
 
 // ─── Utilidad N8N ────────────────────────────────────────────────────────────
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || '';
 const notificarN8N = (datos) => {
-  fetch('http://localhost:5678/webhook-test/23b4cd63-a7e2-456b-a191-75a2e7416672', {
+  if (!N8N_WEBHOOK_URL) return;
+  fetch(N8N_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(datos),
@@ -127,6 +132,32 @@ const notificarN8N = (datos) => {
 // App Principal
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
+  const [staffMode, setStaffMode] = useState(false);
+
+  const handleStaffAccess = useCallback(() => {
+    setStaffMode(true);
+  }, []);
+
+  const handleStaffExit = useCallback(() => {
+    logoutStaff();
+    setStaffMode(false);
+  }, []);
+
+  if (staffMode) {
+    return (
+      <PinGate onBack={handleStaffExit}>
+        <StaffDashboard onLogout={handleStaffExit} />
+      </PinGate>
+    );
+  }
+
+  return <VistaCliente onStaffAccess={handleStaffAccess} />;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// StaffDashboard — Dashboard completo para mozos (antes era App)
+// ═══════════════════════════════════════════════════════════════════════════════
+function StaffDashboard({ onLogout }) {
   const [date, setDate] = useState(todayISO);
   const [service, setService] = useState(detectService);
   const [currentTime, setCurrentTime] = useState(() => detectTime(detectService()));
@@ -267,11 +298,16 @@ export default function App() {
       });
 
       notificarN8N({
+        evento: 'reserva_creada',
         cliente_nombre: cleanData.customerName,
         telefono: cleanData.phone || '',
         cantidad_personas: cleanData.partySize,
+        mesa: cleanData.tableId,
+        servicio: cleanData.service,
+        duracion_minutos: cleanData.duration,
         fecha: date,
-        hora: cleanData.time || ''
+        hora: cleanData.time || '',
+        notas: cleanData.notes || ''
       });
     } catch (e) {
       console.error('[Andi] Error crítico en setDoc:', e);
@@ -326,6 +362,8 @@ export default function App() {
       evento: 'reserva_finalizada',
       cliente_nombre: res.customerName,
       mesa: tableName,
+      mesa_id: res.tableId,
+      servicio: res.service,
       duracion_total_minutos: duracionMinutos
     });
 
@@ -496,6 +534,9 @@ export default function App() {
             </button>
             <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
               <Settings size={18} />
+            </button>
+            <button onClick={onLogout} title="Salir del panel staff" style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
+              <LogOut size={18} />
             </button>
           </div>
         </div>

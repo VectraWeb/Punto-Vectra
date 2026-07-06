@@ -42,5 +42,12 @@ service cloud.firestore {
       // Los mozos (staff) pueden actualizar estados en vivo de las reservas
       allow update: if isAuthenticated();
     }
+
+    // --- REGLAS PARA GUARDS (anti-doble-booking) ---
+    // Estructura: reservations/{date}/guards/{guardId}
+    match /reservations/{date}/guards/{guardId} {
+      allow read: if true;
+      allow create, update, delete: if isAuthenticated();
+    }
   }
 }
