@@ -28,7 +28,7 @@ const LIVE_STATES = {
 };
 
 const CANVAS_W = 1400;
-const CANVAS_H = 800;
+const CANVAS_H = 900;
 
 const TABLE_DIMS = {
   rectangular: { w: 130, h: 65, radius: '12px' },
@@ -260,7 +260,7 @@ export default function SalonFloor({
         onTouchEnd={handleTouchEnd}
         style={{
           width: '100%',
-          maxWidth: '900px',
+          maxWidth: '1200px',
           margin: '0 auto',
           aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
           background: PALETTE.creamDeep,
