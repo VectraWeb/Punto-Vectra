@@ -27,8 +27,8 @@ const LIVE_STATES = {
   para_limpiar:       { label: 'A limpiar',        color: '#e67e22' },
 };
 
-const CANVAS_W = 1400;
-const CANVAS_H = 900;
+const CANVAS_W = 1500;
+const CANVAS_H = 800;
 
 const TABLE_DIMS = {
   rectangular: { w: 130, h: 65, radius: '12px' },
