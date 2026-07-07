@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Plus, Users, Phone, X, Trash2, Settings, Sun, Moon,
   ChevronLeft, ChevronRight, Clock, Wifi, WifiOff, RefreshCw, BarChart3,
-  LogOut,
+  LogOut, User, UserPlus, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, deleteDoc, getDocs,
@@ -117,6 +117,8 @@ const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
 const guardRef = (date, tableId, service, time) =>
   doc(db, 'reservations', date, 'guards', `${tableId}_${service}_${time.replace(':', '.')}`);
 const cfgRef = () => doc(db, 'config', 'restaurant');
+const staffCol = () => collection(db, 'staff');
+const staffDoc = (id) => doc(db, 'staff', id);
 
 // ─── Utilidad N8N ────────────────────────────────────────────────────────────
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || '';
@@ -180,6 +182,8 @@ function StaffDashboard({ onLogout }) {
   const [editingLayout, setEditingLayout] = useState(false);
   const [optimisticStates, setOptimisticStates] = useState({});
   const [quickActionMenu, setQuickActionMenu] = useState(null);
+  const [staff, setStaff] = useState([]);
+  const [showStaff, setShowStaff] = useState(false);
   const pressTimer = useRef(null);
   const isLongPress = useRef(false);
   const calendarRef = useRef(null);
@@ -241,6 +245,14 @@ function StaffDashboard({ onLogout }) {
       setAnalyticsRes(all);
     })();
   }, [showAnalytics, analyticsPeriod, date]);
+
+  // ── Escucha en tiempo real del personal ──────────────────────────────────
+  useEffect(() => {
+    const unsub = onSnapshot(staffCol(), (snap) => {
+      setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, []);
 
   // ── Persistir configuración ────────────────────────────────────────────────
   const saveConfig = useCallback(async (c) => {
@@ -554,6 +566,9 @@ function StaffDashboard({ onLogout }) {
             <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
               <Settings size={18} />
             </button>
+            <button onClick={() => setShowStaff(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
+              <Users size={18} />
+            </button>
             <button onClick={onLogout} title="Salir del panel staff" style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
               <LogOut size={18} />
             </button>
@@ -729,6 +744,7 @@ function StaffDashboard({ onLogout }) {
                         <span>·</span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
                         {r.phone && (<><span>·</span><span>{r.phone}</span></>)}
+                        {r.staffName && (<><span>·</span><span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><User size={10} />{r.staffName}</span></>)}
                       </div>
                       {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
                     </div>
@@ -813,6 +829,7 @@ function StaffDashboard({ onLogout }) {
           slots={slots}
           service={service}
           tableStatus={tableStatus}
+          staff={staff}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => { setShowModal(false); setEditing(null); setPreTable(null); }}
@@ -825,6 +842,14 @@ function StaffDashboard({ onLogout }) {
           config={config}
           onSave={saveConfig}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* ── MODAL: Staff / Mozos ── */}
+      {showStaff && (
+        <StaffModal
+          staff={staff}
+          onClose={() => setShowStaff(false)}
         />
       )}
 
@@ -962,12 +987,13 @@ function LiveStateModal({ res, tables, onSelect, onEdit, onClose, onFinalize, on
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResModal — Modal de creación / edición de reserva
 // ═══════════════════════════════════════════════════════════════════════════════
-function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSave, onDelete, onClose }) {
+function ResModal({ editing, preTable, tables, slots, service, tableStatus, staff, onSave, onDelete, onClose }) {
   const [form, setForm] = useState(() => editing ? { ...editing } : {
     customerName: '', phone: '', partySize: 2,
     tableId: preTable?.id || '',
     time: new Date().toTimeString().slice(0, 5),
     notes: '',
+    staffId: '',
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -1023,6 +1049,17 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSa
           </Field>
         </div>
 
+        {staff.length > 0 && (
+          <Field label="Mozo asignado">
+            <select value={form.staffId} onChange={e => set('staffId', e.target.value)} style={inp}>
+              <option value="">— sin asignar —</option>
+              {staff.filter(s => s.active !== false).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
+
         <Field label="Notas (opcional)">
           <textarea value={form.notes} onChange={e => set('notes', e.target.value)}
             placeholder="Alergias, pedidos especiales..." rows={2}
@@ -1039,7 +1076,11 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, onSa
             <Trash2 size={18} />
           </button>
         )}
-        <button onClick={() => valid && onSave({ ...form, service })} style={{
+        <button onClick={() => {
+          if (!valid) return;
+          const staffMember = staff.find(s => s.id === form.staffId);
+          onSave({ ...form, service, staffName: staffMember?.name || '' });
+        }} style={{
           flex: 1, padding: '14px', background: valid ? C.terra : C.creamDeep,
           border: 'none', borderRadius: '12px', cursor: valid ? 'pointer' : 'not-allowed',
           color: valid ? C.white : C.muted, fontSize: '15px', fontWeight: 600,
@@ -1072,6 +1113,106 @@ function SettingsModal({ config, onSave, onClose }) {
         background: C.forest, border: 'none', borderRadius: '12px',
         cursor: 'pointer', color: C.cream, fontSize: '15px', fontWeight: 600,
       }}>Guardar configuración</button>
+    </Overlay>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// StaffModal — Panel de administración de mozos
+// ═══════════════════════════════════════════════════════════════════════════════
+function StaffModal({ staff, onClose }) {
+  const [newName, setNewName] = useState('');
+
+  const addStaff = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    try {
+      const id = `s${Date.now()}`;
+      await setDoc(staffDoc(id), { name, active: true, createdAt: serverTimestamp() });
+      setNewName('');
+    } catch (e) { console.error(e); }
+  };
+
+  const toggleActive = async (s) => {
+    try {
+      await setDoc(staffDoc(s.id), { active: s.active === false ? true : false }, { merge: true });
+    } catch (e) { console.error(e); }
+  };
+
+  const removeStaff = async (s) => {
+    try {
+      await deleteDoc(staffDoc(s.id));
+    } catch (e) { console.error(e); }
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Mozos</h3>
+        <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <input
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addStaff()}
+          placeholder="Nombre del mozo"
+          style={{ ...inp, flex: 1 }}
+        />
+        <button onClick={addStaff} style={{
+          padding: '12px 16px', background: C.forest, border: 'none', borderRadius: '12px',
+          cursor: 'pointer', color: C.cream, fontSize: '13px', fontWeight: 600,
+          display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap',
+        }}>
+          <UserPlus size={14} /> Agregar
+        </button>
+      </div>
+
+      {staff.length === 0 && (
+        <div style={{ padding: '24px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
+          No hay mozos cargados
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {staff.map(s => {
+          const isActive = s.active !== false;
+          return (
+            <div key={s.id} style={{
+              display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px',
+              background: C.white, border: `1.5px solid ${isActive ? C.creamDeep : '#e0d0c0'}`,
+              borderRadius: '12px', opacity: isActive ? 1 : 0.6,
+            }}>
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '50%',
+                background: isActive ? C.forest : C.creamDeep,
+                color: isActive ? C.cream : C.muted,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '14px', fontWeight: 600, flexShrink: 0,
+              }}>
+                {s.name?.charAt(0)?.toUpperCase() || '?'}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: '14px', color: C.espresso }}>{s.name}</div>
+                <div style={{ fontSize: '11px', color: isActive ? C.free : C.muted }}>
+                  {isActive ? 'Activo' : 'Inactivo'}
+                </div>
+              </div>
+              <button onClick={() => toggleActive(s)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: isActive ? C.free : C.muted, padding: '4px',
+              }}>
+                {isActive ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
+              </button>
+              <button onClick={() => removeStaff(s)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: '#e06060', padding: '4px',
+              }}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </Overlay>
   );
 }
