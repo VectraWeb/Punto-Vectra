@@ -104,6 +104,13 @@ export default function SalonFloor({
   }, [tables]);
 
   useEffect(() => {
+    if (isEditing) {
+      setZoom(1);
+      setOffset({ x: 0, y: 0 });
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
     const calcFit = () => {
       if (!containerRef.current) return;
       const containerW = containerRef.current.clientWidth;
@@ -162,6 +169,7 @@ export default function SalonFloor({
   }, [isEditing, positions, tables, effectiveScale]);
 
   const handleTouchStart = useCallback((e) => {
+    if (isEditing) return;
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -169,9 +177,10 @@ export default function SalonFloor({
     } else if (e.touches.length === 1 && zoom > 1) {
       panRef.current = { x: e.touches[0].clientX - offset.x, y: e.touches[0].clientY - offset.y };
     }
-  }, [zoom, offset]);
+  }, [zoom, offset, isEditing]);
 
   const handleTouchMove = useCallback((e) => {
+    if (isEditing) return;
     if (e.touches.length === 2 && pinchRef.current) {
       e.preventDefault();
       const dx = e.touches[0].clientX - e.touches[1].clientX;
