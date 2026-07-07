@@ -260,6 +260,8 @@ export default function SalonFloor({
         onTouchEnd={handleTouchEnd}
         style={{
           width: '100%',
+          maxWidth: '900px',
+          margin: '0 auto',
           aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
           background: PALETTE.creamDeep,
           borderRadius: '10px',
