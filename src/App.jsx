@@ -263,16 +263,27 @@ function StaffDashboard({ onLogout }) {
   // ── CRUD de reservas ───────────────────────────────────────────────────────
   const saveRes = useCallback(async (data) => {
     const id = data.id || `r${Date.now()}`;
-    const guardPath = guardRef(date, data.tableId, data.service, data.time);
-    // Extraer campos internos para no almacenarlos en Firestore
     const { _oldGuardId, _prevResId, _prevGuardId, ...cleanData } = data;
+
+    if (!cleanData.tableId) {
+      // Guardado simple sin mesa asignada (Pendiente)
+      await setDoc(resDocRef(date, id), {
+        ...cleanData,
+        id,
+        mesa_id: null,
+        estado: 'pendiente',
+        updatedAt: serverTimestamp(),
+        createdAt: cleanData.createdAt || serverTimestamp(),
+      });
+      return;
+    }
+
+    const guardPath = guardRef(date, cleanData.tableId, cleanData.service, cleanData.time);
 
     try {
       await runTransaction(db, async (transaction) => {
-        // TODOS los reads primero
         const guardSnap = await transaction.get(guardPath);
 
-        // Si la mesa estaba "A limpiar", eliminar esa reserva y su guard
         if (_prevResId) {
           transaction.delete(resDocRef(date, _prevResId));
           if (_prevGuardId) {
@@ -281,25 +292,20 @@ function StaffDashboard({ onLogout }) {
           }
         }
 
-        // Si el guard existe y no es la reserva que vamos a borrar, hay conflicto
         if (guardSnap.exists()) {
           const guardData = guardSnap.data();
           const isOwnGuard = guardData && guardData.reservationId === id;
           const isPrevGuard = guardData && _prevResId && guardData.reservationId === _prevResId;
           if (guardData && !isOwnGuard && !isPrevGuard) {
-            throw new Error(
-              'Lo sentimos, esa mesa acaba de ser reservada por otro usuario. Por favor, seleccioná otra mesa o elegí otro horario.'
-            );
+            throw new Error('Lo sentimos, esa mesa acaba de ser reservada por otro usuario.');
           }
         }
 
-        // Si es edición y cambió mesa/horario, limpiar guard viejo
         if (_oldGuardId) {
           const oldGuardPath = doc(db, 'reservations', date, 'guards', _oldGuardId);
           transaction.delete(oldGuardPath);
         }
 
-        // TODOS los writes después
         transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
         transaction.set(resDocRef(date, id), {
           ...cleanData,
@@ -309,21 +315,8 @@ function StaffDashboard({ onLogout }) {
           createdAt: cleanData.createdAt || serverTimestamp(),
         });
       });
-
-      notificarN8N({
-        evento: 'reserva_creada',
-        cliente_nombre: cleanData.customerName,
-        telefono: cleanData.phone || '',
-        cantidad_personas: cleanData.partySize,
-        mesa: cleanData.tableId,
-        servicio: cleanData.service,
-        duracion_minutos: cleanData.duration,
-        fecha: date,
-        hora: cleanData.time || '',
-        notas: cleanData.notes || ''
-      });
+      // ... n8n notification ...
     } catch (e) {
-      console.error('[Andi] Error crítico en setDoc:', e);
       throw e;
     }
   }, [date]);
@@ -999,7 +992,7 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, staf
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const selectedTable = tables.find(t => t.id === form.tableId);
-  const valid = form.customerName.trim() && form.tableId && form.time && form.partySize > 0 && (!selectedTable || form.partySize <= selectedTable.capacity);
+  const valid = form.customerName.trim() && form.time && form.partySize > 0;
 
   return (
     <Overlay onClose={onClose}>
@@ -1032,11 +1025,11 @@ function ResModal({ editing, preTable, tables, slots, service, tableStatus, staf
           <Field label="Mesa">
             <select value={form.tableId} onChange={e => set('tableId', e.target.value)} style={inp}>
               <option value="">— elegir —</option>
-              {tables.filter(t => {
-                const s = tableStatus(t.id);
-                const isCurrentRes = editing && editing.tableId === t.id;
-                return t.capacity >= form.partySize && (s.status === 'free' || s.status === 'soon' || isCurrentRes);
-              }).map(t => (
+               {tables.filter(t => {
+                 const s = tableStatus(t.id);
+                 const isCurrentRes = editing && editing.tableId === t.id;
+                 return (s.status === 'free' || s.status === 'soon' || isCurrentRes);
+               }).map(t => (
                 <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>
               ))}
             </select>

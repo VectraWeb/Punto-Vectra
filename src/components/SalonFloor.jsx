@@ -27,8 +27,8 @@ const LIVE_STATES = {
   para_limpiar:       { label: 'A limpiar',        color: '#e67e22' },
 };
 
-const CANVAS_W = 1400;
-const CANVAS_H = 800;
+const CANVAS_W = 1600;
+const CANVAS_H = 700;
 
 const TABLE_DIMS = {
   rectangular: { w: 130, h: 65, radius: '12px' },
@@ -214,7 +214,7 @@ export default function SalonFloor({
   const scaleFont = (size) => Math.max(6, Math.round(size * fitScale));
 
   return (
-    <div style={{ padding: '0 8px 12px' }}>
+    <div style={{ padding: '0 4px 12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', padding: '0 4px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <Move size={11} color={PALETTE.muted} />
@@ -260,6 +260,8 @@ export default function SalonFloor({
         onTouchEnd={handleTouchEnd}
         style={{
           width: '100%',
+          maxWidth: '1500px',
+          margin: '0 auto',
           aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
           background: PALETTE.creamDeep,
           borderRadius: '10px',
