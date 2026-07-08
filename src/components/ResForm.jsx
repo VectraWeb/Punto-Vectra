@@ -160,16 +160,8 @@ export default function ResForm({ onStaffAccess }) {
     }
   }, [service]);
 
-  // ── Mesas que caben por capacidad ──────────────────────────────────────
-  const fittingTables = useMemo(() => {
-    return tables
-      .filter(t => t.capacity >= form.partySize)
-      .sort((a, b) => a.capacity - b.capacity);
-  }, [tables, form.partySize]);
-
   // ── Validación ───────────────────────────────────────────────────────────
   const valid = form.customerName.trim().length >= 2
-    && fittingTables.length > 0
     && form.time
     && tInRange(form.time, service)
     && form.partySize > 0
@@ -181,48 +173,36 @@ export default function ResForm({ onStaffAccess }) {
     setSubmitting(true);
     setError('');
 
+    const id = `r${Date.now()}`;
+    const date = todayISO();
+
     try {
-      const assignedTableId = await runTransaction(db, async (transaction) => {
-        for (const t of fittingTables) {
-          const guardPath = guardRef(date, t.id, service, form.time);
-          const guardSnap = await transaction.get(guardPath);
-          if (!guardSnap.exists()) {
-            const id = `r${Date.now()}`;
-            transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
-            transaction.set(resDocRef(date, id), {
-              id,
-              customerName: form.customerName.trim(),
-              phone: form.phone,
-              partySize: form.partySize,
-              tableId: t.id,
-              time: form.time,
-              duration: SERVICES[service].defaultDuration,
-              service,
-              notes: form.notes,
-              liveState: null,
-              date,
-              updatedAt: serverTimestamp(),
-              createdAt: serverTimestamp(),
-            });
-            return t.id;
-          }
-        }
-        throw new Error('No hay mesas disponibles para esa cantidad de personas en ese horario.');
+      // GUARDADO SIMPLE: Sin búsqueda de mesas, sin transacciones.
+      // La reserva nace estrictamente como 'pendiente' y sin mesa asignada.
+      await setDoc(resDocRef(date, id), {
+        id,
+        customerName: form.customerName.trim(),
+        phone: form.phone,
+        partySize: form.partySize,
+        time: form.time,
+        duration: SERVICES[service].defaultDuration,
+        service,
+        notes: form.notes,
+        mesa_id: null,        // Forzamos mesa vacía
+        estado: 'pendiente',   // Forzamos estado pendiente
+        date,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
 
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
-        setForm({
-          customerName: '',
-          phone: '',
-          partySize: 2,
-          time: nowHHMM(),
-          notes: '',
-        });
+        setForm({ customerName: '', phone: '', partySize: 2, time: nowHHMM(), notes: '' });
       }, 3000);
     } catch (e) {
-      setError(e.message || 'Error al crear la reserva. Intentá de nuevo.');
+      console.error('Error al crear la reserva:', e);
+      setError('Error al crear la reserva. Intente de nuevo.');
     } finally {
       setSubmitting(false);
     }
