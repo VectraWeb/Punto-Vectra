@@ -112,15 +112,13 @@ const detectTime = (svc) => {
 };
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
-const resCol = (date) => collection(db, 'reservations', date, 'items');
-const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
-const guardRef = (date, tableId, service, time) =>
-  doc(db, 'reservations', date, 'guards', `${tableId}_${service}_${time.replace(':', '.')}`);
+const resCol = () => collection(db, 'reservations');
+const resDocRef = (id) => doc(db, 'reservations', id);
+const mesaReservadaRef = (tableId, date, service) =>
+  doc(db, 'mesasReservadas', `${tableId}_${date}_${service}`);
 const cfgRef = () => doc(db, 'config', 'restaurant');
 const staffCol = () => collection(db, 'staff');
 const staffDoc = (id) => doc(db, 'staff', id);
-// Flat collection for n8n WhatsApp bot reads/writes
-const allResDoc = (id) => doc(db, 'allReservations', id);
 
 // ─── Utilidad N8N ────────────────────────────────────────────────────────────
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || '';
@@ -234,8 +232,9 @@ function StaffDashboard({ onLogout }) {
 
   // ── Escucha en tiempo real de reservas para la fecha seleccionada ──────────
   useEffect(() => {
+    const q = query(resCol(), where('date', '==', date));
     const unsub = onSnapshot(
-      resCol(date),
+      q,
       (snap) => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setReservations(data);
@@ -256,11 +255,8 @@ function StaffDashboard({ onLogout }) {
       dates.push(d.toISOString().slice(0, 10));
     }
     (async () => {
-      const all = [];
-      for (const d of dates) {
-        const snap = await getDocs(resCol(d));
-        snap.docs.forEach(doc => all.push({ id: doc.id, ...doc.data() }));
-      }
+      const snap = await getDocs(query(resCol(), where('date', 'in', dates)));
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setAnalyticsRes(all);
     })();
   }, [showAnalytics, analyticsPeriod, date]);
@@ -282,85 +278,62 @@ function StaffDashboard({ onLogout }) {
   // ── CRUD de reservas ───────────────────────────────────────────────────────
   const saveRes = useCallback(async (data) => {
     const id = data.id || `r${Date.now()}`;
-    const { _oldGuardId, _prevResId, _prevGuardId, ...cleanData } = data;
-
-    const flatDoc = {
-      ...cleanData,
-      id,
-      date,
-      mesa_id: cleanData.tableId || null,
-      estado: cleanData.tableId ? (cleanData.estado || 'confirmada') : 'pendiente',
-      updatedAt: new Date().toISOString(),
-      createdAt: cleanData.createdAt ? (typeof cleanData.createdAt === 'string' ? cleanData.createdAt : new Date().toISOString()) : new Date().toISOString(),
-    };
+    const { _oldMesaRef, _prevResId, _prevMesaRef, ...cleanData } = data;
 
     if (!cleanData.tableId) {
-      // Guardado simple sin mesa asignada (Pendiente)
-      await setDoc(resDocRef(date, id), {
-        ...cleanData,
-        id,
+      await setDoc(resDocRef(id), {
+        ...cleanData, id, date,
         mesa_id: null,
         estado: 'pendiente',
         updatedAt: serverTimestamp(),
         createdAt: cleanData.createdAt || serverTimestamp(),
       });
-      // Mirror to flat collection for n8n
-      await setDoc(allResDoc(id), { ...flatDoc, mesa_id: null, estado: 'pendiente' });
       return;
     }
 
-    const guardPath = guardRef(date, cleanData.tableId, cleanData.service, cleanData.time);
+    const mesaRef = mesaReservadaRef(cleanData.tableId, date, cleanData.service);
 
     try {
       await runTransaction(db, async (transaction) => {
-        const guardSnap = await transaction.get(guardPath);
+        const mesaSnap = await transaction.get(mesaRef);
 
         if (_prevResId) {
-          transaction.delete(resDocRef(date, _prevResId));
-          transaction.delete(allResDoc(_prevResId));
-          if (_prevGuardId) {
-            const prevGuardPath = doc(db, 'reservations', date, 'guards', _prevGuardId);
-            transaction.delete(prevGuardPath);
-          }
+          transaction.delete(resDocRef(_prevResId));
+          if (_prevMesaRef) transaction.delete(_prevMesaRef);
         }
 
-        if (guardSnap.exists()) {
-          const guardData = guardSnap.data();
-          const isOwnGuard = guardData && guardData.reservationId === id;
-          const isPrevGuard = guardData && _prevResId && guardData.reservationId === _prevResId;
-          if (guardData && !isOwnGuard && !isPrevGuard) {
+        if (mesaSnap.exists()) {
+          const mesaData = mesaSnap.data();
+          if (mesaData.reservationId !== id && mesaData.reservationId !== _prevResId) {
             throw new Error('Lo sentimos, esa mesa acaba de ser reservada por otro usuario.');
           }
         }
 
-        if (_oldGuardId) {
-          const oldGuardPath = doc(db, 'reservations', date, 'guards', _oldGuardId);
-          transaction.delete(oldGuardPath);
-        }
+        if (_oldMesaRef) transaction.delete(_oldMesaRef);
 
-        transaction.set(guardPath, { reservationId: id, createdAt: serverTimestamp() });
-        transaction.set(resDocRef(date, id), {
-          ...cleanData,
-          id,
+        transaction.set(mesaRef, { occupied: true, reservationId: id, time: cleanData.time, partySize: cleanData.partySize });
+        transaction.set(resDocRef(id), {
+          ...cleanData, id, date,
+          mesa_id: cleanData.tableId,
+          estado: cleanData.tableId ? (cleanData.estado || 'confirmada') : 'pendiente',
           liveState: cleanData.liveState || null,
           updatedAt: serverTimestamp(),
           createdAt: cleanData.createdAt || serverTimestamp(),
         });
-        // Mirror to flat collection for n8n
-        transaction.set(allResDoc(id), flatDoc);
       });
-    } catch (e) {
-      throw e;
-    }
+    } catch (e) { throw e; }
   }, [date]);
 
   const deleteRes = useCallback(async (resData) => {
-    const guardPath = guardRef(date, resData.tableId, resData.service, resData.time);
+    if (!resData.tableId) {
+      await deleteDoc(resDocRef(resData.id));
+      return;
+    }
+    const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
     try {
       await runTransaction(db, async (transaction) => {
-        transaction.delete(guardPath);
-        transaction.delete(resDocRef(date, resData.id));
-        transaction.delete(allResDoc(resData.id));
+        transaction.delete(mesaRef);
+        transaction.delete(resDocRef(resData.id));
       });
     } catch (e) { console.error(e); throw e; }
   }, [date]);
@@ -373,7 +346,7 @@ function StaffDashboard({ onLogout }) {
       const patch = { liveState, updatedAt: serverTimestamp() };
       if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
-      await setDoc(resDocRef(date, res.id), patch, { merge: true });
+      await setDoc(resDocRef(res.id), patch, { merge: true });
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo en la actualización optimista, revirtiendo estado...', e);
@@ -408,8 +381,10 @@ function StaffDashboard({ onLogout }) {
     });
 
     try {
-      await deleteDoc(resDocRef(date, res.id));
-      await deleteDoc(allResDoc(res.id));
+      if (res.tableId) {
+        await deleteDoc(mesaReservadaRef(res.tableId, date, res.service));
+      }
+      await deleteDoc(resDocRef(res.id));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
@@ -422,7 +397,7 @@ function StaffDashboard({ onLogout }) {
     setShowLiveMenu(null);
     setOptimisticStates(prev => ({ ...prev, [res.id]: null }));
     try {
-      await setDoc(resDocRef(date, res.id), {
+      await setDoc(resDocRef(res.id), {
         liveState: null,
         startedAt: null,
         leftAt: null,
@@ -519,13 +494,13 @@ function StaffDashboard({ onLogout }) {
 
     const saveData = { ...data, duration: data.duration || SERVICES[service].defaultDuration, service, date };
     if (editing) {
-      saveData._oldGuardId = `${editing.tableId}_${editing.service}_${editing.time.replace(':', '.')}`;
+      saveData._oldMesaRef = mesaReservadaRef(editing.tableId, date, editing.service);
     }
 
     // Si la mesa está "A limpiar", pasar la reserva anterior para eliminarla en la misma transacción
     if (!editing && s.status === 'soon' && s.res) {
       saveData._prevResId = s.res.id;
-      saveData._prevGuardId = `${s.res.tableId}_${s.res.service}_${s.res.time.replace(':', '.')}`;
+      saveData._prevMesaRef = mesaReservadaRef(s.res.tableId, date, s.res.service);
     }
 
     try {

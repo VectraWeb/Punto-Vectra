@@ -531,7 +531,7 @@
         "authentication": "serviceAccount",
         "operation": "getAll",
         "projectId": "andimeet-93f62",
-        "collection": "allReservations",
+        "collection": "mesasReservadas",
         "returnAll": false,
         "limit": 100,
         "simplify": true
@@ -540,37 +540,19 @@
       "typeVersion": 1.1,
       "position": [1776, 1616],
       "id": "b625e499-2709-4ba4-b308-50020e2eb797",
-      "name": "Get Day Reservations",
+      "name": "Get Occupied Tables",
       "credentials": {
         "googleApi": { "id": "4oMTtyVYbyEwbL9v", "name": "Google Service Account account" }
       }
     },
-    {
-      "parameters": {
-        "jsCode": "// ── Inputs ──────────────────────────────────────────────────────────────────\nconst config = $('Get Restaurant Config').item.json;\nconst reservationsRaw = $('Get Day Reservations').item.json;\nconst parse = $('Parse Time & Service').item.json;\n\nconst requestedPartySize = parse.partySize || 2;\nconst requestedDate = parse.reservation_date;\nconst requestedService = parse.reservation_service;\nconst requestedTime = parse.reservation_time;\n\n// Get Day Reservations puede devolver array directo o { items: [...] }\nlet reservations = [];\nif (Array.isArray(reservationsRaw)) {\n  reservations = reservationsRaw;\n} else if (reservationsRaw && Array.isArray(reservationsRaw.items)) {\n  reservations = reservationsRaw.items;\n} else if (reservationsRaw && reservationsRaw.allReservations) {\n  reservations = reservationsRaw.allReservations;\n}\n\n// ── 1. Generar lista de mesas desde config ──────────────────────────────────\nconst groups = [\n  { cap: config.cap2 || 0, capacity: 2 },\n  { cap: config.cap4 || 0, capacity: 4 },\n  { cap: config.cap5 || 0, capacity: 5 },\n  { cap: config.cap8 || 0, capacity: 8 },\n];\n\nconst allTables = [];\nlet tableNum = 1;\nfor (const { cap, capacity } of groups) {\n  for (let i = 0; i < cap; i++) {\n    allTables.push({ id: `m${tableNum}`, name: `M${tableNum}`, capacity });\n    tableNum++;\n  }\n}\n\nconst totalTables = allTables.length;\n\n// ── 2. Mesas ocupadas (reservas existentes del mismo servicio) ──────────────\nconst occupiedTableIds = new Set(\n  reservations\n    .filter(r => r.tableId && r.service === requestedService)\n    .map(r => r.tableId)\n);\n\n// ── 3. Filtrar mesas con capacidad suficiente que estén libres ──────────────\nconst suitableTables = allTables\n  .filter(t => t.capacity >= requestedPartySize && !occupiedTableIds.has(t.id))\n  .sort((a, b) => a.capacity - b.capacity);\n\nconst hasAvailability = suitableTables.length > 0;\nconst assignedTable = hasAvailability ? suitableTables[0] : null;\nconst availableCount = suitableTables.length;\n\n// ── 4. Output ──────────────────────────────────────────────────────────────\nreturn [{\n  json: {\n    total_tables: totalTables,\n    reserved_count: occupiedTableIds.size,\n    available_tables: availableCount,\n    assigned_table: assignedTable ? assignedTable.id : null,\n    assigned_table_name: assignedTable ? assignedTable.name : null,\n    assigned_table_capacity: assignedTable ? assignedTable.capacity : null,\n    reservation_estado: hasAvailability ? 'confirmada' : 'pendiente',\n    requested_date: requestedDate,\n    requested_service: requestedService,\n    requested_time: requestedTime,\n    requested_party_size: requestedPartySize,\n    customerName: parse.customerName || '',\n    phone: parse.phone || '',\n    notes: parse.notes || '',\n  }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1984, 1616],
-      "id": "a7a966ab-a854-4871-8322-1f43053faf23",
-      "name": "Calc Availability"
-    },
-    {
-      "parameters": {
-        "jsCode": "const data = $('Calc Availability').item.json;\n\nconst id = `r${Date.now()}`;\nconst now = new Date().toISOString();\nconst guardTime = data.requested_time.replace(':', '.');\n\nconst flatDoc = {\n  id,\n  customerName: data.customerName,\n  phone: data.phone,\n  partySize: data.requested_party_size,\n  tableId: data.assigned_table,\n  mesa_id: data.assigned_table,\n  time: data.requested_time,\n  duration: data.requested_service === 'cena' ? 120 : 90,\n  service: data.requested_service,\n  notes: data.notes,\n  liveState: null,\n  startedAt: null,\n  leftAt: null,\n  date: data.requested_date,\n  estado: data.reservation_estado,\n  source: 'whatsapp',\n  customerPhone: $('Webhook1').item.json.body.data.key.remoteJid,\n  createdAt: now,\n  updatedAt: now,\n};\n\nconst guardDoc = {\n  reservationId: id,\n  createdAt: now,\n};\n\nreturn [{\n  json: {\n    reservation_id: id,\n    flat_doc: flatDoc,\n    guard_doc: guardDoc,\n    guard_id: `${data.assigned_table}_${data.requested_service}_${guardTime}`,\n    guard_collection: `reservations/${data.requested_date}/guards`,\n    has_table: data.assigned_table !== null,\n    assigned_table_name: data.assigned_table ? `M${data.assigned_table.replace('m', '')}` : null,\n    requested_party_size: data.requested_party_size,\n    requested_time: data.requested_time,\n    requested_date: data.requested_date,\n    customerName: data.customerName,\n  }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [2200, 1616],
-      "id": "c78ad0fc-e612-451d-a7ef-6aec54875fe1",
-      "name": "Prepare Reservation"
-    },
+    {"parameters": {"jsCode": "const config = $('Get Restaurant Config').item.json;\nconst occupiedRaw = $('Get Occupied Tables').item.json;\nconst parse = $('Parse Time & Service').item.json;\n\nconst requestedPartySize = parse.partySize || 2;\nconst requestedDate = parse.reservation_date;\nconst requestedService = parse.reservation_service;\nconst requestedTime = parse.reservation_time;\n\nconst groups = [\n  { cap: config.cap2 || 0, capacity: 2 },\n  { cap: config.cap4 || 0, capacity: 4 },\n  { cap: config.cap5 || 0, capacity: 5 },\n  { cap: config.cap8 || 0, capacity: 8 },\n];\n\nconst allTables = [];\nlet tableNum = 1;\nfor (const { cap, capacity } of groups) {\n  for (let i = 0; i < cap; i++) {\n    allTables.push({ id: `m${tableNum}`, name: `M${tableNum}`, capacity });\n    tableNum++;\n  }\n}\n\nlet occupiedArray = [];\nif (Array.isArray(occupiedRaw)) {\n  occupiedArray = occupiedRaw;\n} else if (occupiedRaw && Array.isArray(occupiedRaw.items)) {\n  occupiedArray = occupiedRaw.items;\n}\n\nconst occupiedTableIds = new Set();\nconst suffix = `_${requestedDate}_${requestedService}`;\noccupiedArray.forEach(item => {\n  const docId = item.id || '';\n  if (docId.endsWith(suffix)) {\n    const tableId = docId.substring(0, docId.indexOf(suffix));\n    if (tableId) occupiedTableIds.add(tableId);\n  }\n});\n\nconst suitableTables = allTables\n  .filter(t => t.capacity >= requestedPartySize && !occupiedTableIds.has(t.id))\n  .sort((a, b) => a.capacity - b.capacity);\n\nconst hasAvailability = suitableTables.length > 0;\nconst assignedTable = hasAvailability ? suitableTables[0] : null;\nconst freeCount = allTables.filter(t => !occupiedTableIds.has(t.id)).length;\n\nreturn [{\n  json: {\n    has_availability: hasAvailability,\n    assigned_table: assignedTable ? assignedTable.id : null,\n    assigned_table_name: assignedTable ? assignedTable.name : null,\n    assigned_table_capacity: assignedTable ? assignedTable.capacity : null,\n    free_tables: freeCount,\n    free_suitable_tables: suitableTables.length,\n    total_tables: allTables.length,\n    occupied_tables: allTables.length - freeCount,\n    requested_party_size: requestedPartySize,\n    requested_time: requestedTime,\n    requested_date: requestedDate,\n    requested_service: requestedService,\n    customerName: parse.customerName || '',\n    phone: parse.phone || '',\n    notes: parse.notes || '',\n    reservation_estado: hasAvailability ? 'confirmada' : 'pendiente',\n    customerPhone: $('Webhook1').item.json.body.data.key.remoteJid,\n  }\n}];"}, "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1984, 1616], "id": "a7a966ab-a854-4871-8322-1f43053faf23", "name": "Calc Availability"},
+    {"parameters": {"jsCode": "const data = $('Calc Availability').item.json;\n\nconst id = `r${Date.now()}`;\nconst now = new Date().toISOString();\nconst mesaId = data.assigned_table ? `${data.assigned_table}_${data.requested_date}_${data.requested_service}` : null;\n\nconst mesaDoc = data.assigned_table ? {\n  occupied: true,\n  reservationId: id,\n  time: data.requested_time,\n  partySize: data.requested_party_size,\n} : null;\n\nreturn [{\n  json: {\n    reservation_id: id,\n    flat_doc: {\n      id,\n      customerName: data.customerName,\n      phone: data.phone,\n      partySize: data.requested_party_size,\n      tableId: data.assigned_table,\n      mesa_id: data.assigned_table,\n      time: data.requested_time,\n      duration: data.requested_service === 'cena' ? 120 : 90,\n      service: data.requested_service,\n      notes: data.notes,\n      liveState: null,\n      startedAt: null,\n      leftAt: null,\n      date: data.requested_date,\n      estado: data.reservation_estado,\n      source: 'whatsapp',\n      customerPhone: data.customerPhone,\n      createdAt: now,\n      updatedAt: now,\n    },\n    mesa_id: mesaId,\n    mesa_doc: mesaDoc,\n    has_table: data.assigned_table !== null,\n    assigned_table_name: data.assigned_table ? `M${data.assigned_table.replace('m', '')}` : null,\n    requested_party_size: data.requested_party_size,\n    requested_time: data.requested_time,\n    requested_date: data.requested_date,\n    customerName: data.customerName,\n  }\n}];"}, "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2200, 1616], "id": "c78ad0fc-e612-451d-a7ef-6aec54875fe1", "name": "Prepare Reservation"},
     {
       "parameters": {
         "authentication": "serviceAccount",
         "operation": "create",
         "projectId": "andimeet-93f62",
-        "collection": "allReservations",
+        "collection": "reservations",
         "documentId": "={{ $json.reservation_id }}",
         "columns": "={{ JSON.stringify($json.flat_doc) }}"
       },
@@ -588,9 +570,9 @@
         "authentication": "serviceAccount",
         "operation": "create",
         "projectId": "andimeet-93f62",
-        "collection": "={{ $('Prepare Reservation').item.json.guard_collection }}",
-        "documentId": "={{ $('Prepare Reservation').item.json.guard_id }}",
-        "columns": "={{ JSON.stringify($('Prepare Reservation').item.json.guard_doc) }}"
+        "collection": "mesasReservadas",
+        "documentId": "={{ $json.mesa_id }}",
+        "columns": "={{ JSON.stringify($json.mesa_doc) }}"
       },
       "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
       "typeVersion": 1.1,

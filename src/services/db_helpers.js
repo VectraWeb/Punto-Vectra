@@ -12,14 +12,17 @@ import { db } from '../firebase';
  */
 export const subscribeToTableStates = (date, service, callback) => {
   const q = query(
-    collection(db, 'reservations', date, 'items'),
+    collection(db, 'reservations'),
+    where('date', '==', date),
     where('service', '==', service)
   );
 
   return onSnapshot(
     q,
     (snapshot) => {
-      const reservations = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const reservations = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter(r => r.tableId != null);
       callback(reservations);
     },
     (error) => {

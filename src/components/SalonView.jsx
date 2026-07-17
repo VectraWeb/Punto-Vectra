@@ -65,7 +65,7 @@ const SalonView = ({ date, service }) => {
   const handleUpdateStatus = async (resId, newState) => {
     if (rol !== 'staff') return;
     try {
-      const resRef = doc(db, 'reservations', date, 'items', resId);
+      const resRef = doc(db, 'reservations', resId);
       await updateDoc(resRef, {
         liveState: newState,
         updatedAt: serverTimestamp()
@@ -85,7 +85,7 @@ const SalonView = ({ date, service }) => {
         estado: 'pedido',
         hora_pedido: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
-      const resRef = doc(db, 'reservations', date, 'items', selectedTable.reservation.id);
+      const resRef = doc(db, 'reservations', selectedTable.reservation.id);
       await updateDoc(resRef, {
         comandas: arrayUnion(comanda),
         updatedAt: serverTimestamp()
@@ -140,7 +140,7 @@ const SalonView = ({ date, service }) => {
   const handleToggleComandaStatus = async (item) => {
     if (!selectedTable?.reservation) return;
     try {
-      const resRef = doc(db, 'reservations', date, 'items', selectedTable.reservation.id);
+      const resRef = doc(db, 'reservations', selectedTable.reservation.id);
       
       await runTransaction(db, async (transaction) => {
         const resDoc = await transaction.get(resRef);
@@ -165,7 +165,7 @@ const SalonView = ({ date, service }) => {
     if (!isFormValid) return;
     try {
       const resId = `res_${Date.now()}`;
-      const resRef = doc(db, 'reservations', date, 'items', resId);
+      const resRef = doc(db, 'reservations', resId);
       const finalTable = tables.find(t => t.id === form.tableId);
       
       await setDoc(resRef, {
@@ -174,9 +174,11 @@ const SalonView = ({ date, service }) => {
         phone: form.phone.trim(),
         partySize: form.partySize,
         tableId: form.tableId,
+        mesa_id: form.tableId,
         time: form.time,
         duration: TANDA_PROMEDIO,
         service,
+        date,
         liveState: 'esperando_cliente',
         comandas: [],
         createdAt: serverTimestamp(),

@@ -46,20 +46,31 @@ export default app;
 
 // ─── Estructura de datos en Firestore ─────────────────────────────────────────
 //
-// Colección: reservations/{date_YYYY-MM-DD}/items/{reservationId}
+// Colección: reservations/{reservationId}
 // {
-//   id:           string   — ID único (auto generado)
+//   id:           string   — ID único (formato "r{timestamp}")
 //   customerName: string
 //   phone:        string   — Opcional
 //   partySize:    number
-//   tableId:      string   — ej. "m1"
+//   tableId:      string   — ej. "m1" (null si pendiente)
+//   mesa_id:      string   — ej. "m1" (null si pendiente)
 //   time:         string   — ej. "20:00"
 //   duration:     number   — minutos
 //   service:      string   — "mediodia" | "cena"
+//   date:         string   — "YYYY-MM-DD"
 //   notes:        string   — Opcional
-//   liveState:    string   — Estado en vivo del mozo (ver LIVE_STATES en App.js)
+//   estado:       string   — "pendiente" | "confirmada"
+//   liveState:    string   — Estado en vivo del mozo
 //   createdAt:    timestamp
 //   updatedAt:    timestamp
+// }
+//
+// Colección: mesasReservadas/{m{tableId}_{date}_{service}}
+// {
+//   occupied:       boolean  — true cuando la mesa está ocupada
+//   reservationId:  string
+//   time:           string
+//   partySize:      number
 // }
 //
 // Colección: config/restaurant

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Sun, Moon, Check, AlertCircle } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, serverTimestamp,
-  runTransaction,
+  runTransaction, query, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -63,13 +63,9 @@ const buildTables = (cfg) => {
 };
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
-const resCol = (date) => collection(db, 'reservations', date, 'items');
-const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
-const guardRef = (date, tableId, service, time) =>
-  doc(db, 'reservations', date, 'guards', `${tableId}_${service}_${time.replace(':', '.')}`);
+const resCol = () => collection(db, 'reservations');
+const resDocRef = (id) => doc(db, 'reservations', id);
 const cfgRef = () => doc(db, 'config', 'restaurant');
-// Flat collection for n8n WhatsApp bot reads/writes
-const allResDoc = (id) => doc(db, 'allReservations', id);
 
 // ─── Estilos ─────────────────────────────────────────────────────────────────
 const inp = {
@@ -142,7 +138,8 @@ export default function ResForm({ onStaffAccess }) {
 
   // ── Suscripción a reservas del día ───────────────────────────────────────
   useEffect(() => {
-    const unsub = onSnapshot(resCol(date), (snap) => {
+    const q = query(resCol(), where('date', '==', date));
+    const unsub = onSnapshot(q, (snap) => {
       setReservations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return unsub;
@@ -181,26 +178,7 @@ export default function ResForm({ onStaffAccess }) {
     try {
       // GUARDADO SIMPLE: Sin búsqueda de mesas, sin transacciones.
       // La reserva nace estrictamente como 'pendiente' y sin mesa asignada.
-      const now = new Date();
-      const isoNow = now.toISOString();
-      await setDoc(resDocRef(date, id), {
-        id,
-        customerName: form.customerName.trim(),
-        phone: form.phone,
-        partySize: form.partySize,
-        time: form.time,
-        duration: SERVICES[service].defaultDuration,
-        service,
-        notes: form.notes,
-        mesa_id: null,        // Forzamos mesa vacía
-        estado: 'pendiente',   // Forzamos estado pendiente
-        date,
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      });
-
-      // Mirror to flat collection for n8n
-      await setDoc(allResDoc(id), {
+      await setDoc(resDocRef(id), {
         id,
         customerName: form.customerName.trim(),
         phone: form.phone,
@@ -212,8 +190,8 @@ export default function ResForm({ onStaffAccess }) {
         mesa_id: null,
         estado: 'pendiente',
         date,
-        updatedAt: isoNow,
-        createdAt: isoNow,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
 
       setSuccess(true);
