@@ -8,7 +8,10 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-384, 512],
+      "position": [
+        -384,
+        512
+      ],
       "id": "fce8776b-2958-4d1c-82e3-569148e349ec",
       "name": "Webhook1",
       "webhookId": "fda9453d-95be-4e92-9449-42002cfb2fcc"
@@ -19,9 +22,22 @@
           "values": [
             {
               "conditions": {
-                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
                 "conditions": [
-                  { "leftValue": "={{ $json.body.data.messageType }}", "rightValue": "conversation", "operator": { "type": "string", "operation": "equals" }, "id": "a8718a43-da7f-4bf9-8876-9447c6ab73bd" }
+                  {
+                    "leftValue": "={{ $json.body.data.messageType }}",
+                    "rightValue": "conversation",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "a8718a43-da7f-4bf9-8876-9447c6ab73bd"
+                  }
                 ],
                 "combinator": "and"
               },
@@ -30,9 +46,23 @@
             },
             {
               "conditions": {
-                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
                 "conditions": [
-                  { "id": "de9f7833-dbee-4ffe-bdc5-2043a0cbcd0f", "leftValue": "={{ $json.body.data.messageType }}", "rightValue": "audioMessage", "operator": { "type": "string", "operation": "equals", "name": "filter.operator.equals" } }
+                  {
+                    "id": "de9f7833-dbee-4ffe-bdc5-2043a0cbcd0f",
+                    "leftValue": "={{ $json.body.data.messageType }}",
+                    "rightValue": "audioMessage",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
                 ],
                 "combinator": "and"
               },
@@ -45,7 +75,10 @@
       },
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
-      "position": [-48, 512],
+      "position": [
+        -48,
+        512
+      ],
       "id": "6eb1b5f6-2edf-4de5-b0b5-be8e455cd475",
       "name": "Switch1"
     },
@@ -53,11 +86,16 @@
       "parameters": {
         "operation": "toBinary",
         "sourceProperty": "data.base64",
-        "options": { "fileName": "fe.ogg" }
+        "options": {
+          "fileName": "fe.ogg"
+        }
       },
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
-      "position": [544, 640],
+      "position": [
+        544,
+        640
+      ],
       "id": "279e3a54-ee2d-449d-8d01-89d54a93d836",
       "name": "Convert to File2"
     },
@@ -70,19 +108,38 @@
       },
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
-      "position": [352, 640],
+      "position": [
+        352,
+        640
+      ],
       "id": "e6d2a653-e5dc-44f2-9b5a-4f0866c46107",
       "name": "Obter m dia em base",
       "credentials": {
-        "evolutionApi": { "id": "QA2TB3jQdXMkKDOZ", "name": "Evolution account" }
+        "evolutionApi": {
+          "id": "QA2TB3jQdXMkKDOZ",
+          "name": "Evolution account"
+        }
       }
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
           "conditions": [
-            { "id": "c0a031e8-4b9b-465a-99ad-8dbe4dc34440", "leftValue": "={{ $json.body.data.messageType }}", "rightValue": "audioMessage", "operator": { "type": "string", "operation": "notEquals" } }
+            {
+              "id": "c0a031e8-4b9b-465a-99ad-8dbe4dc34440",
+              "leftValue": "={{ $json.body.data.messageType }}",
+              "rightValue": "audioMessage",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
           ],
           "combinator": "and"
         },
@@ -90,7 +147,10 @@
       },
       "type": "n8n-nodes-base.filter",
       "typeVersion": 2.2,
-      "position": [448, 384],
+      "position": [
+        448,
+        384
+      ],
       "id": "b88ced9c-6572-40d4-a24d-d75e61a8b3ab",
       "name": "Filter1"
     },
@@ -98,24 +158,82 @@
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "507f5b6c-f399-40d6-9f2a-18691cad03e8", "name": "message.content", "value": "={{ $json.body.data.message.conversation }}", "type": "string" },
-            { "id": "ef3d45b3-482c-4007-85fd-d404ddb3350e", "name": "message.timestamp", "value": "={{ new Date(Number($json.body?.data?.messageTimestamp || 0) * 1000).toISOString() }}", "type": "string" },
-            { "id": "d4366476-5855-4865-ba57-067482b32671", "name": "payload", "value": "={{ JSON.stringify({ userId: $json.userId, text: $json.messageText, ts: $json.ts, pushName: $json.body?.data?.pushName, messageType: $json.body?.data?.messageType, source: $json.body?.data?.source, raw: $json.body?.data?.message || null }) }}", "type": "string" },
-            { "id": "f2cd8477-a63c-49d4-9f20-a2b77f0e953d", "name": "user_name", "value": "={{ $json.body.data.pushName }}", "type": "string" },
-            { "id": "816e1285-83ae-4823-8689-b4356830aa8f", "name": "message.content_type", "value": "={{ $json.body.data.messageType }}", "type": "string" },
-            { "id": "c77dca97-d854-4595-b404-c0f1704051e3", "name": "instance_server_url", "value": "={{ $json.body.server_url }}", "type": "string" },
-            { "id": "58823986-efea-418f-a865-084dac4bcb6d", "name": "instance.name", "value": "={{ $json.body.instance }}", "type": "string" },
-            { "id": "d66057d1-8d44-4e56-b64e-0339193cbedf", "name": "instance.apikey", "value": "={{ $json.body.apikey }}", "type": "string" },
-            { "id": "96a0b43b-c699-4d3c-a9b9-106ebc311aed", "name": "message.message_id", "value": "={{ $json.body.data.key.id }}", "type": "string" },
-            { "id": "1c3bc493-e974-42f0-bb75-c3d0b15ff71f", "name": "message.chat_id", "value": "={{ $json.body.data.key.remoteJid }}", "type": "string" },
-            { "id": "a864f23a-d959-4c3f-93b6-bcb7869da55b", "name": "audio_transcription", "value": "={{ $json.text }}", "type": "string" }
+            {
+              "id": "507f5b6c-f399-40d6-9f2a-18691cad03e8",
+              "name": "message.content",
+              "value": "={{ $json.body.data.message.conversation }}",
+              "type": "string"
+            },
+            {
+              "id": "ef3d45b3-482c-4007-85fd-d404ddb3350e",
+              "name": "message.timestamp",
+              "value": "={{ new Date(Number($json.body?.data?.messageTimestamp || 0) * 1000).toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "d4366476-5855-4865-ba57-067482b32671",
+              "name": "payload",
+              "value": "={{ JSON.stringify({ userId: $json.userId, text: $json.messageText, ts: $json.ts, pushName: $json.body?.data?.pushName, messageType: $json.body?.data?.messageType, source: $json.body?.data?.source, raw: $json.body?.data?.message || null }) }}",
+              "type": "string"
+            },
+            {
+              "id": "f2cd8477-a63c-49d4-9f20-a2b77f0e953d",
+              "name": "user_name",
+              "value": "={{ $json.body.data.pushName }}",
+              "type": "string"
+            },
+            {
+              "id": "816e1285-83ae-4823-8689-b4356830aa8f",
+              "name": "message.content_type",
+              "value": "={{ $json.body.data.messageType }}",
+              "type": "string"
+            },
+            {
+              "id": "c77dca97-d854-4595-b404-c0f1704051e3",
+              "name": "instance_server_url",
+              "value": "={{ $json.body.server_url }}",
+              "type": "string"
+            },
+            {
+              "id": "58823986-efea-418f-a865-084dac4bcb6d",
+              "name": "instance.name",
+              "value": "={{ $json.body.instance }}",
+              "type": "string"
+            },
+            {
+              "id": "d66057d1-8d44-4e56-b64e-0339193cbedf",
+              "name": "instance.apikey",
+              "value": "={{ $json.body.apikey }}",
+              "type": "string"
+            },
+            {
+              "id": "96a0b43b-c699-4d3c-a9b9-106ebc311aed",
+              "name": "message.message_id",
+              "value": "={{ $json.body.data.key.id }}",
+              "type": "string"
+            },
+            {
+              "id": "1c3bc493-e974-42f0-bb75-c3d0b15ff71f",
+              "name": "message.chat_id",
+              "value": "={{ $json.body.data.key.remoteJid }}",
+              "type": "string"
+            },
+            {
+              "id": "a864f23a-d959-4c3f-93b6-bcb7869da55b",
+              "name": "audio_transcription",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1168, 640],
+      "position": [
+        1168,
+        640
+      ],
       "id": "be58887f-f98d-4573-87c6-203460ce69e5",
       "name": "Edit Fields"
     },
@@ -126,12 +244,15 @@
         "hasOutputParser": true,
         "needsFallback": true,
         "options": {
-          "systemMessage": "=Eres el recepcionista virtual de \"Andi\", un restaurante que se caracteriza por ser elegante y amigable. Tu misión es atender a los clientes por WhatsApp, responder sus dudas, y guiar proactivamente la conversación con el objetivo de recolectar los datos para sus reservas de manera cálida, servicial y profesional. Ten en cuenta que todo el flujo y gestión se realiza a través de openclaw, por lo que tu salida de datos debe ser exacta.\n\n⚠️ IMPORTANTE: TODAS tus respuestas deben ser estrictamente en formato JSON.\n\nEl JSON de salida DEBE tener SIEMPRE la siguiente estructura con todas sus claves presentes (usa \"\" si no vas a usar un mensaje o si un dato aún no existe):\n{\n\"mensaje_1\": \"Tu primera burbuja de chat\",\n\"mensaje_2\": \"Tu segunda burbuja de chat (opcional, si no usa '')\",\n\"mensaje_3\": \"Tu tercera burbuja de chat (opcional, si no usa '')\",\n\"crear_reserva\": booleano (true o false),\n\"datos_reserva\": {\n\"turno\": \"\",\n\"nombre\": \"\",\n\"telefono\": \"\",\n\"comensales\": \"\",\n\"horario\": \"\",\n\"mozo\": \"\",\n\"notas\": \"\"\n}\n}\n\n🍽️ REGLAS DE NEGOCIO Y CONVERSACIÓN:\n\nTono de voz: Elegante pero amigable. Trata al cliente con respeto. Usa emojis relacionados con gastronomía (🍷, 🍽️, ✨, 🥩) pero sin saturar.\n\nOBJETIVO DE RECOLECCIÓN DE DATOS: Tu meta principal es conseguir la información del formulario de reserva. Debes guiar al usuario haciendo las preguntas necesarias de forma natural.\n\nDatos OBLIGATORIOS (Debes conseguirlos sí o sí):\n\nTurno (Identifica si es \"Mediodía\" [11:30 - 15:00] o \"Cena\" [19:30 - 01:00]).\n\nNombre (A quién queda la reserva).\n\nComensales (Cantidad de personas).\n\nHorario (La hora exacta deseada dentro del turno).\n\nDatos OPCIONALES (Si el cliente no los da, no los exijas para crear la reserva):\n\nTeléfono.\n\nMozo (Si tienen preferencia por alguno).\n\nNotas (Alergias o pedidos especiales).\n\nLÓGICA DE EXTRACCIÓN (CRÍTICO):\n\nMIENTRAS TE FALTE AL MENOS UN DATO OBLIGATORIO: El campo \"crear_reserva\" debe ser estrictamente FALSE. Los datos que aún no sepas deben quedar como cadenas vacías (\"\"). Realiza las preguntas necesarias para obtener la información faltante.\n\nCUANDO TENGAS TODOS LOS DATOS OBLIGATORIOS: Cambia \"crear_reserva\" a TRUE.\n\nESTILO DE RESPUESTA (1, 2 o 3 mensajes):\n\nUsa los múltiples mensajes para simular que escribes en WhatsApp de forma natural.\n\nSaludos o respuestas muy cortas: Usa solo \"mensaje_1\".\n\nPedir datos: Usa \"mensaje_1\" para saludar/afirmar y \"mensaje_2\" para la pregunta.\n\nConfirmación final de reserva: Usa los 3 mensajes si necesitas dar detalles (Ej: \"mensaje_1\" para celebrar, \"mensaje_2\" para confirmar que envías la solicitud, \"mensaje_3\" para aclarar lo de la nota especial).\n\n🚫 RESTRICCIONES ESTRICTAS:\n\nNunca inventes platos del menú ni precios.\n\nNunca confirmes la reserva definitivamente, indica que vas a \"verificar la disponibilidad\".\n\n🎯 EJEMPLOS DE INTERACCIÓN:\n\nUsuario: \"Hola, soy Ariel y quisiera ir a cenar hoy.\"\nTu Respuesta:\n{\n\"mensaje_1\": \"¡Hola Ariel! Qué alegría saludarte. ✨\",\n\"mensaje_2\": \"Para organizar tu cena, ¿me podrías confirmar para cuántas personas sería y en qué horario prefieren venir? Nuestro turno de cena es de 19:30 a 01:00.\",\n\"mensaje_3\": \"Si tienen alguna alergia o preferencia de mozo, también puedes comentármelo.\",\n\"crear_reserva\": false,\n\"datos_reserva\": {\n\"turno\": \"Cena\",\n\"nombre\": \"Ariel\",\n\"telefono\": \"\",\n\"comensales\": \"\",\n\"horario\": \"\",\n\"mozo\": \"\",\n\"notas\": \"\"\n}\n}\n\nIMPORTANTE: La salida debe ser exclusivamente el objeto JSON puro, sin ningún texto adicional, sin comillas exteriores y sin bloques de código markdown."
+          "systemMessage": "=Eres el recepcionista virtual de \"Andi\", un restaurante que se caracteriza por ser elegante y amigable. Tu misi\u00f3n es atender a los clientes por WhatsApp, responder sus dudas, y guiar proactivamente la conversaci\u00f3n con el objetivo de recolectar los datos para sus reservas de manera c\u00e1lida, servicial y profesional. Ten en cuenta que todo el flujo y gesti\u00f3n se realiza a trav\u00e9s de openclaw, por lo que tu salida de datos debe ser exacta.\n\n\u26a0\ufe0f IMPORTANTE: TODAS tus respuestas deben ser estrictamente en formato JSON.\n\nEl JSON de salida DEBE tener SIEMPRE la siguiente estructura con todas sus claves presentes (usa \"\" si no vas a usar un mensaje o si un dato a\u00fan no existe):\n{\n\"mensaje_1\": \"Tu primera burbuja de chat\",\n\"mensaje_2\": \"Tu segunda burbuja de chat (opcional, si no usa '')\",\n\"mensaje_3\": \"Tu tercera burbuja de chat (opcional, si no usa '')\",\n\"crear_reserva\": booleano (true o false),\n\"datos_reserva\": {\n\"turno\": \"\",\n\"nombre\": \"\",\n\"telefono\": \"\",\n\"comensales\": \"\",\n\"horario\": \"\",\n\"mozo\": \"\",\n\"notas\": \"\"\n}\n}\n\n\ud83c\udf7d\ufe0f REGLAS DE NEGOCIO Y CONVERSACI\u00d3N:\n\nTono de voz: Elegante pero amigable. Trata al cliente con respeto. Usa emojis relacionados con gastronom\u00eda (\ud83c\udf77, \ud83c\udf7d\ufe0f, \u2728, \ud83e\udd69) pero sin saturar.\n\nOBJETIVO DE RECOLECCI\u00d3N DE DATOS: Tu meta principal es conseguir la informaci\u00f3n del formulario de reserva. Debes guiar al usuario haciendo las preguntas necesarias de forma natural.\n\nDatos OBLIGATORIOS (Debes conseguirlos s\u00ed o s\u00ed):\n\nTurno (Identifica si es \"Mediod\u00eda\" [11:30 - 15:00] o \"Cena\" [19:30 - 01:00]).\n\nNombre (A qui\u00e9n queda la reserva).\n\nComensales (Cantidad de personas).\n\nHorario (La hora exacta deseada dentro del turno).\n\nDatos OPCIONALES (Si el cliente no los da, no los exijas para crear la reserva):\n\nTel\u00e9fono.\n\nMozo (Si tienen preferencia por alguno).\n\nNotas (Alergias o pedidos especiales).\n\nL\u00d3GICA DE EXTRACCI\u00d3N (CR\u00cdTICO):\n\nMIENTRAS TE FALTE AL MENOS UN DATO OBLIGATORIO: El campo \"crear_reserva\" debe ser estrictamente FALSE. Los datos que a\u00fan no sepas deben quedar como cadenas vac\u00edas (\"\"). Realiza las preguntas necesarias para obtener la informaci\u00f3n faltante.\n\nCUANDO TENGAS TODOS LOS DATOS OBLIGATORIOS: Cambia \"crear_reserva\" a TRUE.\n\nESTILO DE RESPUESTA (1, 2 o 3 mensajes):\n\nUsa los m\u00faltiples mensajes para simular que escribes en WhatsApp de forma natural.\n\nSaludos o respuestas muy cortas: Usa solo \"mensaje_1\".\n\nPedir datos: Usa \"mensaje_1\" para saludar/afirmar y \"mensaje_2\" para la pregunta.\n\nConfirmaci\u00f3n final de reserva: Usa los 3 mensajes si necesitas dar detalles (Ej: \"mensaje_1\" para celebrar, \"mensaje_2\" para confirmar que env\u00edas la solicitud, \"mensaje_3\" para aclarar lo de la nota especial).\n\n\ud83d\udeab RESTRICCIONES ESTRICTAS:\n\nNunca inventes platos del men\u00fa ni precios.\n\nNunca confirmes la reserva definitivamente, indica que vas a \"verificar la disponibilidad\".\n\n\ud83c\udfaf EJEMPLOS DE INTERACCI\u00d3N:\n\nUsuario: \"Hola, soy Ariel y quisiera ir a cenar hoy.\"\nTu Respuesta:\n{\n\"mensaje_1\": \"\u00a1Hola Ariel! Qu\u00e9 alegr\u00eda saludarte. \u2728\",\n\"mensaje_2\": \"Para organizar tu cena, \u00bfme podr\u00edas confirmar para cu\u00e1ntas personas ser\u00eda y en qu\u00e9 horario prefieren venir? Nuestro turno de cena es de 19:30 a 01:00.\",\n\"mensaje_3\": \"Si tienen alguna alergia o preferencia de mozo, tambi\u00e9n puedes coment\u00e1rmelo.\",\n\"crear_reserva\": false,\n\"datos_reserva\": {\n\"turno\": \"Cena\",\n\"nombre\": \"Ariel\",\n\"telefono\": \"\",\n\"comensales\": \"\",\n\"horario\": \"\",\n\"mozo\": \"\",\n\"notas\": \"\"\n}\n}\n\nIMPORTANTE: La salida debe ser exclusivamente el objeto JSON puro, sin ning\u00fan texto adicional, sin comillas exteriores y sin bloques de c\u00f3digo markdown."
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 2.2,
-      "position": [336, 1360],
+      "position": [
+        336,
+        1360
+      ],
       "id": "91fd4edc-d68e-4eb0-b0dc-75a816cc9274",
       "name": "AI Agent",
       "onError": "continueErrorOutput"
@@ -140,14 +261,22 @@
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "ce78dbef-062a-4fcf-b98c-07d568330313", "name": "mensaje 1", "value": "={{ $json.output.mensaje_1 }}", "type": "string" }
+            {
+              "id": "ce78dbef-062a-4fcf-b98c-07d568330313",
+              "name": "mensaje 1",
+              "value": "={{ $json.output.mensaje_1 }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [880, 1376],
+      "position": [
+        880,
+        1376
+      ],
       "id": "a5fd8497-b02a-4f68-82d3-aa2283795d5d",
       "name": "Edit Fields1"
     },
@@ -157,16 +286,24 @@
         "instanceName": "andimeet",
         "remoteJid": "={{ $('Webhook1').item.json.body.data.key.remoteJid }}",
         "messageText": "={{ $json[\"mensaje 1\"] }}",
-        "options_message": { "delay": 1200 }
+        "options_message": {
+          "delay": 1200
+        }
       },
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
-      "position": [1312, 1344],
+      "position": [
+        1312,
+        1344
+      ],
       "id": "f37c59f1-0be8-4d37-9569-e77c482cfae6",
       "name": "enviar mensaje 1",
       "alwaysOutputData": true,
       "credentials": {
-        "evolutionApi": { "id": "QA2TB3jQdXMkKDOZ", "name": "Evolution account" }
+        "evolutionApi": {
+          "id": "QA2TB3jQdXMkKDOZ",
+          "name": "Evolution account"
+        }
       }
     },
     {
@@ -175,16 +312,24 @@
         "instanceName": "andimeet",
         "remoteJid": "={{ $('Webhook1').item.json.body.data.key.remoteJid }}",
         "messageText": "={{ $('AI Agent').item.json.output.mensaje_2 }}",
-        "options_message": { "delay": 2000 }
+        "options_message": {
+          "delay": 2000
+        }
       },
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
-      "position": [1504, 1216],
+      "position": [
+        1504,
+        1216
+      ],
       "id": "376fe8e7-e29c-4d4f-94d3-761a67b00e19",
       "name": "enviar mensaje 2",
       "alwaysOutputData": true,
       "credentials": {
-        "evolutionApi": { "id": "QA2TB3jQdXMkKDOZ", "name": "Evolution account" }
+        "evolutionApi": {
+          "id": "QA2TB3jQdXMkKDOZ",
+          "name": "Evolution account"
+        }
       },
       "onError": "continueRegularOutput"
     },
@@ -194,16 +339,24 @@
         "instanceName": "andimeet",
         "remoteJid": "={{ $('Webhook1').item.json.body.data.key.remoteJid }}",
         "messageText": "={{ $('AI Agent').item.json.output.mensaje_3 }}",
-        "options_message": { "delay": 2000 }
+        "options_message": {
+          "delay": 2000
+        }
       },
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
-      "position": [1696, 1216],
+      "position": [
+        1696,
+        1216
+      ],
       "id": "4533802d-6a1d-4698-b06b-e4d19e0f6aa7",
       "name": "enviar mensaje 3",
       "alwaysOutputData": true,
       "credentials": {
-        "evolutionApi": { "id": "QA2TB3jQdXMkKDOZ", "name": "Evolution account" }
+        "evolutionApi": {
+          "id": "QA2TB3jQdXMkKDOZ",
+          "name": "Evolution account"
+        }
       }
     },
     {
@@ -213,7 +366,10 @@
       },
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.3,
-      "position": [544, 1600],
+      "position": [
+        544,
+        1600
+      ],
       "id": "a0c9272f-cb04-4cb8-b8ed-bb12a716e5e6",
       "name": "Structured Output Parser"
     },
@@ -228,9 +384,15 @@
       "name": "Agregar a Buffer",
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
-      "position": [-480, 1120],
+      "position": [
+        -480,
+        1120
+      ],
       "credentials": {
-        "redis": { "id": "YjKGAHBOZUiS6oYB", "name": "Redis account" }
+        "redis": {
+          "id": "YjKGAHBOZUiS6oYB",
+          "name": "Redis account"
+        }
       }
     },
     {
@@ -242,11 +404,17 @@
       },
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
-      "position": [-272, 1120],
+      "position": [
+        -272,
+        1120
+      ],
       "id": "a4c8d8e5-1aed-4756-9ce7-ba0bc03df377",
       "name": "Get Message Buffer",
       "credentials": {
-        "redis": { "id": "YjKGAHBOZUiS6oYB", "name": "Redis account" }
+        "redis": {
+          "id": "YjKGAHBOZUiS6oYB",
+          "name": "Redis account"
+        }
       }
     },
     {
@@ -255,9 +423,22 @@
           "values": [
             {
               "conditions": {
-                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
                 "conditions": [
-                  { "leftValue": "={{ JSON.parse($json.message.last()).message_id }}", "rightValue": "={{ $('Edit Fields').item.json.message.message_id }}", "operator": { "type": "string", "operation": "notEquals" }, "id": "4f4e3135-b230-4d2b-85fa-ae43669a97f0" }
+                  {
+                    "leftValue": "={{ JSON.parse($json.message.last()).message_id }}",
+                    "rightValue": "={{ $('Edit Fields').item.json.message.message_id }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    },
+                    "id": "4f4e3135-b230-4d2b-85fa-ae43669a97f0"
+                  }
                 ],
                 "combinator": "and"
               },
@@ -266,9 +447,22 @@
             },
             {
               "conditions": {
-                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
                 "conditions": [
-                  { "id": "4e139bd7-afff-4641-b101-46e7a907b5cc", "leftValue": "={{ JSON.parse($json.message.last()).timestamp }}", "rightValue": "={{ $now.minus(15,'seconds') }}", "operator": { "type": "dateTime", "operation": "before" } }
+                  {
+                    "id": "4e139bd7-afff-4641-b101-46e7a907b5cc",
+                    "leftValue": "={{ JSON.parse($json.message.last()).timestamp }}",
+                    "rightValue": "={{ $now.minus(15,'seconds') }}",
+                    "operator": {
+                      "type": "dateTime",
+                      "operation": "before"
+                    }
+                  }
                 ],
                 "combinator": "and"
               },
@@ -285,15 +479,23 @@
       },
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
-      "position": [-48, 1104],
+      "position": [
+        -48,
+        1104
+      ],
       "id": "03f0def5-d139-4ecf-ab41-d9dacd0ddedf",
       "name": "Switch"
     },
     {
-      "parameters": { "amount": 15 },
+      "parameters": {
+        "amount": 15
+      },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [96, 1248],
+      "position": [
+        96,
+        1248
+      ],
       "id": "c800d09e-b29a-4806-b84c-e7bb054e6f99",
       "name": "Wait2",
       "webhookId": "17af75fb-3ed0-4881-843f-da789e7973d5"
@@ -302,7 +504,10 @@
       "parameters": {},
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [496, 928],
+      "position": [
+        496,
+        928
+      ],
       "id": "1a76fc97-aad6-406d-aaa3-0f2f5759bd34",
       "name": "No Operation, do nothing"
     },
@@ -313,11 +518,17 @@
       },
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
-      "position": [256, 1120],
+      "position": [
+        256,
+        1120
+      ],
       "id": "f23632ad-1d07-4199-bf97-dab636866e99",
       "name": "Eliminar Buffer",
       "credentials": {
-        "redis": { "id": "YjKGAHBOZUiS6oYB", "name": "Redis account" }
+        "redis": {
+          "id": "YjKGAHBOZUiS6oYB",
+          "name": "Redis account"
+        }
       }
     },
     {
@@ -327,7 +538,10 @@
       },
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
-      "position": [480, 1120],
+      "position": [
+        480,
+        1120
+      ],
       "id": "02a0bd0b-227f-4550-bf5a-f481fbc2f340",
       "name": "Split Out"
     },
@@ -339,7 +553,10 @@
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [688, 1120],
+      "position": [
+        688,
+        1120
+      ],
       "id": "76c12b65-8816-4485-a5ed-f9944af1d553",
       "name": "JSON Parse"
     },
@@ -347,14 +564,21 @@
       "parameters": {
         "fieldsToAggregate": {
           "fieldToAggregate": [
-            { "fieldToAggregate": "content", "renameField": true, "outputFieldName": "messages" }
+            {
+              "fieldToAggregate": "content",
+              "renameField": true,
+              "outputFieldName": "messages"
+            }
           ]
         },
         "options": {}
       },
       "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
-      "position": [912, 1120],
+      "position": [
+        912,
+        1120
+      ],
       "id": "5a8e567c-dc48-4eed-a33d-2da561b93bd6",
       "name": "Aggregate"
     },
@@ -369,26 +593,40 @@
       },
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [736, 1584],
+      "position": [
+        736,
+        1584
+      ],
       "id": "7488d1b3-4a80-495c-921a-52fc6b118d07",
       "name": "Send a message",
       "webhookId": "509f3062-3c69-4e92-a34e-bfb62da7bb9c",
       "credentials": {
-        "googleApi": { "id": "4oMTtyVYbyEwbL9v", "name": "Google Service Account account" }
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
       }
     },
     {
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "9d0cfed2-b973-4c33-a6b3-050facbac7dc", "name": "chat_input", "value": "={{ $json.messages.join(\"\\n\") }}", "type": "string" }
+            {
+              "id": "9d0cfed2-b973-4c33-a6b3-050facbac7dc",
+              "name": "chat_input",
+              "value": "={{ $json.messages.join(\"\\n\") }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1200, 1120],
+      "position": [
+        1200,
+        1120
+      ],
       "id": "4709b2f2-2819-4349-b19c-ec85a8d8d213",
       "name": "Edit Fields - Salto de linea"
     },
@@ -400,7 +638,10 @@
       },
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
-      "position": [432, 1616],
+      "position": [
+        432,
+        1616
+      ],
       "id": "927d572c-3d68-45ab-adf8-27268e824db0",
       "name": "Simple Memory"
     },
@@ -419,11 +660,17 @@
       },
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.2,
-      "position": [752, 640],
+      "position": [
+        752,
+        640
+      ],
       "id": "9c35953e-a316-45f3-aa67-1b62832fd93f",
       "name": "Transcribe a recording1",
       "credentials": {
-        "googlePalmApi": { "id": "CT59Cgfh5f84QxCk", "name": "Google Gemini(PaLM) Api account" }
+        "googlePalmApi": {
+          "id": "CT59Cgfh5f84QxCk",
+          "name": "Google Gemini(PaLM) Api account"
+        }
       }
     },
     {
@@ -433,11 +680,17 @@
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
-      "position": [176, 1600],
+      "position": [
+        176,
+        1600
+      ],
       "id": "51be5f88-277e-4e70-bf45-0cec0eda9f24",
       "name": "Google Gemini Chat Model",
       "credentials": {
-        "googlePalmApi": { "id": "CT59Cgfh5f84QxCk", "name": "Google Gemini(PaLM) Api account" }
+        "googlePalmApi": {
+          "id": "CT59Cgfh5f84QxCk",
+          "name": "Google Gemini(PaLM) Api account"
+        }
       }
     },
     {
@@ -447,11 +700,17 @@
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
-      "position": [304, 1600],
+      "position": [
+        304,
+        1600
+      ],
       "id": "b8963543-5941-4531-a52d-e1d2cd26a121",
       "name": "Google Gemini Chat Model1",
       "credentials": {
-        "googlePalmApi": { "id": "CT59Cgfh5f84QxCk", "name": "Google Gemini(PaLM) Api account" }
+        "googlePalmApi": {
+          "id": "CT59Cgfh5f84QxCk",
+          "name": "Google Gemini(PaLM) Api account"
+        }
       }
     },
     {
@@ -460,9 +719,22 @@
           "values": [
             {
               "conditions": {
-                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 3 },
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
                 "conditions": [
-                  { "leftValue": "={{ $('AI Agent').item.json.output.crear_reserva }}", "rightValue": "true", "operator": { "type": "string", "operation": "equals" }, "id": "61ac8517-af7d-4cc9-94bd-cfaad98f17c4" }
+                  {
+                    "leftValue": "={{ $('AI Agent').item.json.output.crear_reserva }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "61ac8517-af7d-4cc9-94bd-cfaad98f17c4"
+                  }
                 ],
                 "combinator": "and"
               }
@@ -474,7 +746,10 @@
       },
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
-      "position": [1152, 1616],
+      "position": [
+        1152,
+        1616
+      ],
       "id": "25285e90-3ddb-46d8-ac48-81728c0f6fdd",
       "name": "Switch2"
     },
@@ -482,7 +757,12 @@
       "parameters": {
         "assignments": {
           "assignments": [
-            { "id": "parse-time-1", "name": "horario_raw", "value": "={{ $('AI Agent').item.json.output.datos_reserva.horario || '' }}", "type": "string" },
+            {
+              "id": "parse-time-1",
+              "name": "horario_raw",
+              "value": "={{ $('AI Agent').item.json.output.datos_reserva.horario || '' }}",
+              "type": "string"
+            },
             {
               "id": "parse-time-2",
               "name": "reservation_time",
@@ -495,18 +775,46 @@
               "value": "={{ (() => { const time = (() => { const raw = $('AI Agent').item.json.output.datos_reserva.horario || ''; const colonMatch = raw.match(/(\\d{1,2}):(\\d{2})/); if (colonMatch) return parseInt(colonMatch[1]); const hsMatch = raw.match(/(\\d{1,2})\\s*hs/i); if (hsMatch) return parseInt(hsMatch[1]); return 20; })(); return (time >= 11 && time < 17) ? 'mediodia' : 'cena'; })() }}",
               "type": "string"
             },
-            { "id": "parse-time-4", "name": "reservation_date", "value": "={{ new Date().toISOString().slice(0, 10) }}", "type": "string" },
-            { "id": "parse-time-5", "name": "partySize", "value": "={{ parseInt($('AI Agent').item.json.output.datos_reserva.comensales) || 2 }}", "type": "number" },
-            { "id": "parse-time-6", "name": "customerName", "value": "={{ $('AI Agent').item.json.output.datos_reserva.nombre || '' }}", "type": "string" },
-            { "id": "parse-time-7", "name": "phone", "value": "={{ $('AI Agent').item.json.output.datos_reserva.telefono || '' }}", "type": "string" },
-            { "id": "parse-time-8", "name": "notes", "value": "={{ $('AI Agent').item.json.output.datos_reserva.notas || '' }}", "type": "string" }
+            {
+              "id": "parse-time-4",
+              "name": "reservation_date",
+              "value": "={{ new Date().toISOString().slice(0, 10) }}",
+              "type": "string"
+            },
+            {
+              "id": "parse-time-5",
+              "name": "partySize",
+              "value": "={{ parseInt($('AI Agent').item.json.output.datos_reserva.comensales) || 2 }}",
+              "type": "number"
+            },
+            {
+              "id": "parse-time-6",
+              "name": "customerName",
+              "value": "={{ $('AI Agent').item.json.output.datos_reserva.nombre || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "parse-time-7",
+              "name": "phone",
+              "value": "={{ $('AI Agent').item.json.output.datos_reserva.telefono || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "parse-time-8",
+              "name": "notes",
+              "value": "={{ $('AI Agent').item.json.output.datos_reserva.notas || '' }}",
+              "type": "string"
+            }
           ]
         },
         "options": {}
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1376, 1616],
+      "position": [
+        1376,
+        1616
+      ],
       "id": "cf4ded93-b563-4bf5-9b1a-c869f397c54e",
       "name": "Parse Time & Service"
     },
@@ -519,11 +827,17 @@
       },
       "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
       "typeVersion": 1.1,
-      "position": [1584, 1616],
+      "position": [
+        1584,
+        1616
+      ],
       "id": "435686db-86da-4c46-938a-658154410c23",
       "name": "Get Restaurant Config",
       "credentials": {
-        "googleApi": { "id": "4oMTtyVYbyEwbL9v", "name": "Google Service Account account" }
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
       }
     },
     {
@@ -538,58 +852,107 @@
       },
       "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
       "typeVersion": 1.1,
-      "position": [1776, 1616],
+      "position": [
+        1776,
+        1616
+      ],
       "id": "b625e499-2709-4ba4-b308-50020e2eb797",
       "name": "Get Occupied Tables",
       "credentials": {
-        "googleApi": { "id": "4oMTtyVYbyEwbL9v", "name": "Google Service Account account" }
-      }
-    },
-    {"parameters": {"jsCode": "const config = $('Get Restaurant Config').item.json;\nconst occupiedRaw = $('Get Occupied Tables').item.json;\nconst parse = $('Parse Time & Service').item.json;\n\nconst requestedPartySize = parse.partySize || 2;\nconst requestedDate = parse.reservation_date;\nconst requestedService = parse.reservation_service;\nconst requestedTime = parse.reservation_time;\n\nconst groups = [\n  { cap: config.cap2 || 0, capacity: 2 },\n  { cap: config.cap4 || 0, capacity: 4 },\n  { cap: config.cap5 || 0, capacity: 5 },\n  { cap: config.cap8 || 0, capacity: 8 },\n];\n\nconst allTables = [];\nlet tableNum = 1;\nfor (const { cap, capacity } of groups) {\n  for (let i = 0; i < cap; i++) {\n    allTables.push({ id: `m${tableNum}`, name: `M${tableNum}`, capacity });\n    tableNum++;\n  }\n}\n\nlet occupiedArray = [];\nif (Array.isArray(occupiedRaw)) {\n  occupiedArray = occupiedRaw;\n} else if (occupiedRaw && Array.isArray(occupiedRaw.items)) {\n  occupiedArray = occupiedRaw.items;\n}\n\nconst occupiedTableIds = new Set();\nconst suffix = `_${requestedDate}_${requestedService}`;\noccupiedArray.forEach(item => {\n  const docId = item.id || '';\n  if (docId.endsWith(suffix)) {\n    const tableId = docId.substring(0, docId.indexOf(suffix));\n    if (tableId) occupiedTableIds.add(tableId);\n  }\n});\n\nconst suitableTables = allTables\n  .filter(t => t.capacity >= requestedPartySize && !occupiedTableIds.has(t.id))\n  .sort((a, b) => a.capacity - b.capacity);\n\nconst hasAvailability = suitableTables.length > 0;\nconst assignedTable = hasAvailability ? suitableTables[0] : null;\nconst freeCount = allTables.filter(t => !occupiedTableIds.has(t.id)).length;\n\nreturn [{\n  json: {\n    has_availability: hasAvailability,\n    assigned_table: assignedTable ? assignedTable.id : null,\n    assigned_table_name: assignedTable ? assignedTable.name : null,\n    assigned_table_capacity: assignedTable ? assignedTable.capacity : null,\n    free_tables: freeCount,\n    free_suitable_tables: suitableTables.length,\n    total_tables: allTables.length,\n    occupied_tables: allTables.length - freeCount,\n    requested_party_size: requestedPartySize,\n    requested_time: requestedTime,\n    requested_date: requestedDate,\n    requested_service: requestedService,\n    customerName: parse.customerName || '',\n    phone: parse.phone || '',\n    notes: parse.notes || '',\n    reservation_estado: hasAvailability ? 'confirmada' : 'pendiente',\n    customerPhone: $('Webhook1').item.json.body.data.key.remoteJid,\n  }\n}];"}, "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1984, 1616], "id": "a7a966ab-a854-4871-8322-1f43053faf23", "name": "Calc Availability"},
-    {"parameters": {"jsCode": "const data = $('Calc Availability').item.json;\n\nconst id = `r${Date.now()}`;\nconst now = new Date().toISOString();\nconst mesaId = data.assigned_table ? `${data.assigned_table}_${data.requested_date}_${data.requested_service}` : null;\n\nconst mesaDoc = data.assigned_table ? {\n  occupied: true,\n  reservationId: id,\n  time: data.requested_time,\n  partySize: data.requested_party_size,\n} : null;\n\nreturn [{\n  json: {\n    reservation_id: id,\n    flat_doc: {\n      id,\n      customerName: data.customerName,\n      phone: data.phone,\n      partySize: data.requested_party_size,\n      tableId: data.assigned_table,\n      mesa_id: data.assigned_table,\n      time: data.requested_time,\n      duration: data.requested_service === 'cena' ? 120 : 90,\n      service: data.requested_service,\n      notes: data.notes,\n      liveState: null,\n      startedAt: null,\n      leftAt: null,\n      date: data.requested_date,\n      estado: data.reservation_estado,\n      source: 'whatsapp',\n      customerPhone: data.customerPhone,\n      createdAt: now,\n      updatedAt: now,\n    },\n    mesa_id: mesaId,\n    mesa_doc: mesaDoc,\n    has_table: data.assigned_table !== null,\n    assigned_table_name: data.assigned_table ? `M${data.assigned_table.replace('m', '')}` : null,\n    requested_party_size: data.requested_party_size,\n    requested_time: data.requested_time,\n    requested_date: data.requested_date,\n    customerName: data.customerName,\n  }\n}];"}, "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2200, 1616], "id": "c78ad0fc-e612-451d-a7ef-6aec54875fe1", "name": "Prepare Reservation"},
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "create",
-        "projectId": "andimeet-93f62",
-        "collection": "reservations",
-        "documentId": "={{ $json.reservation_id }}",
-        "columns": "={{ JSON.stringify($json.flat_doc) }}"
-      },
-      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
-      "typeVersion": 1.1,
-      "position": [2416, 1616],
-      "id": "d78ad0fc-e612-451d-a7ef-6aec54875fe1",
-      "name": "Create Flat Reservation",
-      "credentials": {
-        "googleApi": { "id": "4oMTtyVYbyEwbL9v", "name": "Google Service Account account" }
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
       }
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "create",
-        "projectId": "andimeet-93f62",
-        "collection": "mesasReservadas",
-        "documentId": "={{ $json.mesa_id }}",
-        "columns": "={{ JSON.stringify($json.mesa_doc) }}"
-      },
-      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
-      "typeVersion": 1.1,
-      "position": [2632, 1616],
-      "id": "e78ad0fc-e612-451d-a7ef-6aec54875fe1",
-      "name": "Create Guard",
-      "credentials": {
-        "googleApi": { "id": "4oMTtyVYbyEwbL9v", "name": "Google Service Account account" }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const data = $('Prepare Reservation').item.json;\n\nlet mensaje;\nif (data.has_table) {\n  mensaje = `✅ *¡Reserva confirmada!*\\n\\n📍 Mesa: *${data.assigned_table_name}*\\n👤 ${data.customerName} · ${data.requested_party_size} personas\\n📅 ${data.requested_date} a las ${data.requested_time}\\n\\nTe esperamos en *Andi*. ¡Hasta pronto! 🍽️`;\n} else {\n  mensaje = `⏳ *Reserva recibida*\\n\\n👤 ${data.customerName} · ${data.requested_party_size} personas\\n📅 ${data.requested_date} a las ${data.requested_time}\\n\\nNo encontramos mesa disponible para ese horario. Te contactaremos pronto para confirmar. 🙏`;\n}\n\nreturn [{ json: { mensaje } }];"
+        "jsCode": "const config = $('Get Restaurant Config').item.json;\nconst occupiedRaw = $('Get Occupied Tables').item.json;\nconst parse = $('Parse Time & Service').item.json;\n\nconst requestedPartySize = parse.partySize || 2;\nconst requestedDate = parse.reservation_date;\nconst requestedService = parse.reservation_service;\nconst requestedTime = parse.reservation_time;\n\nconst groups = [\n  { cap: config.cap2 || 0, capacity: 2 },\n  { cap: config.cap4 || 0, capacity: 4 },\n  { cap: config.cap5 || 0, capacity: 5 },\n  { cap: config.cap8 || 0, capacity: 8 },\n];\n\nconst allTables = [];\nlet tableNum = 1;\nfor (const { cap, capacity } of groups) {\n  for (let i = 0; i < cap; i++) {\n    allTables.push({ id: `m${tableNum}`, name: `M${tableNum}`, capacity });\n    tableNum++;\n  }\n}\n\nlet occupiedArray = [];\nif (Array.isArray(occupiedRaw)) {\n  occupiedArray = occupiedRaw;\n} else if (occupiedRaw && Array.isArray(occupiedRaw.items)) {\n  occupiedArray = occupiedRaw.items;\n}\n\nconst occupiedTableIds = new Set();\nconst suffix = `_${requestedDate}_${requestedService}`;\noccupiedArray.forEach(item => {\n  const docId = item.id || '';\n  if (docId.endsWith(suffix)) {\n    const tableId = docId.substring(0, docId.indexOf(suffix));\n    if (tableId) occupiedTableIds.add(tableId);\n  }\n});\n\nconst suitableTables = allTables\n  .filter(t => t.capacity >= requestedPartySize && !occupiedTableIds.has(t.id))\n  .sort((a, b) => a.capacity - b.capacity);\n\nconst hasAvailability = suitableTables.length > 0;\nconst assignedTable = hasAvailability ? suitableTables[0] : null;\nconst freeCount = allTables.filter(t => !occupiedTableIds.has(t.id)).length;\n\nreturn [{\n  json: {\n    has_availability: hasAvailability,\n    assigned_table: assignedTable ? assignedTable.id : null,\n    assigned_table_name: assignedTable ? assignedTable.name : null,\n    assigned_table_capacity: assignedTable ? assignedTable.capacity : null,\n    free_tables: freeCount,\n    free_suitable_tables: suitableTables.length,\n    total_tables: allTables.length,\n    occupied_tables: allTables.length - freeCount,\n    requested_party_size: requestedPartySize,\n    requested_time: requestedTime,\n    requested_date: requestedDate,\n    requested_service: requestedService,\n    customerName: parse.customerName || '',\n    phone: parse.phone || '',\n    notes: parse.notes || '',\n    reservation_estado: hasAvailability ? 'confirmada' : 'pendiente',\n    customerPhone: $('Webhook1').item.json.body.data.key.remoteJid,\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2848, 1616],
+      "position": [
+        1984,
+        1616
+      ],
+      "id": "a7a966ab-a854-4871-8322-1f43053faf23",
+      "name": "Calc Availability"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Calc Availability').item.json;\n\nconst id = `r${Date.now()}`;\nconst now = new Date().toISOString();\nconst mesaId = data.assigned_table ? `${data.assigned_table}_${data.requested_date}_${data.requested_service}` : null;\n\nconst toFirestoreFields = (obj) => {\n  const fields = {};\n  for (const [k, v] of Object.entries(obj)) {\n    if (v === null || v === undefined) {\n      fields[k] = { stringValue: '' };\n    } else if (typeof v === 'number') {\n      fields[k] = Number.isInteger(v) ? { integerValue: v } : { doubleValue: v };\n    } else if (typeof v === 'boolean') {\n      fields[k] = { booleanValue: v };\n    } else {\n      fields[k] = { stringValue: String(v) };\n    }\n  }\n  return fields;\n};\n\nconst reservationData = {\n  id,\n  customerName: data.customerName,\n  phone: data.phone,\n  partySize: data.requested_party_size,\n  tableId: data.assigned_table || '',\n  mesa_id: data.assigned_table || '',\n  time: data.requested_time,\n  duration: data.requested_service === 'cena' ? 120 : 90,\n  service: data.requested_service,\n  notes: data.notes || '',\n  liveState: '',\n  startedAt: '',\n  leftAt: '',\n  date: data.requested_date,\n  estado: data.reservation_estado,\n  source: 'whatsapp',\n  customerPhone: data.customerPhone,\n  staffId: '',\n  staffName: '',\n  createdAt: now,\n  updatedAt: now,\n};\n\nconst mesaData = data.assigned_table ? {\n  occupied: true,\n  reservationId: id,\n  time: data.requested_time,\n  partySize: data.requested_party_size,\n} : null;\n\nreturn [{\n  json: {\n    reservation_id: id,\n    flat_doc: { fields: toFirestoreFields(reservationData) },\n    mesa_id: mesaId,\n    mesa_doc: mesaData ? { fields: toFirestoreFields(mesaData) } : null,\n    has_table: data.assigned_table !== null,\n    assigned_table_name: data.assigned_table ? `M${data.assigned_table.replace('m', '')}` : null,\n    requested_party_size: data.requested_party_size,\n    requested_time: data.requested_time,\n    requested_date: data.requested_date,\n    customerName: data.customerName,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        1616
+      ],
+      "id": "c78ad0fc-e612-451d-a7ef-6aec54875fe1",
+      "name": "Prepare Reservation"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://firestore.googleapis.com/v1/projects/andimeet-93f62/databases/(default)/documents/reservations/{{ $json.reservation_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.flat_doc) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2432,
+        1616
+      ],
+      "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "name": "Create Flat Reservation",
+      "credentials": {
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://firestore.googleapis.com/v1/projects/andimeet-93f62/databases/(default)/documents/mesasReservadas/{{ $json.mesa_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.mesa_doc) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2632,
+        1616
+      ],
+      "id": "e78ad0fc-e612-451d-a7ef-6aec54875fe1",
+      "name": "Create Guard",
+      "credentials": {
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Prepare Reservation').item.json;\n\nlet mensaje;\nif (data.has_table) {\n  mensaje = `\u2705 *\u00a1Reserva confirmada!*\\n\\n\ud83d\udccd Mesa: *${data.assigned_table_name}*\\n\ud83d\udc64 ${data.customerName} \u00b7 ${data.requested_party_size} personas\\n\ud83d\udcc5 ${data.requested_date} a las ${data.requested_time}\\n\\nTe esperamos en *Andi*. \u00a1Hasta pronto! \ud83c\udf7d\ufe0f`;\n} else {\n  mensaje = `\u23f3 *Reserva recibida*\\n\\n\ud83d\udc64 ${data.customerName} \u00b7 ${data.requested_party_size} personas\\n\ud83d\udcc5 ${data.requested_date} a las ${data.requested_time}\\n\\nNo encontramos mesa disponible para ese horario. Te contactaremos pronto para confirmar. \ud83d\ude4f`;\n}\n\nreturn [{ json: { mensaje } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        1616
+      ],
       "id": "f78ad0fc-e612-451d-a7ef-6aec54875fe1",
       "name": "Build Confirmation Message"
     },
@@ -599,129 +962,474 @@
         "instanceName": "andimeet",
         "remoteJid": "={{ $('Webhook1').item.json.body.data.key.remoteJid }}",
         "messageText": "={{ $json.mensaje }}",
-        "options_message": { "delay": 1500 }
+        "options_message": {
+          "delay": 1500
+        }
       },
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
-      "position": [3064, 1616],
+      "position": [
+        3064,
+        1616
+      ],
       "id": "a78ad0fc-e612-451d-a7ef-6aec54875fe1",
       "name": "Send Confirmation WhatsApp",
       "credentials": {
-        "evolutionApi": { "id": "QA2TB3jQdXMkKDOZ", "name": "Evolution account" }
+        "evolutionApi": {
+          "id": "QA2TB3jQdXMkKDOZ",
+          "name": "Evolution account"
+        }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.has_table }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "name": "filter.operator.true"
+              },
+              "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2432,
+        1616
+      ],
+      "id": "d4e5f6a7-b8c9-0123-4567-890123456789",
+      "name": "Has Table?"
     }
   ],
   "connections": {
     "Webhook1": {
-      "main": [[{ "node": "Switch1", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Switch1": {
       "main": [
-        [{ "node": "Filter1", "type": "main", "index": 0 }],
-        [{ "node": "Obter m dia em base", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Filter1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter m dia em base",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Convert to File2": {
-      "main": [[{ "node": "Transcribe a recording1", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Transcribe a recording1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Obter m dia em base": {
-      "main": [[{ "node": "Convert to File2", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Convert to File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Filter1": {
-      "main": [[{ "node": "Edit Fields", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Edit Fields": {
-      "main": [[{ "node": "Agregar a Buffer", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Agregar a Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "AI Agent": {
       "main": [
-        [{ "node": "Edit Fields1", "type": "main", "index": 0 }],
-        [{ "node": "Send a message", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Edit Fields1": {
       "main": [
-        [{ "node": "enviar mensaje 1", "type": "main", "index": 0 }, { "node": "Switch2", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "enviar mensaje 1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Switch2",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "enviar mensaje 1": {
-      "main": [[{ "node": "enviar mensaje 2", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "enviar mensaje 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "enviar mensaje 2": {
-      "main": [[{ "node": "enviar mensaje 3", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "enviar mensaje 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Structured Output Parser": {
-      "ai_outputParser": [[{ "node": "AI Agent", "type": "ai_outputParser", "index": 0 }]]
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Agregar a Buffer": {
-      "main": [[{ "node": "Get Message Buffer", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Message Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Message Buffer": {
-      "main": [[{ "node": "Switch", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Switch": {
       "main": [
-        [{ "node": "No Operation, do nothing", "type": "main", "index": 0 }],
-        [{ "node": "Eliminar Buffer", "type": "main", "index": 0 }],
-        [{ "node": "Wait2", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Eliminar Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Wait2": {
-      "main": [[{ "node": "Get Message Buffer", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Message Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Eliminar Buffer": {
-      "main": [[{ "node": "Split Out", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Split Out": {
-      "main": [[{ "node": "JSON Parse", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "JSON Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "JSON Parse": {
-      "main": [[{ "node": "Aggregate", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Aggregate": {
-      "main": [[{ "node": "Edit Fields - Salto de linea", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Edit Fields - Salto de linea",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Edit Fields - Salto de linea": {
-      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Simple Memory": {
-      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Transcribe a recording1": {
-      "main": [[{ "node": "Edit Fields", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Google Gemini Chat Model": {
-      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Google Gemini Chat Model1": {
-      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 1 }]]
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
     },
     "Switch2": {
-      "main": [[{ "node": "Parse Time & Service", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Parse Time & Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Parse Time & Service": {
-      "main": [[{ "node": "Get Restaurant Config", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Restaurant Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Restaurant Config": {
-      "main": [[{ "node": "Get Day Reservations", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Get Day Reservations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Get Day Reservations": {
-      "main": [[{ "node": "Calc Availability", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Calc Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Calc Availability": {
-      "main": [[{ "node": "Prepare Reservation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Reservation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Reservation": {
-      "main": [[{ "node": "Create Flat Reservation", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Create Flat Reservation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Create Flat Reservation": {
-      "main": [[{ "node": "Create Guard", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Has Table?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Create Guard": {
-      "main": [[{ "node": "Build Confirmation Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Build Confirmation Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Build Confirmation Message": {
-      "main": [[{ "node": "Send Confirmation WhatsApp", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Confirmation WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Table?": {
+      "main": [
+        [
+          {
+            "node": "Create Guard",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Confirmation Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "pinData": {},
