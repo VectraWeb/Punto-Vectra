@@ -119,6 +119,8 @@ const guardRef = (date, tableId, service, time) =>
 const cfgRef = () => doc(db, 'config', 'restaurant');
 const staffCol = () => collection(db, 'staff');
 const staffDoc = (id) => doc(db, 'staff', id);
+// Flat collection for n8n WhatsApp bot reads/writes
+const allResDoc = (id) => doc(db, 'allReservations', id);
 
 // ─── Utilidad N8N ────────────────────────────────────────────────────────────
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || '';
@@ -282,6 +284,16 @@ function StaffDashboard({ onLogout }) {
     const id = data.id || `r${Date.now()}`;
     const { _oldGuardId, _prevResId, _prevGuardId, ...cleanData } = data;
 
+    const flatDoc = {
+      ...cleanData,
+      id,
+      date,
+      mesa_id: cleanData.tableId || null,
+      estado: cleanData.tableId ? (cleanData.estado || 'confirmada') : 'pendiente',
+      updatedAt: new Date().toISOString(),
+      createdAt: cleanData.createdAt ? (typeof cleanData.createdAt === 'string' ? cleanData.createdAt : new Date().toISOString()) : new Date().toISOString(),
+    };
+
     if (!cleanData.tableId) {
       // Guardado simple sin mesa asignada (Pendiente)
       await setDoc(resDocRef(date, id), {
@@ -292,6 +304,8 @@ function StaffDashboard({ onLogout }) {
         updatedAt: serverTimestamp(),
         createdAt: cleanData.createdAt || serverTimestamp(),
       });
+      // Mirror to flat collection for n8n
+      await setDoc(allResDoc(id), { ...flatDoc, mesa_id: null, estado: 'pendiente' });
       return;
     }
 
@@ -303,6 +317,7 @@ function StaffDashboard({ onLogout }) {
 
         if (_prevResId) {
           transaction.delete(resDocRef(date, _prevResId));
+          transaction.delete(allResDoc(_prevResId));
           if (_prevGuardId) {
             const prevGuardPath = doc(db, 'reservations', date, 'guards', _prevGuardId);
             transaction.delete(prevGuardPath);
@@ -331,8 +346,9 @@ function StaffDashboard({ onLogout }) {
           updatedAt: serverTimestamp(),
           createdAt: cleanData.createdAt || serverTimestamp(),
         });
+        // Mirror to flat collection for n8n
+        transaction.set(allResDoc(id), flatDoc);
       });
-      // ... n8n notification ...
     } catch (e) {
       throw e;
     }
@@ -344,6 +360,7 @@ function StaffDashboard({ onLogout }) {
       await runTransaction(db, async (transaction) => {
         transaction.delete(guardPath);
         transaction.delete(resDocRef(date, resData.id));
+        transaction.delete(allResDoc(resData.id));
       });
     } catch (e) { console.error(e); throw e; }
   }, [date]);
@@ -392,6 +409,7 @@ function StaffDashboard({ onLogout }) {
 
     try {
       await deleteDoc(resDocRef(date, res.id));
+      await deleteDoc(allResDoc(res.id));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);

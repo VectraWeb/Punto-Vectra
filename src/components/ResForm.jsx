@@ -68,6 +68,8 @@ const resDocRef = (date, id) => doc(db, 'reservations', date, 'items', id);
 const guardRef = (date, tableId, service, time) =>
   doc(db, 'reservations', date, 'guards', `${tableId}_${service}_${time.replace(':', '.')}`);
 const cfgRef = () => doc(db, 'config', 'restaurant');
+// Flat collection for n8n WhatsApp bot reads/writes
+const allResDoc = (id) => doc(db, 'allReservations', id);
 
 // ─── Estilos ─────────────────────────────────────────────────────────────────
 const inp = {
@@ -179,6 +181,8 @@ export default function ResForm({ onStaffAccess }) {
     try {
       // GUARDADO SIMPLE: Sin búsqueda de mesas, sin transacciones.
       // La reserva nace estrictamente como 'pendiente' y sin mesa asignada.
+      const now = new Date();
+      const isoNow = now.toISOString();
       await setDoc(resDocRef(date, id), {
         id,
         customerName: form.customerName.trim(),
@@ -193,6 +197,23 @@ export default function ResForm({ onStaffAccess }) {
         date,
         updatedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
+      });
+
+      // Mirror to flat collection for n8n
+      await setDoc(allResDoc(id), {
+        id,
+        customerName: form.customerName.trim(),
+        phone: form.phone,
+        partySize: form.partySize,
+        time: form.time,
+        duration: SERVICES[service].defaultDuration,
+        service,
+        notes: form.notes,
+        mesa_id: null,
+        estado: 'pendiente',
+        date,
+        updatedAt: isoNow,
+        createdAt: isoNow,
       });
 
       setSuccess(true);
