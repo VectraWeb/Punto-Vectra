@@ -13,7 +13,7 @@ import {
   serverTimestamp, query, where, runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { seedMesasIfNeeded, subscribeMesas } from './services/mesasHelpers';
+import { seedMesasIfNeeded, subscribeMesas, syncMesasWithConfig } from './services/mesasHelpers';
 import SalonFloor from './components/SalonFloor';
 import VistaCliente from './components/VistaCliente';
 import PinGate, { logoutStaff } from './components/PinGate';
@@ -236,7 +236,7 @@ function StaffDashboard({ onLogout }) {
   }, []);
 
   // ── Sembrar colección mesas si no existe + escucharla ────────────────────
-  useEffect(() => { seedMesasIfNeeded(); }, []);
+  useEffect(() => { seedMesasIfNeeded(config); }, [config]);
   useEffect(() => {
     const unsub = subscribeMesas(setMesas);
     return unsub;
@@ -284,7 +284,10 @@ function StaffDashboard({ onLogout }) {
   // ── Persistir configuración ────────────────────────────────────────────────
   const saveConfig = useCallback(async (c) => {
     setConfig(c);
-    try { await setDoc(cfgRef(), c, { merge: true }); } catch (e) { console.error(e); }
+    try {
+      await setDoc(cfgRef(), c, { merge: true });
+      await syncMesasWithConfig(c);
+    } catch (e) { console.error(e); }
   }, []);
 
   // ── CRUD de reservas ───────────────────────────────────────────────────────
