@@ -175,6 +175,16 @@ export default function ResForm({ onStaffAccess }) {
     const id = `r${Date.now()}`;
     const date = todayISO();
 
+    const duplicate = reservations.some(r =>
+      (r.customerPhone === form.phone || r.phone === form.phone) &&
+      r.service === service
+    );
+    if (duplicate) {
+      setError('Ya tenés una reserva para este turno. No podés reservar dos veces.');
+      setSubmitting(false);
+      return;
+    }
+
     try {
       // GUARDADO SIMPLE: Sin búsqueda de mesas, sin transacciones.
       // La reserva nace estrictamente como 'pendiente' y sin mesa asignada.

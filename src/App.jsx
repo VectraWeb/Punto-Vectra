@@ -13,6 +13,7 @@ import {
   serverTimestamp, query, where, runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { seedMesasIfNeeded, subscribeMesas, ocuparMesa, liberarMesa } from './services/mesasHelpers';
 import SalonFloor from './components/SalonFloor';
 import VistaCliente from './components/VistaCliente';
 import PinGate, { logoutStaff } from './components/PinGate';
@@ -166,6 +167,7 @@ function StaffDashboard({ onLogout }) {
   const [currentTime, setCurrentTime] = useState(() => detectTime(detectService()));
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [reservations, setReservations] = useState([]);
+  const [mesas, setMesas] = useState([]);
   const [online, setOnline] = useState(navigator.onLine);
 
   // Modales
@@ -190,7 +192,10 @@ function StaffDashboard({ onLogout }) {
   const isLongPress = useRef(false);
   const calendarRef = useRef(null);
 
-  const tables = useMemo(() => buildTables(config), [config]);
+  const tables = useMemo(() => {
+    if (mesas.length > 0) return mesas;
+    return buildTables(config);
+  }, [mesas, config]);
   const slots = useMemo(() => genSlots(service), [service]);
 
   // ── Capturar prompt de instalación PWA ──────────────────────────────────
@@ -227,6 +232,13 @@ function StaffDashboard({ onLogout }) {
     const unsub = onSnapshot(cfgRef(), (snap) => {
       if (snap.exists()) setConfig(snap.data());
     });
+    return unsub;
+  }, []);
+
+  // ── Sembrar colección mesas si no existe + escucharla ────────────────────
+  useEffect(() => { seedMesasIfNeeded(); }, []);
+  useEffect(() => {
+    const unsub = subscribeMesas(setMesas);
     return unsub;
   }, []);
 
@@ -293,35 +305,39 @@ function StaffDashboard({ onLogout }) {
 
     const mesaRef = mesaReservadaRef(cleanData.tableId, date, cleanData.service);
 
-    try {
-      await runTransaction(db, async (transaction) => {
-        const mesaSnap = await transaction.get(mesaRef);
+      try {
+        await runTransaction(db, async (transaction) => {
+          const mesaSnap = await transaction.get(mesaRef);
 
-        if (_prevResId) {
-          transaction.delete(resDocRef(_prevResId));
-          if (_prevMesaRef) transaction.delete(_prevMesaRef);
-        }
-
-        if (mesaSnap.exists()) {
-          const mesaData = mesaSnap.data();
-          if (mesaData.reservationId !== id && mesaData.reservationId !== _prevResId) {
-            throw new Error('Lo sentimos, esa mesa acaba de ser reservada por otro usuario.');
+          if (_prevResId) {
+            transaction.delete(resDocRef(_prevResId));
+            if (_prevMesaRef) {
+              transaction.delete(_prevMesaRef);
+              transaction.set(doc(db, 'mesas', cleanData.tableId), { status: 'occupied' }, { merge: true });
+            }
           }
-        }
 
-        if (_oldMesaRef) transaction.delete(_oldMesaRef);
+          if (mesaSnap.exists()) {
+            const mesaData = mesaSnap.data();
+            if (mesaData.reservationId !== id && mesaData.reservationId !== _prevResId) {
+              throw new Error('Lo sentimos, esa mesa acaba de ser reservada por otro usuario.');
+            }
+          }
 
-        transaction.set(mesaRef, { occupied: true, reservationId: id, time: cleanData.time, partySize: cleanData.partySize });
-        transaction.set(resDocRef(id), {
-          ...cleanData, id, date,
-          mesa_id: cleanData.tableId,
-          estado: cleanData.tableId ? (cleanData.estado || 'confirmada') : 'pendiente',
-          liveState: cleanData.liveState || null,
-          updatedAt: serverTimestamp(),
-          createdAt: cleanData.createdAt || serverTimestamp(),
+          if (_oldMesaRef) transaction.delete(_oldMesaRef);
+
+          transaction.set(mesaRef, { occupied: true, reservationId: id, time: cleanData.time, partySize: cleanData.partySize });
+          transaction.set(resDocRef(id), {
+            ...cleanData, id, date,
+            mesa_id: cleanData.tableId,
+            estado: cleanData.tableId ? (cleanData.estado || 'confirmada') : 'pendiente',
+            liveState: cleanData.liveState || null,
+            updatedAt: serverTimestamp(),
+            createdAt: cleanData.createdAt || serverTimestamp(),
+          });
+          transaction.set(doc(db, 'mesas', cleanData.tableId), { status: 'occupied' }, { merge: true });
         });
-      });
-    } catch (e) { throw e; }
+      } catch (e) { throw e; }
   }, [date]);
 
   const deleteRes = useCallback(async (resData) => {
@@ -334,6 +350,7 @@ function StaffDashboard({ onLogout }) {
       await runTransaction(db, async (transaction) => {
         transaction.delete(mesaRef);
         transaction.delete(resDocRef(resData.id));
+        transaction.set(doc(db, 'mesas', resData.tableId), { status: 'free' }, { merge: true });
       });
     } catch (e) { console.error(e); throw e; }
   }, [date]);
@@ -383,6 +400,7 @@ function StaffDashboard({ onLogout }) {
     try {
       if (res.tableId) {
         await deleteDoc(mesaReservadaRef(res.tableId, date, res.service));
+        await setDoc(doc(db, 'mesas', res.tableId), { status: 'free' }, { merge: true });
       }
       await deleteDoc(resDocRef(res.id));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
