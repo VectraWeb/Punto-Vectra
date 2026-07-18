@@ -923,7 +923,7 @@
         "operation": "upsert",
         "projectId": "andimeet-93f62",
         "collection": "mesas",
-        "documentId": "={{ $json.assigned_table_id }}",
+        "updateKey": "assigned_table_id",
         "columns": "status"
       },
       "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
@@ -1432,7 +1432,7 @@
       "main": [
         [
           {
-            "node": "Calc Availability",
+            "node": "Get Mesas",
             "type": "main",
             "index": 0
           }

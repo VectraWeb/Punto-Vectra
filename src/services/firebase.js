@@ -2,11 +2,7 @@
 // Inicialización del cliente Firebase con persistencia offline habilitada
 
 import { initializeApp } from 'firebase/app';
-import {
-  getFirestore,
-  enableIndexedDbPersistence,
-  CACHE_SIZE_UNLIMITED,
-} from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 
 // ─── Reemplazá estos valores con los de tu proyecto en Firebase Console ───────
 // https://console.firebase.google.com → Configuración del proyecto → Tus apps
@@ -22,25 +18,8 @@ const firebaseConfig = {
 // Inicializar Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Inicializar Firestore con caché ilimitada
+// Inicializar Firestore (Firebase v12+ ya habilita persistencia IndexedDB por defecto)
 export const db = getFirestore(app);
-
-// Activar persistencia offline (IndexedDB)
-// Permite que mozos en zonas de baja señal Wi-Fi sigan registrando estados;
-// las escrituras se sincronizan automáticamente cuando vuelve la conexión.
-enableIndexedDbPersistence(db, { cacheSizeBytes: CACHE_SIZE_UNLIMITED })
-  .then(() => {
-    console.info('[Andi] Persistencia offline activada ✓');
-  })
-  .catch((err) => {
-    if (err.code === 'failed-precondition') {
-      // Múltiples tabs abiertas — la persistencia solo funciona en una a la vez
-      console.warn('[Andi] Persistencia offline: múltiples pestañas detectadas. Solo una pestaña puede tener persistencia activa.');
-    } else if (err.code === 'unimplemented') {
-      // El navegador no soporta IndexedDB
-      console.warn('[Andi] Este navegador no soporta persistencia offline.');
-    }
-  });
 
 export default app;
 
