@@ -13,7 +13,7 @@ import {
   serverTimestamp, query, where, runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { seedMesasIfNeeded, subscribeMesas, ocuparMesa, liberarMesa } from './services/mesasHelpers';
+import { seedMesasIfNeeded, subscribeMesas } from './services/mesasHelpers';
 import SalonFloor from './components/SalonFloor';
 import VistaCliente from './components/VistaCliente';
 import PinGate, { logoutStaff } from './components/PinGate';
@@ -311,10 +311,7 @@ function StaffDashboard({ onLogout }) {
 
           if (_prevResId) {
             transaction.delete(resDocRef(_prevResId));
-            if (_prevMesaRef) {
-              transaction.delete(_prevMesaRef);
-              transaction.set(doc(db, 'mesas', cleanData.tableId), { status: 'occupied' }, { merge: true });
-            }
+            if (_prevMesaRef) transaction.delete(_prevMesaRef);
           }
 
           if (mesaSnap.exists()) {
@@ -335,7 +332,6 @@ function StaffDashboard({ onLogout }) {
             updatedAt: serverTimestamp(),
             createdAt: cleanData.createdAt || serverTimestamp(),
           });
-          transaction.set(doc(db, 'mesas', cleanData.tableId), { status: 'occupied' }, { merge: true });
         });
       } catch (e) { throw e; }
   }, [date]);
@@ -350,7 +346,6 @@ function StaffDashboard({ onLogout }) {
       await runTransaction(db, async (transaction) => {
         transaction.delete(mesaRef);
         transaction.delete(resDocRef(resData.id));
-        transaction.set(doc(db, 'mesas', resData.tableId), { status: 'free' }, { merge: true });
       });
     } catch (e) { console.error(e); throw e; }
   }, [date]);
@@ -400,7 +395,6 @@ function StaffDashboard({ onLogout }) {
     try {
       if (res.tableId) {
         await deleteDoc(mesaReservadaRef(res.tableId, date, res.service));
-        await setDoc(doc(db, 'mesas', res.tableId), { status: 'free' }, { merge: true });
       }
       await deleteDoc(resDocRef(res.id));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
