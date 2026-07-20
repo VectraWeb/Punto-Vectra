@@ -6,61 +6,7 @@ import {
   runTransaction, query, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-
-// ─── Paleta (misma que App.jsx) ─────────────────────────────────────────────
-const C = {
-  cream: '#f5efe6',
-  creamDeep: '#ebe3d5',
-  forest: '#7a3a1e',
-  forestSoft: '#9B4B2A',
-  terra: '#c4602f',
-  terraSoft: '#e09368',
-  espresso: '#2a1f1a',
-  muted: '#8b7d6b',
-  free: '#6f8d4d',
-  white: '#fffdf8',
-};
-
-// ─── Servicios ───────────────────────────────────────────────────────────────
-const SERVICES = {
-  mediodia: { name: 'Mediodía', start: '11:30', end: '15:00', defaultDuration: 90, icon: Sun },
-  cena: { name: 'Cena', start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
-};
-
-const DEFAULT_CONFIG = { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
-
-// ─── Utilidades de tiempo ────────────────────────────────────────────────────
-const t2m = (time, service) => {
-  if (!time) return 0;
-  const [h, m] = time.split(':').map(Number);
-  if (service === 'cena' && h < 12) return (h + 24) * 60 + m;
-  return h * 60 + m;
-};
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
-
-const detectService = () => {
-  const h = new Date().getHours();
-  return (h >= 11 && h < 17) ? 'mediodia' : 'cena';
-};
-
-const buildTables = (cfg) => {
-  const tables = [];
-  let n = 1;
-  const groups = [
-    { count: cfg.cap2 || 0, capacity: 2 },
-    { count: cfg.cap4 || 0, capacity: 4 },
-    { count: cfg.cap5 || 0, capacity: 5 },
-    { count: cfg.cap8 || 0, capacity: 8 },
-  ];
-  for (const { count, capacity } of groups) {
-    for (let i = 0; i < count; i++) {
-      tables.push({ id: `m${n}`, name: `M${n}`, capacity });
-      n++;
-    }
-  }
-  return tables;
-};
+import { C, SERVICES, DEFAULT_CONFIG, t2m, todayISO, detectService, buildTables } from '../utils';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resCol = () => collection(db, 'reservations');
@@ -118,10 +64,13 @@ export default function ResForm({ onStaffAccess }) {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
+  const [staff, setStaff] = useState([]);
+
   const [form, setForm] = useState({
     customerName: '',
     phone: '',
     partySize: 2,
+    staffId: '',
     time: nowHHMM(),
     notes: '',
   });
@@ -132,6 +81,14 @@ export default function ResForm({ onStaffAccess }) {
   useEffect(() => {
     const unsub = onSnapshot(cfgRef(), (snap) => {
       if (snap.exists()) setConfig(snap.data());
+    });
+    return unsub;
+  }, []);
+
+  // ── Suscripción a staff (mozos) ──────────────────────────────────────────
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'staff'), (snap) => {
+      setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     return unsub;
   }, []);
@@ -153,11 +110,8 @@ export default function ResForm({ onStaffAccess }) {
     const end = t2m(SERVICES[svc].end, svc);
     return mins >= start && mins <= end;
   };
-  useEffect(() => {
-    if (!tInRange(form.time, service)) {
-      set('time', nowHHMM());
-    }
-  }, [service]);
+
+  const timeOutOfRange = form.time && !tInRange(form.time, service);
 
   // ── Validación ───────────────────────────────────────────────────────────
   const valid = form.customerName.trim().length >= 2
@@ -193,6 +147,8 @@ export default function ResForm({ onStaffAccess }) {
         customerName: form.customerName.trim(),
         phone: form.phone,
         partySize: form.partySize,
+        staffId: form.staffId || null,
+        staffName: staff.find(s => s.id === form.staffId)?.name || '',
         time: form.time,
         duration: SERVICES[service].defaultDuration,
         service,
@@ -207,7 +163,7 @@ export default function ResForm({ onStaffAccess }) {
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
-        setForm({ customerName: '', phone: '', partySize: 2, time: nowHHMM(), notes: '' });
+        setForm({ customerName: '', phone: '', partySize: 2, staffId: '', time: nowHHMM(), notes: '' });
       }, 3000);
     } catch (e) {
       console.error('Error al crear la reserva:', e);
@@ -300,11 +256,32 @@ export default function ResForm({ onStaffAccess }) {
           </select>
         </Field>
 
+        {staff.filter(s => s.active !== false).length > 0 && (
+          <Field label="Mozo (opcional)">
+            <select value={form.staffId} onChange={e => set('staffId', e.target.value)} style={inp}>
+              <option value="">Sin preferencia</option>
+              {staff.filter(s => s.active !== false).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        {staff.length === 0 && (
+          <p style={{ fontSize: '13px', color: C.muted, margin: '-4px 0 4px' }}>No hay mozos cargados</p>
+        )}
+
         <Field label="Horario">
           <input type="time" value={form.time}
             onChange={e => set('time', e.target.value)}
             style={inp} />
         </Field>
+
+        {timeOutOfRange && (
+          <div style={{ padding: '10px 14px', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: '12px', fontSize: '13px', color: '#7a6200', lineHeight: '1.4' }}>
+            El horario de <strong>{SERVICES[service].name}</strong> es de {SERVICES[service].start} a {SERVICES[service].end}. Probá con otro horario o cambiá a <strong>{service === 'mediodia' ? 'Cena' : 'Mediodía'}</strong>.
+          </div>
+        )}
 
         <Field label="Notas (opcional)">
           <textarea

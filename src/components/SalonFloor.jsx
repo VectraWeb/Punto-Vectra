@@ -72,14 +72,16 @@ function tableTextColor(tableStatus) {
   return '#fff';
 }
 
-export default function SalonFloor({
+const SalonFloor = React.memo(function SalonFloor({
   tables, tableStatus, onTableClick,
   isEditing, onToggleEdit, onSaveLayout,
+  sectors, isEditingSectors, onToggleEditSectors, onSaveSectors,
 }) {
   const [positions, setPositions] = useState({});
   const [dirty, setDirty] = useState(false);
   const containerRef = useRef(null);
   const dragRef = useRef(null);
+  const sectorDragRef = useRef(null);
 
   const [fitScale, setFitScale] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -206,6 +208,87 @@ export default function SalonFloor({
     }
   }, [positions, onSaveLayout]);
 
+  const handleSectorPointerDown = useCallback((sectorId, e) => {
+    if (!isEditingSectors) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const sector = (sectors || []).find(s => s.id === sectorId);
+    if (!sector) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const orig = { x: sector.x, y: sector.y, w: sector.w, h: sector.h };
+
+    const onMove = (ev) => {
+      const dx = (ev.clientX - startX) / effectiveScale;
+      const dy = (ev.clientY - startY) / effectiveScale;
+      const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
+      if (el) {
+        el.style.left = `${orig.x + dx}px`;
+        el.style.top = `${orig.y + dy}px`;
+      }
+      sectorDragRef.current = { id: sectorId, x: orig.x + dx, y: orig.y + dy, w: orig.w, h: orig.h, mode: 'move' };
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (sectorDragRef.current && sectorDragRef.current.id === sectorId && onSaveSectors) {
+        const d = sectorDragRef.current;
+        const updated = sectors.map(s => s.id === sectorId ? { ...s, x: d.x, y: d.y, w: d.w, h: d.h } : s);
+        onSaveSectors(updated);
+      }
+      sectorDragRef.current = null;
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors]);
+
+  const handleSectorResize = useCallback((sectorId, handle, e) => {
+    if (!isEditingSectors) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const sector = (sectors || []).find(s => s.id === sectorId);
+    if (!sector) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const orig = { x: sector.x, y: sector.y, w: sector.w, h: sector.h };
+
+    const onMove = (ev) => {
+      const dx = (ev.clientX - startX) / effectiveScale;
+      const dy = (ev.clientY - startY) / effectiveScale;
+      let { x, y, w, h } = orig;
+
+      if (handle.includes('e')) w = Math.max(80, orig.w + dx);
+      if (handle.includes('w')) { w = Math.max(80, orig.w - dx); x = orig.x + (orig.w - w); }
+      if (handle.includes('s')) h = Math.max(60, orig.h + dy);
+      if (handle.includes('n')) { h = Math.max(60, orig.h - dy); y = orig.y + (orig.h - h); }
+
+      const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
+      if (el) {
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        el.style.width = `${w}px`;
+        el.style.height = `${h}px`;
+      }
+      sectorDragRef.current = { id: sectorId, x, y, w, h, mode: 'resize' };
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (sectorDragRef.current && sectorDragRef.current.id === sectorId && onSaveSectors) {
+        const d = sectorDragRef.current;
+        const updated = sectors.map(s => s.id === sectorId ? { ...s, x: d.x, y: d.y, w: d.w, h: d.h } : s);
+        onSaveSectors(updated);
+      }
+      sectorDragRef.current = null;
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors]);
+
   const handleReset = useCallback(() => {
     setPositions(defaultPositions(tables));
     setDirty(true);
@@ -219,17 +302,25 @@ export default function SalonFloor({
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <Move size={11} color={PALETTE.muted} />
           <span style={{ fontSize: '10px', color: PALETTE.muted, fontWeight: 600 }}>
-            {isEditing ? 'Arrastrá las mesas' : 'Plano del salón'}
+            {isEditing ? 'Arrastrá las mesas' : isEditingSectors ? 'Arrastrá los sectores' : 'Plano del salón'}
           </span>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
+          <button onClick={onToggleEditSectors} style={{
+            background: isEditingSectors ? PALETTE.forest : PALETTE.creamDeep,
+            color: isEditingSectors ? '#fff' : PALETTE.muted,
+            border: 'none', borderRadius: '8px', padding: '5px 10px',
+            cursor: 'pointer', fontSize: '10px', fontWeight: 600,
+          }}>
+            {isEditingSectors ? 'Listo' : 'Sectores'}
+          </button>
           <button onClick={onToggleEdit} style={{
             background: isEditing ? PALETTE.terra : PALETTE.creamDeep,
             color: isEditing ? '#fff' : PALETTE.muted,
             border: 'none', borderRadius: '8px', padding: '5px 10px',
             cursor: 'pointer', fontSize: '10px', fontWeight: 600,
           }}>
-            {isEditing ? 'Listo' : 'Editar'}
+            {isEditing ? 'Listo' : 'Mesas'}
           </button>
           {isEditing && (
             <>
@@ -333,6 +424,64 @@ export default function SalonFloor({
             })}
           </svg>
 
+          {(sectors || []).map(sec => {
+            const HANDLE_SIZE = 10;
+            const hs = HANDLE_SIZE / 2;
+            const handles = [
+              { key: 'nw', cursor: 'nw-resize', left: -hs, top: -hs },
+              { key: 'n', cursor: 'n-resize', left: sec.w / 2 - hs, top: -hs },
+              { key: 'ne', cursor: 'ne-resize', left: sec.w - hs, top: -hs },
+              { key: 'e', cursor: 'e-resize', left: sec.w - hs, top: sec.h / 2 - hs },
+              { key: 'se', cursor: 'se-resize', left: sec.w - hs, top: sec.h - hs },
+              { key: 's', cursor: 's-resize', left: sec.w / 2 - hs, top: sec.h - hs },
+              { key: 'sw', cursor: 'sw-resize', left: -hs, top: sec.h - hs },
+              { key: 'w', cursor: 'w-resize', left: -hs, top: sec.h / 2 - hs },
+            ];
+
+            return (
+              <div
+                key={sec.id}
+                data-sector-id={sec.id}
+                onPointerDown={(e) => handleSectorPointerDown(sec.id, e)}
+                style={{
+                  position: 'absolute',
+                  left: sec.x, top: sec.y, width: sec.w, height: sec.h,
+                  background: `${sec.color}33`,
+                  border: `2.5px ${isEditingSectors ? 'dashed' : 'solid'} ${sec.color}88`,
+                  borderRadius: '8px',
+                  cursor: isEditingSectors ? 'move' : 'default',
+                  zIndex: isEditingSectors ? 20 : 1,
+                  pointerEvents: isEditingSectors ? 'auto' : 'none',
+                }}
+              >
+                <span style={{
+                  position: 'absolute', top: '6px', left: '10px',
+                  fontSize: '12px', fontWeight: 700, color: sec.color,
+                  fontFamily: 'inherit', opacity: 0.85, userSelect: 'none',
+                  pointerEvents: 'none',
+                }}>{sec.name}</span>
+
+                {isEditingSectors && handles.map(h => (
+                  <div
+                    key={h.key}
+                    onPointerDown={(e) => handleSectorResize(sec.id, h.key, e)}
+                    style={{
+                      position: 'absolute',
+                      left: h.left, top: h.top,
+                      width: HANDLE_SIZE, height: HANDLE_SIZE,
+                      background: sec.color,
+                      borderRadius: '50%',
+                      cursor: h.cursor,
+                      zIndex: 25,
+                      border: '1.5px solid #fff',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                    }}
+                  />
+                ))}
+              </div>
+            );
+          })}
+
           {tables.map((t) => {
             const pos = positions[t.id] || { x: 0, y: 0 };
             const s = tableStatus(t.id);
@@ -366,7 +515,8 @@ export default function SalonFloor({
                   touchAction: 'none',
                   boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
                   transition: isEditing ? 'none' : 'background 0.3s',
-                  zIndex: 10,
+                  zIndex: isEditingSectors ? 1 : 10,
+                  pointerEvents: isEditingSectors ? 'none' : 'auto',
                 }}
               >
                 <span style={{
@@ -406,4 +556,6 @@ export default function SalonFloor({
       </div>
     </div>
   );
-}
+});
+
+export default SalonFloor;

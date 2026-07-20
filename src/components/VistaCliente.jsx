@@ -41,7 +41,7 @@ export default function VistaCliente({ onStaffAccess }) {
         textAlign: 'center', padding: '12px',
         fontSize: '10px', color: C.muted, opacity: 0.5,
       }}>
-        Andi · Sistema de reservas
+        Andi · Sistema de reservas · By VectraWeb
       </div>
     </div>
   );
