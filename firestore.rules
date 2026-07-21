@@ -15,25 +15,20 @@ service cloud.firestore {
       return isAuthenticated();
     }
 
-    // --- RESERVATIONS ---
-    // Structure: reservations/{date}/items/{reservationId}
-    // Used by: client form (create), staff dashboard (read/update/delete)
-    match /reservations/{date}/items/{reservationId} {
-      // CREATE: anyone can create (client reservation form via QR)
-      // TODO: Add validation for required fields (name, phone, time, guests)
-      allow create: if true;
-
-      // READ: anyone can read (staff dashboard needs full access)
-      // TODO: Restrict to isStaff() when auth is implemented
+    // --- RESERVATIONS (FLAT) ---
+    // Structure: reservations/{reservationId}  (date is a field, not a path segment)
+    // Used by: client form (create), staff dashboard (read/update/delete), n8n
+    match /reservations/{reservationId} {
+      allow create: if request.resource.data.keys().hasAll(['customerName', 'date', 'service']);
       allow read: if true;
-
-      // UPDATE: anyone can update (staff changes status: eating, dessert, etc.)
-      // TODO: Restrict to isStaff() when auth is implemented
-      allow update: if true;
-
-      // DELETE: anyone can delete (staff cancels reservations)
-      // TODO: Restrict to isStaff() when auth is implemented
+      allow update: if request.resource.data.keys().hasAny(['liveState', 'tableId', 'estado']);
       allow delete: if true;
+    }
+
+    // --- RESERVATIONS (LEGACY NESTED) — kept for backward compat, prefer flat ---
+    match /reservations/{date}/items/{itemId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // --- CONFIG ---
@@ -49,15 +44,11 @@ service cloud.firestore {
     }
 
     // --- MESAS RESERVADAS ---
-    // Structure: mesasReservadas/{date}/{mesaId}
-    // Used by: tracking which tables are reserved for a given date
-    match /mesasReservadas/{date}/{mesaId} {
-      // READ: anyone (clients see available tables, staff sees reservations)
+    // Structure: mesasReservadas/{mesaId}_{date}_{service}
+    // Used by: n8n creates/reads, staff manages
+    match /mesasReservadas/{docId} {
       allow read: if true;
-
-      // WRITE: anyone (reservation system and staff manage table assignments)
-      // TODO: Restrict to isStaff() for delete, allow create for reservation flow
-      allow write: if true;
+      allow write: if request.resource.data.keys().hasAny(['occupied', 'reservationId']);
     }
 
     // --- STAFF ---

@@ -766,19 +766,19 @@
             {
               "id": "parse-time-2",
               "name": "reservation_time",
-              "value": "={{ (() => { const raw = $('AI Agent').item.json.output.datos_reserva.horario || ''; const colonMatch = raw.match(/(\\d{1,2}):(\\d{2})/); if (colonMatch) { return String(parseInt(colonMatch[1])).padStart(2,'0') + ':' + colonMatch[2]; } const hsMatch = raw.match(/(\\d{1,2})\\s*hs/i); if (hsMatch) { return String(parseInt(hsMatch[1])).padStart(2,'0') + ':00'; } const hsColonMatch = raw.match(/(\\d{1,2}):(\\d{2})\\s*hs/i); if (hsColonMatch) { return String(parseInt(hsColonMatch[1])).padStart(2,'0') + ':' + hsColonMatch[2]; } return '20:00'; })() }}",
+              "value": "={{ (() => { const raw = $('AI Agent').item.json.output.datos_reserva.horario || ''; const colonMatch = raw.match(/(\\d{1,2}):(\\d{2})/); if (colonMatch) { return String(parseInt(colonMatch[1])).padStart(2,'0') + ':' + colonMatch[2]; } const hsMatch = raw.match(/(\\d{1,2})\\s*hs/i); if (hsMatch) { return String(parseInt(hsMatch[1])).padStart(2,'0') + ':00'; } const hsColonMatch = raw.match(/(\\d{1,2}):(\\d{2})\\s*hs/i); if (hsColonMatch) { return String(parseInt(hsColonMatch[1])).padStart(2,'0') + ':' + hsColonMatch[2]; } // Si no se pudo parsear, usar hora actual de Argentina\n  const now = new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' });\n  const nowH = parseInt(now.slice(11, 13));\n  const nowM = now.slice(14, 16);\n  if ((nowH >= 11 && nowH < 15) || (nowH >= 19 || nowH < 2)) {\n    return String(nowH).padStart(2,'0') + ':' + nowM;\n  }\n  return '20:00'; })() }}",
               "type": "string"
             },
             {
               "id": "parse-time-3",
               "name": "reservation_service",
-              "value": "={{ (() => { const time = (() => { const raw = $('AI Agent').item.json.output.datos_reserva.horario || ''; const colonMatch = raw.match(/(\\d{1,2}):(\\d{2})/); if (colonMatch) return parseInt(colonMatch[1]); const hsMatch = raw.match(/(\\d{1,2})\\s*hs/i); if (hsMatch) return parseInt(hsMatch[1]); return 20; })(); return (time >= 11 && time < 17) ? 'mediodia' : 'cena'; })() }}",
+              "value": "={{ (() => { const time = (() => { const raw = $('AI Agent').item.json.output.datos_reserva.horario || ''; const colonMatch = raw.match(/(\\d{1,2}):(\\d{2})/); if (colonMatch) return parseInt(colonMatch[1]); const hsMatch = raw.match(/(\\d{1,2})\\s*hs/i); if (hsMatch) return parseInt(hsMatch[1]); const now = new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' });\n  const nowH = parseInt(now.slice(11, 13));\n  return nowH; })(); return (time >= 11 && time < 17) ? 'mediodia' : 'cena'; })() }}",
               "type": "string"
             },
             {
               "id": "parse-time-4",
               "name": "reservation_date",
-              "value": "={{ new Date().toISOString().slice(0, 10) }}",
+              "value": "={{ new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }) }}",
               "type": "string"
             },
             {
@@ -842,32 +842,40 @@
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "getAll",
-        "projectId": "andimeet-93f62",
-        "collection": "mesas",
-        "returnAll": false,
-        "limit": 100,
-        "simplify": true
+        "method": "GET",
+        "url": "https://firestore.googleapis.com/v1/projects/andimeet-93f62/databases/(default)/documents/mesas",
+        "authentication": "predefinedCredentialType",
+        "sendQuery": false,
+        "sendBody": false,
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "nodeCredentialType": "googleApi"
       },
-      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
-      "typeVersion": 1.1,
-      "position": [
-        1776,
-        1616
-      ],
-      "id": "b625e499-2709-4ba4-b308-50020e2eb797",
-      "name": "Get Mesas",
       "credentials": {
         "googleApi": {
           "id": "4oMTtyVYbyEwbL9v",
           "name": "Google Service Account account"
         }
-      }
+      },
+      "id": "get-mesas-http",
+      "name": "Get Mesas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1776,
+        1616
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const config = $('Get Restaurant Config').item.json;\nconst mesasRaw = $('Get Mesas').item.json;\nconst reservationsRaw = $('Get Day Reservations').item.json;\nconst parse = $('Parse Time & Service').item.json;\n\nconst requestedPartySize = parse.partySize || 2;\nconst requestedDate = parse.reservation_date;\nconst requestedService = parse.reservation_service;\nconst requestedTime = parse.reservation_time;\n\nlet mesasArray = [];\nif (Array.isArray(mesasRaw)) {\n  mesasArray = mesasRaw;\n} else if (mesasRaw && Array.isArray(mesasRaw.items)) {\n  mesasArray = mesasRaw.items;\n}\n\nlet reservationsArray = [];\nif (Array.isArray(reservationsRaw)) {\n  reservationsArray = reservationsRaw;\n} else if (reservationsRaw && Array.isArray(reservationsRaw.items)) {\n  reservationsArray = reservationsRaw.items;\n}\n\nconst phone = parse.phone || $('Webhook1').item.json.body.data.key.remoteJid;\nconst isDuplicate = reservationsArray.some(r =>\n  (r.customerPhone === phone || r.phone === phone) &&\n  r.service === requestedService &&\n  r.date === requestedDate &&\n  r.tableId\n);\n\nif (isDuplicate) {\n  return [{\n    json: {\n      has_availability: false,\n      assigned_table: null,\n      assigned_table_name: null,\n      assigned_table_capacity: null,\n      free_tables: 0,\n      free_suitable_tables: 0,\n      total_tables: mesasArray.length,\n      occupied_tables: mesasArray.length,\n      requested_party_size: requestedPartySize,\n      requested_time: requestedTime,\n      requested_date: requestedDate,\n      requested_service: requestedService,\n      customerName: parse.customerName || '',\n      phone: parse.phone || '',\n      notes: parse.notes || '',\n      reservation_estado: 'pendiente',\n      customerPhone: $('Webhook1').item.json.body.data.key.remoteJid,\n      duplicate_error: true,\n    }\n  }];\n}\n\nconst occupiedTableIds = new Set();\nreservationsArray.forEach(r => {\n  if (r.tableId && r.date === requestedDate && r.service === requestedService && r.tableId !== '') {\n    occupiedTableIds.add(r.tableId);\n  }\n});\n\nconst freeMesas = mesasArray\n  .filter(m => !occupiedTableIds.has(m.id) && m.capacity >= requestedPartySize)\n  .sort((a, b) => a.capacity - b.capacity);\n\nconst hasAvailability = freeMesas.length > 0;\nconst assignedTable = hasAvailability ? freeMesas[0] : null;\n\nreturn [{\n  json: {\n    has_availability: hasAvailability,\n    assigned_table: assignedTable ? assignedTable.id : null,\n    assigned_table_name: assignedTable ? assignedTable.name : null,\n    assigned_table_capacity: assignedTable ? assignedTable.capacity : null,\n    free_tables: mesasArray.filter(m => !occupiedTableIds.has(m.id)).length,\n    free_suitable_tables: freeMesas.length,\n    total_tables: mesasArray.length,\n    occupied_tables: occupiedTableIds.size,\n    requested_party_size: requestedPartySize,\n    requested_time: requestedTime,\n    requested_date: requestedDate,\n    requested_service: requestedService,\n    customerName: parse.customerName || '',\n    phone: parse.phone || '',\n    notes: parse.notes || '',\n    reservation_estado: hasAvailability ? 'confirmada' : 'pendiente',\n    customerPhone: $('Webhook1').item.json.body.data.key.remoteJid,\n    duplicate_error: false,\n  }\n}];"
+        "jsCode": "const config = $('Get Restaurant Config').item.json;\nconst mesasResp = $('Get Mesas').item.json;\nconst reservationsResp = $('Get Day Reservations').item.json;\nconst parse = $('Parse Time & Service').item.json;\n\n// \u2500\u2500 DEBUG \u2500\u2500\nconsole.log('[CALC_DEBUG] mesasResp type:', typeof mesasResp, 'keys:', Object.keys(mesasResp || {}));\nconsole.log('[CALC_DEBUG] reservationsResp type:', typeof reservationsResp, 'keys:', Object.keys(reservationsResp || {}));\nconsole.log('[CALC_DEBUG] mesasResp.error:', mesasResp?.error?.status || mesasResp?.error?.code || 'none');\nconsole.log('[CALC_DEBUG] reservationsResp.error:', reservationsResp?.error?.status || reservationsResp?.error?.code || 'none');\nif (mesasResp?.documents) console.log('[CALC_DEBUG] mesas docs:', mesasResp.documents.length);\nelse console.log('[CALC_DEBUG] mesas NO documents');\nif (reservationsResp?.documents) console.log('[CALC_DEBUG] reservations docs:', reservationsResp.documents.length);\nelse console.log('[CALC_DEBUG] reservations NO documents');\nconsole.log('[CALC_DEBUG] parse:', JSON.stringify(parse));\n// \u2500\u2500 END DEBUG \u2500\u2500\n\nconst requestedPartySize = parse.partySize || 2;\nconst requestedDate = parse.reservation_date;\nconst requestedService = parse.reservation_service;\nconst requestedTime = parse.reservation_time;\n\n// \u2500\u2500 Helpers \u2500\u2500\nconst extractDocuments = (data) => {\n  if (!data) return [];\n  if (Array.isArray(data)) return data;\n  if (data.documents && Array.isArray(data.documents)) return data.documents;\n  if (data.items && Array.isArray(data.items)) return data.items;\n  if (data.body) return extractDocuments(data.body);\n  if (data.data) return extractDocuments(data.data);\n  return [];\n};\n\nconst extractField = (item, key) => {\n  if (!item) return null;\n  if (item.fields && item.fields[key]) {\n    const f = item.fields[key];\n    return f.stringValue !== undefined ? f.stringValue :\n           f.integerValue !== undefined ? parseInt(f.integerValue) :\n           f.booleanValue !== undefined ? f.booleanValue :\n           f.doubleValue !== undefined ? parseFloat(f.doubleValue) : null;\n  }\n  return item[key] !== undefined ? item[key] : null;\n};\n\nconst extractId = (item) => {\n  if (!item) return '';\n  if (item.id) return item.id;\n  if (item.name) return item.name.split('/').pop();\n  return '';\n};\n\nconst normalizePhone = (p) => {\n  if (!p) return '';\n  return String(p).replace(/@s\\.whatsapp\\.net$/i, '').replace(/[^0-9]/g, '');\n};\n\nconst t2m = (time, svc) => {\n  if (!time) return 0;\n  const [h, m] = time.split(':').map(Number);\n  if (svc === 'cena' && h < 12) return (h + 24) * 60 + m;\n  return h * 60 + m;\n};\n\n// \u2500\u2500 Check HTTP errors \u2500\u2500\nif (mesasResp && mesasResp.error) {\n  console.log('[Calc Availability] Get Mesas error:', mesasResp.error.message || mesasResp.error.status || JSON.stringify(mesasResp.error));\n}\nif (reservationsResp && reservationsResp.error) {\n  console.log('[Calc Availability] Get Reservations error:', reservationsResp.error.message || reservationsResp.error.status || JSON.stringify(reservationsResp.error));\n}\n\nconst mesasDocs = extractDocuments(mesasResp);\nconst reservationDocs = extractDocuments(reservationsResp);\n\nconst mesasArray = mesasDocs.map(m => ({\n  id: extractId(m),\n  name: extractField(m, 'name') || `M${extractId(m).replace('m', '')}`,\n  capacity: parseInt(extractField(m, 'capacity') || 0),\n}));\n\nconst reservationsArray = reservationDocs.map(r => ({\n  id: extractId(r),\n  tableId: extractField(r, 'tableId') || '',\n  date: extractField(r, 'date'),\n  service: extractField(r, 'service'),\n  time: extractField(r, 'time'),\n  duration: parseInt(extractField(r, 'duration')) || 0,\n  estado: extractField(r, 'estado') || '',\n  liveState: extractField(r, 'liveState') || '',\n  customerPhone: normalizePhone(extractField(r, 'customerPhone') || extractField(r, 'phone')),\n}));\n\nconst rawPhone = parse.phone || $('Webhook1').item.json.body.data.key.remoteJid || '';\nconst phone = normalizePhone(rawPhone);\n\n// \u2500\u2500 Duplicate check \u2500\u2500\nconst isDuplicate = phone && reservationsArray.some(r =>\n  r.customerPhone === phone &&\n  r.service === requestedService &&\n  r.date === requestedDate\n);\n\nif (isDuplicate) {\n  return [{\n    json: {\n      has_availability: false,\n      assigned_table: null,\n      assigned_table_name: null,\n      assigned_table_capacity: null,\n      free_tables: 0,\n      free_suitable_tables: 0,\n      total_tables: mesasArray.length,\n      occupied_tables: mesasArray.length,\n      requested_party_size: requestedPartySize,\n      requested_time: requestedTime,\n      requested_date: requestedDate,\n      requested_service: requestedService,\n      customerName: parse.customerName || '',\n      phone: phone,\n      notes: parse.notes || '',\n      reservation_estado: 'pendiente',\n      customerPhone: phone,\n      duplicate_error: true,\n    }\n  }];\n}\n\n// \u2500\u2500 States that don't occupy a table \u2500\u2500\nconst inactiveEstados = ['cancelado', 'no_show', 'ausente'];\nconst inactiveLiveStates = ['liberada', 'finalizado'];\n\n// \u2500\u2500 Build occupied set with state filter + time overlap \u2500\u2500\nconst occupiedTableIds = new Set();\nreservationsArray.forEach(r => {\n  if (!r.tableId || r.date !== requestedDate || r.service !== requestedService || r.tableId === '') return;\n  if (inactiveEstados.includes(r.estado)) return;\n  if (inactiveLiveStates.includes(r.liveState)) return;\n\n  const rStart = t2m(r.time, requestedService);\n  const rEnd = rStart + (r.duration || (requestedService === 'cena' ? 120 : 90));\n  const reqStart = t2m(requestedTime, requestedService);\n  const reqDuration = requestedService === 'cena' ? 120 : 90;\n  const reqEnd = reqStart + reqDuration;\n\n  if (reqStart < rEnd && reqEnd > rStart) {\n    occupiedTableIds.add(r.tableId);\n  }\n});\n\n// \u2500\u2500 If mesas data failed (HTTP error), fall back to optimistic: create reservation without table \u2500\u2500\n  return [{\n    json: {\n      has_availability: true,\n      assigned_table: null,\n      assigned_table_name: null,\n      assigned_table_capacity: null,\n      free_tables: 0,\n      free_suitable_tables: 0,\n      total_tables: 0,\n      occupied_tables: 0,\n      requested_party_size: requestedPartySize,\n      requested_time: requestedTime,\n      requested_date: requestedDate,\n      requested_service: requestedService,\n      customerName: parse.customerName || '',\n      phone: phone,\n      notes: parse.notes || '',\n      reservation_estado: 'pendiente',\n      customerPhone: phone,\n      duplicate_error: false,\n      http_error: true,\n    }\n  }];\n}\n\nconst freeMesas = mesasArray\n  .filter(m => !occupiedTableIds.has(m.id) && m.capacity >= requestedPartySize)\n  .sort((a, b) => a.capacity - b.capacity);\n\nconst hasAvailability = freeMesas.length > 0;\nconst assignedTable = hasAvailability ? freeMesas[0] : null;\n\nreturn [{\n  json: {\n    has_availability: hasAvailability,\n    assigned_table: assignedTable ? assignedTable.id : null,\n    assigned_table_name: assignedTable ? assignedTable.name : null,\n    assigned_table_capacity: assignedTable ? assignedTable.capacity : null,\n    free_tables: mesasArray.filter(m => !occupiedTableIds.has(m.id)).length,\n    free_suitable_tables: freeMesas.length,\n    total_tables: mesasArray.length,\n    occupied_tables: occupiedTableIds.size,\n    requested_party_size: requestedPartySize,\n    requested_time: requestedTime,\n    requested_date: requestedDate,\n    requested_service: requestedService,\n    customerName: parse.customerName || '',\n    phone: phone,\n    notes: parse.notes || '',\n    reservation_estado: hasAvailability ? 'confirmada' : 'pendiente',\n    customerPhone: phone,\n    duplicate_error: false,\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -880,7 +888,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $('Calc Availability').item.json;\n\nif (data.duplicate_error) {\n  return [{\n    json: {\n      error: true,\n      error_message: `Ya ten\u00e9s una reserva para el ${data.requested_date} en turno ${data.requested_service === 'mediodia' ? 'Mediod\u00eda' : 'Cena'}. No pod\u00e9s reservar dos veces.`,\n    }\n  }];\n}\n\nconst id = `r${Date.now()}`;\nconst now = new Date().toISOString();\nconst mesaResId = data.assigned_table ? `${data.assigned_table}_${data.requested_date}_${data.requested_service}` : null;\n\nconst toFirestoreFields = (obj) => {\n  const fields = {};\n  for (const [k, v] of Object.entries(obj)) {\n    if (v === null || v === undefined) {\n      fields[k] = { stringValue: '' };\n    } else if (typeof v === 'number') {\n      fields[k] = Number.isInteger(v) ? { integerValue: v } : { doubleValue: v };\n    } else if (typeof v === 'boolean') {\n      fields[k] = { booleanValue: v };\n    } else {\n      fields[k] = { stringValue: String(v) };\n    }\n  }\n  return fields;\n};\n\nconst reservationData = {\n  id,\n  customerName: data.customerName,\n  phone: data.phone,\n  partySize: data.requested_party_size,\n  tableId: data.assigned_table || '',\n  mesa_id: data.assigned_table || '',\n  time: data.requested_time,\n  duration: data.requested_service === 'cena' ? 120 : 90,\n  service: data.requested_service,\n  notes: data.notes || '',\n  liveState: '',\n  startedAt: '',\n  leftAt: '',\n  date: data.requested_date,\n  estado: data.reservation_estado,\n  source: 'whatsapp',\n  customerPhone: data.customerPhone,\n  staffId: '',\n  staffName: '',\n  createdAt: now,\n  updatedAt: now,\n};\n\nconst mesaResData = data.assigned_table ? {\n  occupied: true,\n  reservationId: id,\n  time: data.requested_time,\n  partySize: data.requested_party_size,\n} : null;\n\nreturn [{\n  json: {\n    reservation_id: id,\n    flat_doc: { fields: toFirestoreFields(reservationData) },\n    mesa_res_id: mesaResId,\n    mesa_res_doc: mesaResData ? { fields: toFirestoreFields(mesaResData) } : null,\n    has_table: data.assigned_table !== null,\n    assigned_table_name: data.assigned_table ? `M${data.assigned_table.replace('m', '')}` : null,\n    requested_party_size: data.requested_party_size,\n    requested_time: data.requested_time,\n    requested_date: data.requested_date,\n    customerName: data.customerName,\n  }\n}];"
+        "jsCode": "const data = $('Calc Availability').item.json;\n\nif (data.duplicate_error) {\n  return [{\n    json: {\n      error: true,\n      error_message: `Ya ten\u00e9s una reserva para el ${data.requested_date} en turno ${data.requested_service === 'mediodia' ? 'Mediod\u00eda' : 'Cena'}. No pod\u00e9s reservar dos veces.`,\n    }\n  }];\n}\n\nconst id = `r${Date.now()}`;\nconst now = new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).replace(' ', 'T');\nconst mesaResId = data.assigned_table ? `${data.assigned_table}_${data.requested_date}_${data.requested_service}` : null;\n\nconst toFirestoreFields = (obj) => {\n  const fields = {};\n  for (const [k, v] of Object.entries(obj)) {\n    if (v === null || v === undefined) {\n      fields[k] = { stringValue: '' };\n    } else if (typeof v === 'number') {\n      fields[k] = Number.isInteger(v) ? { integerValue: v } : { doubleValue: v };\n    } else if (typeof v === 'boolean') {\n      fields[k] = { booleanValue: v };\n    } else {\n      fields[k] = { stringValue: String(v) };\n    }\n  }\n  return fields;\n};\n\nconst reservationData = {\n  id,\n  customerName: data.customerName,\n  phone: data.phone,\n  partySize: data.requested_party_size,\n  tableId: data.assigned_table || '',\n  mesa_id: data.assigned_table || '',\n  time: data.requested_time,\n  duration: data.requested_service === 'cena' ? 120 : 90,\n  service: data.requested_service,\n  notes: data.notes || '',\n  liveState: '',\n  startedAt: '',\n  leftAt: '',\n  date: data.requested_date,\n  estado: data.reservation_estado,\n  source: 'whatsapp',\n  customerPhone: data.customerPhone,\n  staffId: '',\n  staffName: '',\n  createdAt: now,\n  updatedAt: now,\n};\n\nconst mesaResData = data.assigned_table ? {\n  occupied: true,\n  reservationId: id,\n  time: data.requested_time,\n  partySize: data.requested_party_size,\n} : null;\n\nreturn [{\n  json: {\n    reservation_id: id,\n    flat_doc: { fields: toFirestoreFields(reservationData) },\n    mesa_res_id: mesaResId,\n    mesa_res_doc: mesaResData ? { fields: toFirestoreFields(mesaResData) } : null,\n    has_availability: data.has_availability,\n    has_table: data.assigned_table !== null,\n    assigned_table_name: data.assigned_table ? `M${data.assigned_table.replace('m', '')}` : null,\n    requested_party_size: data.requested_party_size,\n    requested_time: data.requested_time,\n    requested_date: data.requested_date,\n    customerName: data.customerName,\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1075,28 +1083,87 @@
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "getAll",
-        "projectId": "andimeet-93f62",
-        "collection": "reservations",
-        "returnAll": false,
-        "limit": 100,
-        "simplify": true
+        "method": "GET",
+        "url": "https://firestore.googleapis.com/v1/projects/andimeet-93f62/databases/(default)/documents/reservations",
+        "authentication": "predefinedCredentialType",
+        "sendQuery": false,
+        "sendBody": false,
+        "sendHeaders": false,
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "nodeCredentialType": "googleApi"
       },
-      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
-      "typeVersion": 1.1,
-      "position": [
-        1680,
-        1616
-      ],
-      "id": "day-res-001",
-      "name": "Get Day Reservations",
       "credentials": {
         "googleApi": {
           "id": "4oMTtyVYbyEwbL9v",
           "name": "Google Service Account account"
         }
-      }
+      },
+      "id": "get-reservations-http",
+      "name": "Get Day Reservations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        1616
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "ef387560",
+              "leftValue": "={{ $json.has_availability }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "has-availability-if",
+      "name": "Has Availability?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3220,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "andimeet",
+        "remoteJid": "={{ $('Parse Time & Service').item.json.customerPhone || $('Webhook1').item.json.body.data.key.remoteJid }}",
+        "messageText": "={{ `Lo siento, no hay mesas disponibles para ${$('Parse Time & Service').item.json.reservation_service === 'mediodia' ? 'mediod\u00eda' : 'cena'} el ${$('Parse Time & Service').item.json.reservation_date} para ${$('Parse Time & Service').item.json.partySize} personas. Pod\u00e9s probar otro horario o fecha.` }}",
+        "options_message": {
+          "delay": 1500
+        }
+      },
+      "id": "send-no-avail",
+      "name": "Send No Availability",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        3440,
+        340
+      ]
     }
   ],
   "connections": {
@@ -1525,7 +1592,7 @@
         ],
         [
           {
-            "node": "Create Flat Reservation",
+            "node": "Has Availability?",
             "type": "main",
             "index": 0
           }
@@ -1537,6 +1604,24 @@
         [
           {
             "node": "Build Confirmation Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Availability?": {
+      "main": [
+        [
+          {
+            "node": "Create Flat Reservation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send No Availability",
             "type": "main",
             "index": 0
           }

@@ -59,9 +59,10 @@ export const useMesas = (date, service) => {
       let status = 'Libre';
 
       if (reserva) {
-        // Mapa de estados en vivo → etiqueta de display
-        // Corrección: Validar explícitamente el estado 'liberada' o finalizado
-        if (reserva.liveState === 'liberada') {
+        const estadosInactivos = ['cancelado', 'no_show', 'ausente'];
+        const liveStatesInactivos = ['liberada', 'finalizado'];
+
+        if (estadosInactivos.includes(reserva.estado) || liveStatesInactivos.includes(reserva.liveState)) {
           status = 'Libre';
         } else if (!reserva.liveState || reserva.liveState === 'esperando_cliente') {
           status = 'Reservada';

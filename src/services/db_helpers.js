@@ -22,7 +22,7 @@ export const subscribeToTableStates = (date, service, callback) => {
     (snapshot) => {
       const reservations = snapshot.docs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter(r => r.tableId != null);
+        .filter(r => r.tableId != null && !['cancelado', 'no_show', 'ausente'].includes(r.estado));
       callback(reservations);
     },
     (error) => {

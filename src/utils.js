@@ -32,7 +32,7 @@ export const SERVICES = {
   cena: { name: 'Cena', start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
 };
 
-export const DEFAULT_CONFIG = { cap2: 34, cap4: 0, cap5: 5, cap8: 2 };
+export const DEFAULT_CONFIG = { cap2: 12, cap4: 12, cap5: 5, cap8: 1 };
 
 // ─── Utilidades de tiempo ────────────────────────────────────────────────────
 export const t2m = (time, service) => {

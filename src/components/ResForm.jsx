@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Sun, Moon, Check, AlertCircle } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, serverTimestamp,
-  runTransaction, query, where,
+  query, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { C, SERVICES, DEFAULT_CONFIG, t2m, todayISO, detectService, buildTables } from '../utils';
@@ -129,12 +129,14 @@ export default function ResForm({ onStaffAccess }) {
     const id = `r${Date.now()}`;
     const date = todayISO();
 
+    const validEstados = ['pendiente', 'confirmada', 'esperando_cliente'];
     const duplicate = reservations.some(r =>
       (r.customerPhone === form.phone || r.phone === form.phone) &&
-      r.service === service
+      r.service === service &&
+      validEstados.includes(r.estado || '')
     );
     if (duplicate) {
-      setError('Ya tenés una reserva para este turno. No podés reservar dos veces.');
+      setError('Ya tenés una reserva activa para este turno. No podés reservar dos veces.');
       setSubmitting(false);
       return;
     }

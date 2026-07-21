@@ -216,9 +216,12 @@ async function findAndBookTable({ date, time, service, partySize, name }, phone)
     const cfg     = cfgSnap.exists ? cfgSnap.data() : { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
     const tables  = buildTables(cfg);
 
-    // 2. Cargar reservas del día
-    const resSnap = await db.collection('reservations').doc(date).collection('items').get();
-    const reservations = resSnap.docs.map(d => d.data());
+    // 2. Cargar reservas del día (flat structure: reservations/{id})
+    const resSnap = await db.collection('reservations').where('date', '==', date).get();
+    let reservations = resSnap.docs.map(d => d.data());
+    // Filtrar estados inactivos (cancelado, no_show, ausente)
+    const estadosInactivos = ['cancelado', 'no_show', 'ausente'];
+    reservations = reservations.filter(r => !estadosInactivos.includes(r.estado));
 
     // 3. Calcular duración y ventana de tiempo
     const duration = SERVICES[service].defaultDuration;
@@ -242,20 +245,28 @@ async function findAndBookTable({ date, time, service, partySize, name }, phone)
 
     if (!available) return { success: false };
 
-    // 5. Insertar reserva en Firestore
+    // 5. Insertar reserva en Firestore (flat structure: reservations/{id})
     const id = `r${Date.now()}`;
-    await db.collection('reservations').doc(date).collection('items').doc(id).set({
+    await db.collection('reservations').doc(id).set({
       id,
       customerName: name,
       phone,
       partySize,
       tableId:  available.id,
+      mesa_id:  available.id,
       time,
       duration,
       service,
       date,
-      notes:     'Reservado vía WhatsApp Bot',
+      estado:   'confirmada',
+      source:   'whatsapp_bot',
+      notes:    'Reservado vía WhatsApp Bot',
       liveState: null,
+      startedAt: null,
+      leftAt:   null,
+      staffId:  null,
+      staffName: null,
+      customerPhone: phone,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -306,14 +317,14 @@ function buildTables(cfg) {
   const tables = [];
   let n = 1;
   const groups = [
-    { count: cfg.cap2 || 0, capacity: 2 },
-    { count: cfg.cap4 || 0, capacity: 4 },
-    { count: cfg.cap5 || 0, capacity: 5 },
-    { count: cfg.cap8 || 0, capacity: 8 },
+    { count: cfg.cap2 || 0, capacity: 2, shape: 'rectangular' },
+    { count: cfg.cap4 || 0, capacity: 4, shape: 'rectangular' },
+    { count: cfg.cap5 || 0, capacity: 5, shape: 'round' },
+    { count: cfg.cap8 || 0, capacity: 8, shape: 'square' },
   ];
-  for (const { count, capacity } of groups) {
+  for (const { count, capacity, shape } of groups) {
     for (let i = 0; i < count; i++) {
-      tables.push({ id: `m${n}`, name: `M${n}`, capacity });
+      tables.push({ id: `m${n}`, name: `M${n}`, capacity, shape });
       n++;
     }
   }
