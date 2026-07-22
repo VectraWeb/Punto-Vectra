@@ -64,10 +64,10 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
             <select value={form.tableId} onChange={e => set('tableId', e.target.value)} style={inp}>
               <option value="">— elegir —</option>
                {tables.filter(t => {
-                 const s = tableStatus(t.id);
-                 const isCurrentRes = editing && editing.tableId === t.id;
-                 return (s.status === 'free' || s.status === 'soon' || isCurrentRes);
-               }).map(t => (
+                  const s = tableStatus(t.id);
+                  const isCurrentRes = editing && editing.tableId === t.id;
+                  return (s.status === 'free' || s.status === 'soon' || isCurrentRes) && t.capacity >= form.partySize;
+                }).map(t => (
                 <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>
               ))}
             </select>
