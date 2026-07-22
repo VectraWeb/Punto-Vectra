@@ -1011,32 +1011,35 @@ function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
             </div>
           </div>
 
-          {stateBreakdown && Object.keys(stateBreakdown).length > 0 && (
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: C.espresso, marginBottom: '12px', letterSpacing: '0.03em' }}>
-                Desglose por estado y comensales
-              </div>
-              {Object.entries(stateBreakdown)
-                .sort(([a], [b]) => Number(a) - Number(b))
-                .map(([ps, states]) => (
-                  <div key={ps} style={{ marginBottom: '12px', background: C.white, borderRadius: '12px', padding: '12px', border: `1px solid ${C.creamDeep}` }}>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: C.forest, marginBottom: '6px' }}>
-                      {ps} comensales
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {Object.entries(states).map(([state, { avg }]) => (
-                        <div key={state} style={{
-                          background: C.creamDeep, borderRadius: '8px', padding: '4px 8px',
-                          fontSize: '11px', color: C.espresso, whiteSpace: 'nowrap',
-                          display: 'inline-flex', alignItems: 'center', gap: '2px',
-                        }}>
-                          <span style={{ color: C.muted }}>{(LIVE_STATES[state]?.label || state).slice(0, 6)}</span>
-                          <span style={{ fontWeight: 600 }}>{fmtMin(avg)}</span>
-                        </div>
-                      ))}
-                    </div>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: C.espresso, marginBottom: '12px', letterSpacing: '0.03em' }}>
+            Desglose por estado y comensales
+          </div>
+
+          {stateBreakdown && Object.keys(stateBreakdown).length > 0 ? (
+            Object.entries(stateBreakdown)
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([ps, states]) => (
+                <div key={ps} style={{ marginBottom: '12px', background: C.white, borderRadius: '12px', padding: '12px', border: `1px solid ${C.creamDeep}` }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: C.forest, marginBottom: '6px' }}>
+                    {ps} comensales
                   </div>
-                ))}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {Object.entries(states).map(([state, { avg }]) => (
+                      <div key={state} style={{
+                        background: C.creamDeep, borderRadius: '8px', padding: '4px 8px',
+                        fontSize: '11px', color: C.espresso, whiteSpace: 'nowrap',
+                        display: 'inline-flex', alignItems: 'center', gap: '2px',
+                      }}>
+                        <span style={{ color: C.muted }}>{(LIVE_STATES[state]?.label || state).slice(0, 6)}</span>
+                        <span style={{ fontWeight: 600 }}>{fmtMin(avg)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+          ) : (
+            <div style={{ padding: '16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '12px' }}>
+              Las transiciones de estado aparecerán aquí a medida que cambien las mesas en el salón.
             </div>
           )}
         </>
