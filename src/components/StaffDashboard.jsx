@@ -339,7 +339,8 @@ export default function StaffDashboard({ onLogout }) {
   const nowMin = t2m(currentTime, service);
   const svcRes = reservations
     .map(r => optimisticStates[r.id] !== undefined ? { ...r, liveState: optimisticStates[r.id] } : r)
-    .filter(r => r.service === service);
+    .filter(r => r.service === service)
+    .filter(r => r.liveState !== 'finalizado');
 
   const tableStatus = useCallback((id) => {
     const tableRes = svcRes.filter(r => r.tableId === id);
