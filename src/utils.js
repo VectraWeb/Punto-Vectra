@@ -121,6 +121,25 @@ export const notificarN8N = (datos) => {
   }).catch(err => console.error('[Andi] Error silencioso al notificar a n8n:', err));
 };
 
+// ─── Calcula duración (min) de cada estado desde stateLog ─────────────────
+export const computeStateDurations = (stateLog) => {
+  if (!stateLog || stateLog.length < 2) return [];
+  const toMs = (v) => {
+    if (!v) return 0;
+    if (v.seconds != null) return v.seconds * 1000 + (v.nanoseconds || 0) / 1e6;
+    if (v.toDate) return v.toDate().getTime();
+    if (v.getTime) return v.getTime();
+    return v;
+  };
+  const sorted = [...stateLog].sort((a, b) => toMs(a.at) - toMs(b.at));
+  const result = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const dur = Math.round((toMs(sorted[i + 1].at) - toMs(sorted[i].at)) / 60000);
+    result.push({ state: sorted[i].state, durationMin: dur });
+  }
+  return result.filter(d => d.durationMin >= 0 && d.durationMin <= 600);
+};
+
 // ─── Analytics helpers ───────────────────────────────────────────────────────
 export const todayISOForAnalytics = (analyticsPeriod, currentDate) => {
   const days = analyticsPeriod === 'week' ? 7 : 30;

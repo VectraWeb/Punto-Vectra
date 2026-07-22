@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, deleteDoc, getDocs,
-  serverTimestamp, query, where, runTransaction,
+  serverTimestamp, query, where, runTransaction, arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { seedMesasIfNeeded, subscribeMesas, syncMesasWithConfig } from '../services/mesasHelpers';
@@ -20,7 +20,7 @@ import CalendarPicker from './CalendarPicker';
 import {
   C, LIVE_STATES, SERVICES, DEFAULT_CONFIG,
   t2m, m2t, genSlots, buildTables, todayISO, formatDate,
-  detectService, detectTime, notificarN8N,
+  detectService, detectTime, notificarN8N, computeStateDurations,
 } from '../utils';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
@@ -258,7 +258,11 @@ export default function StaffDashboard({ onLogout }) {
     setShowLiveMenu(null);
     setOptimisticStates(prev => ({ ...prev, [res.id]: liveState }));
     try {
-      const patch = { liveState, updatedAt: serverTimestamp() };
+      const patch = {
+        liveState,
+        updatedAt: serverTimestamp(),
+        stateLog: arrayUnion({ state: liveState, at: serverTimestamp() }),
+      };
       if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
       await setDoc(resDocRef(res.id), patch, { merge: true });
@@ -299,7 +303,12 @@ export default function StaffDashboard({ onLogout }) {
       if (res.tableId) {
         await deleteDoc(mesaReservadaRef(res.tableId, date, res.service));
       }
-      await deleteDoc(resDocRef(res.id));
+      await setDoc(resDocRef(res.id), {
+        liveState: 'finalizado',
+        leftAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        stateLog: arrayUnion({ state: 'finalizado', at: serverTimestamp() }),
+      }, { merge: true });
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
@@ -317,6 +326,7 @@ export default function StaffDashboard({ onLogout }) {
         startedAt: null,
         leftAt: null,
         updatedAt: serverTimestamp(),
+        stateLog: arrayUnion({ state: 'liberada', at: serverTimestamp() }),
       }, { merge: true });
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
@@ -387,7 +397,31 @@ export default function StaffDashboard({ onLogout }) {
       ? Math.round(withDuration.reduce((s, r) => s + r.stayMin, 0) / withDuration.length)
       : 0;
 
-    return { totalCustomers, avgStay };
+    // ── stateLog breakdown by partySize ──
+    const byPs = {};
+    for (const r of src) {
+      if (!r.stateLog || !Array.isArray(r.stateLog) || r.stateLog.length < 2) continue;
+      const durations = computeStateDurations(r.stateLog);
+      if (durations.length === 0) continue;
+      const ps = r.partySize || 0;
+      if (!byPs[ps]) byPs[ps] = {};
+      for (const d of durations) {
+        if (!byPs[ps][d.state]) byPs[ps][d.state] = [];
+        byPs[ps][d.state].push(d.durationMin);
+      }
+    }
+    const stateBreakdown = {};
+    for (const [ps, states] of Object.entries(byPs)) {
+      stateBreakdown[ps] = {};
+      for (const [state, durs] of Object.entries(states)) {
+        stateBreakdown[ps][state] = {
+          avg: Math.round(durs.reduce((a, b) => a + b, 0) / durs.length),
+          count: durs.length,
+        };
+      }
+    }
+
+    return { totalCustomers, avgStay, stateBreakdown };
   }, [reservations, analyticsRes, analyticsPeriod, service]);
 
   const sortedRes = useMemo(() =>
@@ -935,7 +969,7 @@ export default function StaffDashboard({ onLogout }) {
 // Subcomponentes que solo se usan en StaffDashboard
 // ═══════════════════════════════════════════════════════════════════════════════
 function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
-  const { totalCustomers, avgStay } = data;
+  const { totalCustomers, avgStay, stateBreakdown } = data;
   const fmtMin = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m}min`;
   const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']];
 
@@ -965,16 +999,47 @@ function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
           Sin datos para este período
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
-            <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.terra, lineHeight: 1 }}>{totalCustomers}</div>
-            <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Clientes</div>
+        <>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.terra, lineHeight: 1 }}>{totalCustomers}</div>
+              <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Clientes</div>
+            </div>
+            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.forest, lineHeight: 1 }}>{fmtMin(avgStay)}</div>
+              <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Perm. promedio</div>
+            </div>
           </div>
-          <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
-            <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.forest, lineHeight: 1 }}>{fmtMin(avgStay)}</div>
-            <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Perm. promedio</div>
-          </div>
-        </div>
+
+          {stateBreakdown && Object.keys(stateBreakdown).length > 0 && (
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: C.espresso, marginBottom: '12px', letterSpacing: '0.03em' }}>
+                Desglose por estado y comensales
+              </div>
+              {Object.entries(stateBreakdown)
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([ps, states]) => (
+                  <div key={ps} style={{ marginBottom: '12px', background: C.white, borderRadius: '12px', padding: '12px', border: `1px solid ${C.creamDeep}` }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: C.forest, marginBottom: '6px' }}>
+                      {ps} comensales
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {Object.entries(states).map(([state, { avg }]) => (
+                        <div key={state} style={{
+                          background: C.creamDeep, borderRadius: '8px', padding: '4px 8px',
+                          fontSize: '11px', color: C.espresso, whiteSpace: 'nowrap',
+                          display: 'inline-flex', alignItems: 'center', gap: '2px',
+                        }}>
+                          <span style={{ color: C.muted }}>{(LIVE_STATES[state]?.label || state).slice(0, 6)}</span>
+                          <span style={{ fontWeight: 600 }}>{fmtMin(avg)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </>
       )}
     </Overlay>
   );

@@ -68,7 +68,8 @@ const SalonView = ({ date, service }) => {
       const resRef = doc(db, 'reservations', resId);
       await updateDoc(resRef, {
         liveState: newState,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        stateLog: arrayUnion({ state: newState, at: serverTimestamp() }),
       });
       cerrarModal();
     } catch (error) {
