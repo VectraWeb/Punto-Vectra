@@ -266,7 +266,7 @@ export default function StaffDashboard({ onLogout }) {
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
       await updateDoc(resDocRef(res.id), patch);
       updateDoc(resDocRef(res.id), {
-        stateLog: arrayUnion({ state: liveState, at: serverTimestamp() }),
+        stateLog: arrayUnion({ state: liveState, at: new Date().toISOString() }),
       }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
@@ -311,7 +311,7 @@ export default function StaffDashboard({ onLogout }) {
         updatedAt: serverTimestamp(),
       });
       updateDoc(resDocRef(res.id), {
-        stateLog: arrayUnion({ state: 'finalizado', at: serverTimestamp() }),
+        stateLog: arrayUnion({ state: 'finalizado', at: new Date().toISOString() }),
       }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
@@ -332,7 +332,7 @@ export default function StaffDashboard({ onLogout }) {
         updatedAt: serverTimestamp(),
       });
       updateDoc(resDocRef(res.id), {
-        stateLog: arrayUnion({ state: 'liberada', at: serverTimestamp() }),
+        stateLog: arrayUnion({ state: 'liberada', at: new Date().toISOString() }),
       }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {

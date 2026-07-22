@@ -71,7 +71,7 @@ const SalonView = ({ date, service }) => {
         updatedAt: serverTimestamp(),
       });
       updateDoc(resRef, {
-        stateLog: arrayUnion({ state: newState, at: serverTimestamp() }),
+        stateLog: arrayUnion({ state: newState, at: new Date().toISOString() }),
       }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
       cerrarModal();
     } catch (error) {

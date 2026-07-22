@@ -126,10 +126,12 @@ export const computeStateDurations = (stateLog) => {
   if (!stateLog || stateLog.length < 2) return [];
   const toMs = (v) => {
     if (!v) return 0;
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') return new Date(v).getTime() || 0;
     if (v.seconds != null) return v.seconds * 1000 + (v.nanoseconds || 0) / 1e6;
     if (v.toDate) return v.toDate().getTime();
     if (v.getTime) return v.getTime();
-    return v;
+    return 0;
   };
   const sorted = [...stateLog].sort((a, b) => toMs(a.at) - toMs(b.at));
   const result = [];
