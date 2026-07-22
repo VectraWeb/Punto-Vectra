@@ -5,7 +5,7 @@ import {
   LogOut, User, UserPlus, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import {
-  collection, doc, onSnapshot, setDoc, deleteDoc, getDocs,
+  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDocs,
   serverTimestamp, query, where, runTransaction, arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -265,7 +265,7 @@ export default function StaffDashboard({ onLogout }) {
       };
       if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
-      await setDoc(resDocRef(res.id), patch, { merge: true });
+      await updateDoc(resDocRef(res.id), patch);
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo en la actualización optimista, revirtiendo estado...', e);
@@ -303,12 +303,12 @@ export default function StaffDashboard({ onLogout }) {
       if (res.tableId) {
         await deleteDoc(mesaReservadaRef(res.tableId, date, res.service));
       }
-      await setDoc(resDocRef(res.id), {
+      await updateDoc(resDocRef(res.id), {
         liveState: 'finalizado',
         leftAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         stateLog: arrayUnion({ state: 'finalizado', at: serverTimestamp() }),
-      }, { merge: true });
+      });
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
@@ -321,13 +321,13 @@ export default function StaffDashboard({ onLogout }) {
     setShowLiveMenu(null);
     setOptimisticStates(prev => ({ ...prev, [res.id]: null }));
     try {
-      await setDoc(resDocRef(res.id), {
+      await updateDoc(resDocRef(res.id), {
         liveState: null,
         startedAt: null,
         leftAt: null,
         updatedAt: serverTimestamp(),
         stateLog: arrayUnion({ state: 'liberada', at: serverTimestamp() }),
-      }, { merge: true });
+      });
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al limpiar mesa, revirtiendo...', e);
