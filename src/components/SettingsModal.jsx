@@ -98,6 +98,7 @@ export default function SettingsModal({ config, onSave, onClose }) {
 
   return (
     <Overlay onClose={onClose}>
+      <style>{`.settings-scroll::-webkit-scrollbar { display: none; } .settings-scroll { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Configuración</h3>
         <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
@@ -107,7 +108,7 @@ export default function SettingsModal({ config, onSave, onClose }) {
         Definí los tipos de mesa: capacidad (personas), forma y cantidad. Total: <strong>{totalMesas} mesas</strong>.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', maxHeight: '50vh', overflowY: 'auto' }}>
+      <div className="settings-scroll" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', maxHeight: '50vh', overflowY: 'auto' }}>
         {local.map((item, i) => (
           <TipoMesaCard key={i} item={item} index={i} onChange={v => updateItem(i, v)} onRemove={() => removeItem(i)} />
         ))}
