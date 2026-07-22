@@ -125,7 +125,7 @@ const SalonFloor = React.memo(function SalonFloor({
 
   const effectiveScale = fitScale * zoom;
 
-  const handlePointerDown = useCallback((tableId, e) => {
+  const handleDragStart = useCallback((tableId, e) => {
     if (!isEditing) return;
     e.preventDefault();
     e.stopPropagation();
@@ -136,26 +136,41 @@ const SalonFloor = React.memo(function SalonFloor({
     const t = tables.find(tb => tb.id === tableId);
     const dim = TABLE_DIMS[t?.shape] || TABLE_DIMS.round;
     const startPos = positions[tableId] || { x: 0, y: 0 };
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
 
     el.style.cursor = 'grabbing';
     el.style.zIndex = '100';
     el.style.transition = 'none';
     el.style.pointerEvents = 'none';
+    el.style.willChange = 'transform';
+
+    let rafId = null;
 
     const onMove = (ev) => {
-      const dx = (ev.clientX - startX) / effectiveScale;
-      const dy = (ev.clientY - startY) / effectiveScale;
-      el.style.transform = `translate(${startPos.x + dx}px, ${startPos.y + dy}px)`;
-      dragRef.current = { tableId, x: startPos.x + dx, y: startPos.y + dy };
+      const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+      const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      const dx = (cx - startX) / effectiveScale;
+      const dy = (cy - startY) / effectiveScale;
+      const newX = startPos.x + dx;
+      const newY = startPos.y + dy;
+
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        el.style.transform = `translate3d(${newX}px, ${newY}px, 0)`;
+      });
+      dragRef.current = { tableId, x: newX, y: newY };
     };
 
     const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('touchmove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('touchend', onUp);
       el.style.pointerEvents = '';
       el.style.zIndex = '';
+      el.style.willChange = '';
 
       if (dragRef.current && dragRef.current.tableId === tableId) {
         const finalX = Math.max(0, Math.min(CANVAS_W - dim.w, dragRef.current.x));
@@ -166,8 +181,10 @@ const SalonFloor = React.memo(function SalonFloor({
       dragRef.current = null;
     };
 
-    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('touchend', onUp);
   }, [isEditing, positions, tables, effectiveScale]);
 
   const handleTouchStart = useCallback((e) => {
@@ -208,40 +225,52 @@ const SalonFloor = React.memo(function SalonFloor({
     }
   }, [positions, onSaveLayout]);
 
-  const handleSectorPointerDown = useCallback((sectorId, e) => {
+  const handleSectorDragStart = useCallback((sectorId, e) => {
     if (!isEditingSectors) return;
     e.preventDefault();
     e.stopPropagation();
     const sector = (sectors || []).find(s => s.id === sectorId);
     if (!sector) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
     const orig = { x: sector.x, y: sector.y, w: sector.w, h: sector.h };
 
+    let rafId = null;
+
     const onMove = (ev) => {
-      const dx = (ev.clientX - startX) / effectiveScale;
-      const dy = (ev.clientY - startY) / effectiveScale;
-      const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
-      if (el) {
-        el.style.left = `${orig.x + dx}px`;
-        el.style.top = `${orig.y + dy}px`;
-      }
-      sectorDragRef.current = { id: sectorId, x: orig.x + dx, y: orig.y + dy, w: orig.w, h: orig.h, mode: 'move' };
+      const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+      const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      const dx = (cx - startX) / effectiveScale;
+      const dy = (cy - startY) / effectiveScale;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        onSaveSectors((sectors || []).map(s =>
+          s.id === sectorId
+            ? { ...s, x: orig.x + dx, y: orig.y + dy, w: orig.w, h: orig.h }
+            : s
+        ));
+      });
+      sectorDragRef.current = { sectorId, dx, dy };
     };
 
     const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('touchmove', onMove);
       window.removeEventListener('pointerup', onUp);
-      if (sectorDragRef.current && sectorDragRef.current.id === sectorId && onSaveSectors) {
+      window.removeEventListener('touchend', onUp);
+      if (sectorDragRef.current && sectorDragRef.current.sectorId === sectorId && onSaveSectors) {
         const d = sectorDragRef.current;
-        const updated = sectors.map(s => s.id === sectorId ? { ...s, x: d.x, y: d.y, w: d.w, h: d.h } : s);
+        const updated = sectors.map(s => s.id === sectorId ? { ...s, x: orig.x + d.dx, y: orig.y + d.dy } : s);
         onSaveSectors(updated);
       }
       sectorDragRef.current = null;
     };
 
-    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('touchend', onUp);
   }, [isEditingSectors, sectors, effectiveScale, onSaveSectors]);
 
   const handleSectorResize = useCallback((sectorId, handle, e) => {
@@ -250,13 +279,17 @@ const SalonFloor = React.memo(function SalonFloor({
     e.stopPropagation();
     const sector = (sectors || []).find(s => s.id === sectorId);
     if (!sector) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
     const orig = { x: sector.x, y: sector.y, w: sector.w, h: sector.h };
 
+    let rafId = null;
+
     const onMove = (ev) => {
-      const dx = (ev.clientX - startX) / effectiveScale;
-      const dy = (ev.clientY - startY) / effectiveScale;
+      const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+      const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      const dx = (cx - startX) / effectiveScale;
+      const dy = (cy - startY) / effectiveScale;
       let { x, y, w, h } = orig;
 
       if (handle.includes('e')) w = Math.max(80, orig.w + dx);
@@ -264,19 +297,25 @@ const SalonFloor = React.memo(function SalonFloor({
       if (handle.includes('s')) h = Math.max(60, orig.h + dy);
       if (handle.includes('n')) { h = Math.max(60, orig.h - dy); y = orig.y + (orig.h - h); }
 
-      const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
-      if (el) {
-        el.style.left = `${x}px`;
-        el.style.top = `${y}px`;
-        el.style.width = `${w}px`;
-        el.style.height = `${h}px`;
-      }
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
+        if (el) {
+          el.style.left = `${x}px`;
+          el.style.top = `${y}px`;
+          el.style.width = `${w}px`;
+          el.style.height = `${h}px`;
+        }
+      });
       sectorDragRef.current = { id: sectorId, x, y, w, h, mode: 'resize' };
     };
 
     const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('touchmove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('touchend', onUp);
       if (sectorDragRef.current && sectorDragRef.current.id === sectorId && onSaveSectors) {
         const d = sectorDragRef.current;
         const updated = sectors.map(s => s.id === sectorId ? { ...s, x: d.x, y: d.y, w: d.w, h: d.h } : s);
@@ -285,8 +324,10 @@ const SalonFloor = React.memo(function SalonFloor({
       sectorDragRef.current = null;
     };
 
-    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('touchend', onUp);
   }, [isEditingSectors, sectors, effectiveScale, onSaveSectors]);
 
   const handleReset = useCallback(() => {
@@ -442,7 +483,8 @@ const SalonFloor = React.memo(function SalonFloor({
               <div
                 key={sec.id}
                 data-sector-id={sec.id}
-                onPointerDown={(e) => handleSectorPointerDown(sec.id, e)}
+                onPointerDown={(e) => handleSectorDragStart(sec.id, e)}
+                onTouchStart={(e) => { if (isEditingSectors) handleSectorDragStart(sec.id, e); }}
                 style={{
                   position: 'absolute',
                   left: sec.x, top: sec.y, width: sec.w, height: sec.h,
@@ -494,13 +536,14 @@ const SalonFloor = React.memo(function SalonFloor({
               <div
                 key={t.id}
                 data-table-id={t.id}
-                onPointerDown={(e) => handlePointerDown(t.id, e)}
+                onPointerDown={(e) => handleDragStart(t.id, e)}
+                onTouchStart={(e) => { if (isEditing) handleDragStart(t.id, e); }}
                 onClick={() => {
                   if (!isEditing && onTableClick) onTableClick(t, s);
                 }}
                 style={{
                   position: 'absolute',
-                  transform: `translate(${pos.x}px, ${pos.y}px)`,
+                  transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
                   width: dim.w,
                   height: dim.h,
                   background: bg,
@@ -512,11 +555,14 @@ const SalonFloor = React.memo(function SalonFloor({
                   justifyContent: 'center',
                   cursor: isEditing ? 'grab' : 'pointer',
                   userSelect: 'none',
+                  WebkitUserSelect: 'none',
                   touchAction: 'none',
+                  WebkitTouchCallout: 'none',
                   boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
                   transition: isEditing ? 'none' : 'background 0.3s',
                   zIndex: isEditingSectors ? 1 : 10,
                   pointerEvents: isEditingSectors ? 'none' : 'auto',
+                  willChange: isEditing ? 'transform' : 'auto',
                 }}
               >
                 <span style={{

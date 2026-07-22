@@ -316,15 +316,19 @@ async function sendWhatsAppMessage(to, text) {
 function buildTables(cfg) {
   const tables = [];
   let n = 1;
-  const groups = [
-    { count: cfg.cap2 || 0, capacity: 2, shape: 'rectangular' },
-    { count: cfg.cap4 || 0, capacity: 4, shape: 'rectangular' },
-    { count: cfg.cap5 || 0, capacity: 5, shape: 'round' },
-    { count: cfg.cap8 || 0, capacity: 8, shape: 'square' },
-  ];
-  for (const { count, capacity, shape } of groups) {
+  const SHAPE_MAP = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
+  const items = Array.isArray(cfg) ? cfg : (cfg && cfg.mesaTipos ? cfg.mesaTipos : [
+    { capacidad: 2, forma: 'rectangular', cantidad: cfg.cap2 || 0 },
+    { capacidad: 4, forma: 'rectangular', cantidad: cfg.cap4 || 0 },
+    { capacidad: 5, forma: 'redonda', cantidad: cfg.cap5 || 0 },
+    { capacidad: 8, forma: 'cuadrada', cantidad: cfg.cap8 || 0 },
+  ]);
+  for (const item of items) {
+    const cap = item.capacidad || item.capacity || 0;
+    const count = item.cantidad || 1;
+    const shape = SHAPE_MAP[item.forma] || item.shape || 'rectangular';
     for (let i = 0; i < count; i++) {
-      tables.push({ id: `m${n}`, name: `M${n}`, capacity, shape });
+      tables.push({ id: `m${n}`, name: `M${n}`, capacity: cap, shape });
       n++;
     }
   }

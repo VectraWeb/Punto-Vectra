@@ -6,7 +6,7 @@ import {
   query, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { C, SERVICES, DEFAULT_CONFIG, t2m, todayISO, detectService, buildTables } from '../utils';
+import { C, SERVICES, DEFAULT_CONFIG, configToArray, t2m, todayISO, detectService, buildTables } from '../utils';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resCol = () => collection(db, 'reservations');
@@ -80,7 +80,7 @@ export default function ResForm({ onStaffAccess }) {
   // ── Suscripción a config ─────────────────────────────────────────────────
   useEffect(() => {
     const unsub = onSnapshot(cfgRef(), (snap) => {
-      if (snap.exists()) setConfig(snap.data());
+      if (snap.exists()) setConfig(configToArray(snap.data()));
     });
     return unsub;
   }, []);

@@ -10,7 +10,7 @@ Para que n8n interactúe correctamente con el sistema, debe leer y escribir en F
 
 | Ruta | Propósito |
 | :--- | :--- |
-| `config/restaurant` | Configuración de mesas (capacidad) |
+| `config/restaurant` | Configuración de mesas (tipos dinámicos) |
 | `reservations/{YYYY-MM-DD}/items/{reservationId}` | Reservas del día (app principal) |
 | `reservations/{YYYY-MM-DD}/guards/{tableId}_{service}_{time}` | Lock anti-doble-booking |
 | **`allReservations/{reservationId}`** | **Colección plana para n8n (lectura/escritura)** |
@@ -21,14 +21,19 @@ Para que n8n interactúe correctamente con el sistema, debe leer y escribir en F
 
 ```json
 {
-  "cap2": 34,
-  "cap4": 0,
-  "cap5": 5,
-  "cap8": 2
+  "mesaTipos": [
+    { "id": 1, "capacidad": 2, "forma": "rectangular", "cantidad": 12 },
+    { "id": 2, "capacidad": 4, "forma": "rectangular", "cantidad": 12 },
+    { "id": 3, "capacidad": 5, "forma": "redonda", "cantidad": 5 },
+    { "id": 4, "capacidad": 8, "forma": "cuadrada", "cantidad": 2 }
+  ],
+  "sectors": []
 }
 ```
 
-Cada campo indica cuántas mesas hay por capacidad. Las mesas se generan secuencialmente: `m1`(2p), `m2`(2p), ... `m34`(2p), `m35`(5p), `m36`(5p), `m37`(5p), `m38`(5p), `m39`(5p), `m40`(8p), `m41`(8p).
+`mesaTipos` es un array de tipos de mesa. Cada tipo tiene `capacidad` (personas), `forma` (`rectangular`, `redonda`, `cuadrada`), y `cantidad` (cuántas mesas de ese tipo). Las mesas se generan secuencialmente según el orden del array.
+
+> **Compatibilidad hacia atrás:** El sistema también acepta el formato anterior `{ cap2, cap4, cap5, cap8 }`. Firestore se migrará automáticamente al guardar desde la app.
 
 ---
 
@@ -153,22 +158,22 @@ El flujo es lineal: `null → esperando_cliente → comiendo_entrada → plato_p
 
 ---
 
-## 6. Configuración de mesas (`buildTables`)
+## 6. Configuración de mesas (`config/restaurant`)
 
-Las mesas se generan desde `config/restaurant`:
+Las mesas se generan desde `config/restaurant.mesaTipos`. Cada entrada genera tantas mesas como indique `cantidad`, numeradas secuencialmente `m1`, `m2`, etc.:
 
 ```
-cap2: 2 → m1(2p), m2(2p)
-cap4: 2 → m3(4p), m4(4p)
-cap5: 2 → m5(5p), m6(5p)
-cap8: 2 → m7(8p), m8(8p)
+Ejemplo con mesaTipos:
+  { capacidad: 2, cantidad: 2 } → m1(2p), m2(2p)
+  { capacidad: 4, cantidad: 1 } → m3(4p)
+  { capacidad: 6, cantidad: 1 } → m4(6p)
 ```
 
-Total: 8 mesas, 40 lugares.
+Total: 4 mesas, 14 lugares.
 
 Para buscar mesa disponible, n8n debe:
 1. Leer `config/restaurant`
-2. Generar la lista de mesas con capacidad
+2. Generar la lista de mesas iterando `mesaTipos`
 3. Filtrar mesas con capacidad >= partySize
 4. Verificar conflictos de horario contra reservas existentes
 
@@ -286,7 +291,7 @@ Te esperamos en *Andi*. ¡Hasta pronto! 🍽️
 ## 10. Checklist de integración
 
 - [x] App dual-writes to `allReservations` flat collection (n8n-readable)
-- [x] `config/restaurant` updated with real table counts (41 tables)
+- [x] `config/restaurant` updated with `mesaTipos` dynamic array
 - [ ] Configurar webhook de Meta Cloud API → n8n
 - [ ] Crear workflow n8n: recibir mensaje WhatsApp → máquina de estados → responder
 - [ ] Crear workflow n8n: leer `config/restaurant` para generar lista de mesas
@@ -341,24 +346,26 @@ const requestedDate = parse.date;
 const requestedService = parse.service;
 const requestedTime = parse.time; // "HH:mm"
 
-// Get Day Reservations puede devolver array directo o { items: [...] }
 const reservations = Array.isArray(reservationsRaw)
   ? reservationsRaw
   : (reservationsRaw.items || reservationsRaw.allReservations || []);
 
 // ── 1. Generar lista de mesas desde config ──────────────────────────────────
-const groups = [
-  { cap: config.cap2 || 0, capacity: 2 },
-  { cap: config.cap4 || 0, capacity: 4 },
-  { cap: config.cap5 || 0, capacity: 5 },
-  { cap: config.cap8 || 0, capacity: 8 },
+// Soporta nuevo formato (mesaTipos) y viejo formato (cap2/cap4/cap5/cap8)
+const tipos = config.mesaTipos || [
+  { capacidad: 2, forma: 'rectangular', cantidad: config.cap2 || 0 },
+  { capacidad: 4, forma: 'rectangular', cantidad: config.cap4 || 0 },
+  { capacidad: 5, forma: 'redonda', cantidad: config.cap5 || 0 },
+  { capacidad: 8, forma: 'cuadrada', cantidad: config.cap8 || 0 },
 ];
 
 const allTables = [];
 let n = 1;
-for (const { cap, capacity } of groups) {
-  for (let i = 0; i < cap; i++) {
-    allTables.push({ id: `m${n}`, name: `M${n}`, capacity });
+for (const t of tipos) {
+  const cap = t.capacidad || t.capacity || 0;
+  const count = t.cantidad || 1;
+  for (let i = 0; i < count; i++) {
+    allTables.push({ id: `m${n}`, name: `M${n}`, capacity: cap });
     n++;
   }
 }

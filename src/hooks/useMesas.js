@@ -1,7 +1,26 @@
 import { useState, useEffect, useMemo } from 'react';
 import { subscribeToTableStates, subscribeToRestaurantConfig } from '../services/db_helpers';
 
-const CONFIG_POR_DEFECTO = { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
+const SHAPE_MAP_LOCAL = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
+
+const DEFAULT_MESA_TIPOS = [
+  { id: 1, capacidad: 2, forma: 'rectangular', cantidad: 2 },
+  { id: 2, capacidad: 4, forma: 'rectangular', cantidad: 2 },
+  { id: 3, capacidad: 6, forma: 'redonda', cantidad: 2 },
+];
+
+function normalizeConfig(data) {
+  if (!data) return DEFAULT_MESA_TIPOS;
+  if (Array.isArray(data)) return data;
+  if (data.mesaTipos) return data.mesaTipos;
+  const groups = [
+    { capacidad: 2, forma: 'rectangular', cantidad: data.cap2 || 0 },
+    { capacidad: 4, forma: 'rectangular', cantidad: data.cap4 || 0 },
+    { capacidad: 5, forma: 'redonda', cantidad: data.cap5 || 0 },
+    { capacidad: 8, forma: 'cuadrada', cantidad: data.cap8 || 0 },
+  ];
+  return groups.filter(g => g.cantidad > 0);
+}
 
 /**
  * Convierte un valor updatedAt (Timestamp Firebase o ISO String de n8n)
@@ -9,43 +28,37 @@ const CONFIG_POR_DEFECTO = { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
  */
 const toMillis = (value) => {
   if (!value) return null;
-  // Caso Timestamp nativo de Firebase
   if (typeof value === 'object' && typeof value.toDate === 'function') {
     return value.toDate().getTime();
   }
-  // Caso ISO 8601 (n8n) o cualquier otro valor convertible
   const parsed = new Date(value).getTime();
   return isNaN(parsed) ? null : parsed;
 };
 
 export const useMesas = (date, service) => {
-  const [config, setConfig] = useState(CONFIG_POR_DEFECTO);
+  const [config, setConfig] = useState(DEFAULT_MESA_TIPOS);
   const [reservations, setReservations] = useState([]);
 
-  // Listener de configuración del restaurante — limpieza garantizada al desmontar
   useEffect(() => {
-    return subscribeToRestaurantConfig(setConfig);
+    return subscribeToRestaurantConfig((data) => {
+      setConfig(normalizeConfig(data));
+    });
   }, []);
 
-  // Listener de reservas — se re-suscribe automáticamente si cambia fecha o servicio
   useEffect(() => {
     if (!date || !service) return;
     return subscribeToTableStates(date, service, setReservations);
   }, [date, service]);
 
-  // Lista base de mesas derivada solo cuando cambia la configuración
   const tables = useMemo(() => {
     const lista = [];
     let n = 1;
-    const grupos = [
-      { count: config.cap2 || 0, capacity: 2 },
-      { count: config.cap4 || 0, capacity: 4 },
-      { count: config.cap5 || 0, capacity: 5 },
-      { count: config.cap8 || 0, capacity: 8 },
-    ];
-    for (const { count, capacity } of grupos) {
+    for (const item of config) {
+      const cap = item.capacidad || item.capacity || 0;
+      const count = item.cantidad || 1;
+      const shape = SHAPE_MAP_LOCAL[item.forma] || item.shape || 'rectangular';
       for (let i = 0; i < count; i++) {
-        lista.push({ id: `m${n}`, name: `M${n}`, capacity });
+        lista.push({ id: `m${n}`, name: `M${n}`, capacity: cap, shape });
         n++;
       }
     }

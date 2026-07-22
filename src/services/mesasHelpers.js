@@ -4,28 +4,33 @@ import { db } from './firebase';
 export const mesasCol = () => collection(db, 'mesas');
 export const mesaDoc = (id) => doc(db, 'mesas', id);
 
-const TABLE_GROUPS = [
-  { cap: 12, capacity: 2, shape: 'rectangular' },
-  { cap: 12, capacity: 4, shape: 'rectangular' },
-  { cap: 5, capacity: 5, shape: 'round' },
-  { cap: 2, capacity: 8, shape: 'square' },
-];
+const SHAPE_MAP_LOCAL = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
+
+function normalizeConfig(config) {
+  if (!config) return [];
+  if (Array.isArray(config)) return config;
+  if (typeof config === 'object') {
+    const groups = [
+      { capacidad: 2, forma: 'rectangular', cantidad: config.cap2 || 0 },
+      { capacidad: 4, forma: 'rectangular', cantidad: config.cap4 || 0 },
+      { capacidad: 5, forma: 'redonda', cantidad: config.cap5 || 0 },
+      { capacidad: 8, forma: 'cuadrada', cantidad: config.cap8 || 0 },
+    ];
+    return groups.filter(g => g.cantidad > 0);
+  }
+  return [];
+}
 
 export const buildMesasList = (config) => {
-  const groups = config
-    ? [
-        { cap: config.cap2 || 0, capacity: 2, shape: 'rectangular' },
-        { cap: config.cap4 || 0, capacity: 4, shape: 'rectangular' },
-        { cap: config.cap5 || 0, capacity: 5, shape: 'round' },
-        { cap: config.cap8 || 0, capacity: 8, shape: 'square' },
-      ]
-    : TABLE_GROUPS;
-
+  const items = normalizeConfig(config);
   const mesas = [];
   let num = 1;
-  for (const { cap, capacity, shape } of groups) {
-    for (let i = 0; i < cap; i++) {
-      mesas.push({ id: `m${num}`, name: `M${num}`, number: num, capacity, shape });
+  for (const item of items) {
+    const cap = item.capacidad || item.capacity || 0;
+    const count = item.cantidad || 1;
+    const shape = SHAPE_MAP_LOCAL[item.forma] || item.shape || 'rectangular';
+    for (let i = 0; i < count; i++) {
+      mesas.push({ id: `m${num}`, name: `M${num}`, number: num, capacity: cap, shape });
       num++;
     }
   }

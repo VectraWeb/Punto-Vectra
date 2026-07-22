@@ -18,7 +18,7 @@ import StaffModal from './StaffModal';
 import SectoresModal from './SectoresModal';
 import CalendarPicker from './CalendarPicker';
 import {
-  C, LIVE_STATES, SERVICES, DEFAULT_CONFIG,
+  C, LIVE_STATES, SERVICES, DEFAULT_CONFIG, configToArray,
   t2m, m2t, genSlots, buildTables, todayISO, formatDate,
   detectService, detectTime, notificarN8N, computeStateDurations,
 } from '../utils';
@@ -60,6 +60,7 @@ export default function StaffDashboard({ onLogout }) {
   const [optimisticStates, setOptimisticStates] = useState({});
   const [quickActionMenu, setQuickActionMenu] = useState(null);
   const [staff, setStaff] = useState([]);
+  const [sectors, setSectors] = useState([]);
   const [showStaff, setShowStaff] = useState(false);
   const [showSectors, setShowSectors] = useState(false);
   const [editingSectors, setEditingSectors] = useState(false);
@@ -121,7 +122,15 @@ export default function StaffDashboard({ onLogout }) {
   // ── Cargar configuración del restaurante desde Firestore ───────────────────
   useEffect(() => {
     const unsub = onSnapshot(cfgRef(), (snap) => {
-      if (snap.exists()) setConfig(snap.data());
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.mesaTipos) {
+          setConfig(data.mesaTipos);
+        } else {
+          setConfig(configToArray(data));
+        }
+        if (data.sectors) setSectors(data.sectors);
+      }
     });
     return unsub;
   }, []);
@@ -175,8 +184,9 @@ export default function StaffDashboard({ onLogout }) {
   // ── Limpiar sectores al cambiar de día ────────────────────────────────────
   const lastDateRef = useRef(date);
   useEffect(() => {
-    if (lastDateRef.current !== date && config.sectors?.length > 0) {
-      saveConfig({ ...config, sectors: [] });
+    if (lastDateRef.current !== date && sectors.length > 0) {
+      setDoc(cfgRef(), { sectors: [] }, { merge: true });
+      setSectors([]);
     }
     lastDateRef.current = date;
   }, [date]);
@@ -185,7 +195,7 @@ export default function StaffDashboard({ onLogout }) {
   const saveConfig = useCallback(async (c) => {
     setConfig(c);
     try {
-      await setDoc(cfgRef(), c, { merge: true });
+      await setDoc(cfgRef(), { mesaTipos: c, sectors }, { merge: true });
       await syncMesasWithConfig(c);
     } catch (e) { console.error(e); }
   }, []);
@@ -817,10 +827,13 @@ export default function StaffDashboard({ onLogout }) {
           tableStatus={tableStatus}
           isEditing={editingLayout}
           onToggleEdit={() => setEditingLayout(prev => !prev)}
-          sectors={config.sectors || []}
+          sectors={sectors}
           isEditingSectors={editingSectors}
           onToggleEditSectors={() => setEditingSectors(prev => !prev)}
-          onSaveSectors={(sectors) => saveConfig({ ...config, sectors })}
+          onSaveSectors={async (updatedSectors) => {
+            setSectors(updatedSectors);
+            await setDoc(cfgRef(), { sectors: updatedSectors }, { merge: true });
+          }}
           onTableClick={(t, s) => {
             if (editingSectors) return;
             if (s.status === 'free') {
@@ -894,9 +907,12 @@ export default function StaffDashboard({ onLogout }) {
       {/* ── MODAL: Sectores ── */}
       {showSectors && (
         <SectoresModal
-          sectors={config.sectors || []}
+          sectors={sectors}
           staff={staff}
-          onSave={(sectors) => saveConfig({ ...config, sectors })}
+          onSave={async (updatedSectors) => {
+            setSectors(updatedSectors);
+            await setDoc(cfgRef(), { sectors: updatedSectors }, { merge: true });
+          }}
           onClose={() => setShowSectors(false)}
         />
       )}

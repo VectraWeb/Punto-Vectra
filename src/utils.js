@@ -32,7 +32,54 @@ export const SERVICES = {
   cena: { name: 'Cena', start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
 };
 
-export const DEFAULT_CONFIG = { cap2: 12, cap4: 12, cap5: 5, cap8: 1 };
+// ─── Formas de mesas ─────────────────────────────────────────────────────────
+export const SHAPE_MAP = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
+export const SHAPE_LABELS = { redonda: 'Redonda', rectangular: 'Rectangular', cuadrada: 'Cuadrada' };
+export const SHAPE_KEYS = Object.keys(SHAPE_MAP);
+
+export const DEFAULT_CONFIG = [
+  { id: 1, capacidad: 2, forma: 'rectangular', cantidad: 12 },
+  { id: 2, capacidad: 4, forma: 'rectangular', cantidad: 12 },
+  { id: 3, capacidad: 5, forma: 'redonda', cantidad: 5 },
+  { id: 4, capacidad: 8, forma: 'cuadrada', cantidad: 2 },
+];
+
+export const configToArray = (cfg) => {
+  if (Array.isArray(cfg)) return cfg;
+  if (cfg && typeof cfg === 'object' && cfg.cantidad === undefined) {
+    const groups = [
+      { capacidad: 2, forma: 'rectangular', cantidad: cfg.cap2 || 0 },
+      { capacidad: 4, forma: 'rectangular', cantidad: cfg.cap4 || 0 },
+      { capacidad: 5, forma: 'redonda', cantidad: cfg.cap5 || 0 },
+      { capacidad: 8, forma: 'cuadrada', cantidad: cfg.cap8 || 0 },
+    ];
+    return groups.filter(g => g.cantidad > 0).map((g, i) => ({ ...g, id: i + 1 }));
+  }
+  return cfg || [];
+};
+
+export const buildTables = (cfg) => {
+  const items = Array.isArray(cfg)
+    ? cfg
+    : (cfg && typeof cfg.mesaTipos !== 'undefined' ? cfg.mesaTipos : configToArray(cfg));
+  const tables = [];
+  let n = 1;
+  for (const item of items) {
+    const cap = item.capacidad || item.capacity || 0;
+    const count = item.cantidad ?? 1;
+    for (let i = 0; i < count; i++) {
+      tables.push({
+        id: `m${n}`,
+        name: `M${n}`,
+        capacity: cap,
+        shape: SHAPE_MAP[item.forma] || item.shape || item.forma || 'rectangular',
+        number: n,
+      });
+      n++;
+    }
+  }
+  return tables;
+};
 
 // ─── Utilidades de tiempo ────────────────────────────────────────────────────
 export const t2m = (time, service) => {
@@ -54,24 +101,6 @@ export const genSlots = (service) => {
   const slots = [];
   for (let m = start; m <= end; m += 15) slots.push(m2t(m));
   return slots;
-};
-
-export const buildTables = (cfg) => {
-  const tables = [];
-  let n = 1;
-  const groups = [
-    { count: cfg.cap2 || 0, capacity: 2, shape: 'rectangular' },
-    { count: cfg.cap4 || 0, capacity: 4, shape: 'rectangular' },
-    { count: cfg.cap5 || 0, capacity: 5, shape: 'round' },
-    { count: cfg.cap8 || 0, capacity: 8, shape: 'square' },
-  ];
-  for (const { count, capacity, shape } of groups) {
-    for (let i = 0; i < count; i++) {
-      tables.push({ id: `m${n}`, name: `M${n}`, capacity, shape });
-      n++;
-    }
-  }
-  return tables;
 };
 
 export const todayISO = () => {

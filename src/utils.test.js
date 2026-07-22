@@ -49,16 +49,34 @@ describe('genSlots', () => {
 });
 
 describe('buildTables', () => {
-  it('builds tables from config', () => {
-    const tables = buildTables({ cap2: 2, cap4: 1, cap5: 0, cap8: 0 });
-    expect(tables).toHaveLength(3);
-    expect(tables[0]).toEqual({ id: 'm1', name: 'M1', capacity: 2, shape: 'rectangular' });
-    expect(tables[1]).toEqual({ id: 'm2', name: 'M2', capacity: 2, shape: 'rectangular' });
-    expect(tables[2]).toEqual({ id: 'm3', name: 'M3', capacity: 4, shape: 'rectangular' });
+  it('builds tables from new array config', () => {
+    const cfg = [
+      { id: 1, capacidad: 2, forma: 'rectangular', cantidad: 2 },
+      { id: 2, capacidad: 4, forma: 'rectangular', cantidad: 1 },
+      { id: 3, capacidad: 6, forma: 'redonda', cantidad: 1 },
+    ];
+    const tables = buildTables(cfg);
+    expect(tables).toHaveLength(4);
+    expect(tables[0]).toEqual({ id: 'm1', name: 'M1', capacity: 2, shape: 'rectangular', number: 1 });
+    expect(tables[1]).toEqual({ id: 'm2', name: 'M2', capacity: 2, shape: 'rectangular', number: 2 });
+    expect(tables[2]).toEqual({ id: 'm3', name: 'M3', capacity: 4, shape: 'rectangular', number: 3 });
+    expect(tables[3]).toEqual({ id: 'm4', name: 'M4', capacity: 6, shape: 'round', number: 4 });
   });
 
-  it('returns empty for zero config', () => {
+  it('builds tables from old object config (backward compat)', () => {
+    const tables = buildTables({ cap2: 2, cap4: 1, cap5: 0, cap8: 0 });
+    expect(tables).toHaveLength(3);
+    expect(tables[0]).toEqual({ id: 'm1', name: 'M1', capacity: 2, shape: 'rectangular', number: 1 });
+    expect(tables[1]).toEqual({ id: 'm2', name: 'M2', capacity: 2, shape: 'rectangular', number: 2 });
+    expect(tables[2]).toEqual({ id: 'm3', name: 'M3', capacity: 4, shape: 'rectangular', number: 3 });
+  });
+
+  it('returns empty for old zero config', () => {
     expect(buildTables({ cap2: 0, cap4: 0, cap5: 0, cap8: 0 })).toHaveLength(0);
+  });
+
+  it('returns empty for new zero config', () => {
+    expect(buildTables([{ id: 1, capacidad: 2, forma: 'rectangular', cantidad: 0 }])).toHaveLength(0);
   });
 });
 
@@ -88,10 +106,14 @@ describe('SERVICES', () => {
 });
 
 describe('DEFAULT_CONFIG', () => {
-  it('has all capacity keys', () => {
-    expect(DEFAULT_CONFIG).toHaveProperty('cap2');
-    expect(DEFAULT_CONFIG).toHaveProperty('cap4');
-    expect(DEFAULT_CONFIG).toHaveProperty('cap5');
-    expect(DEFAULT_CONFIG).toHaveProperty('cap8');
+  it('is an array of mesa tipos', () => {
+    expect(Array.isArray(DEFAULT_CONFIG)).toBe(true);
+    expect(DEFAULT_CONFIG.length).toBeGreaterThan(0);
+    for (const item of DEFAULT_CONFIG) {
+      expect(item).toHaveProperty('id');
+      expect(item).toHaveProperty('capacidad');
+      expect(item).toHaveProperty('forma');
+      expect(item).toHaveProperty('cantidad');
+    }
   });
 });
