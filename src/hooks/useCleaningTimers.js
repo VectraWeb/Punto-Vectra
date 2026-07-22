@@ -3,7 +3,7 @@ import { doc, updateDoc, arrayUnion, serverTimestamp, deleteDoc, setDoc } from '
 import { db } from '../services/firebase';
 import { notificarN8N, computeStateDurations } from '../utils';
 
-const CLEANING_DURATION_MS = 15 * 60 * 1000;
+const CLEANING_DURATION_MS = 5 * 60 * 1000;
 const EXTEND_MS = 5 * 60 * 1000;
 
 const resDocRef = (id) => doc(db, 'reservations', id);
