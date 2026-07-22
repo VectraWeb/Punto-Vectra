@@ -261,11 +261,13 @@ export default function StaffDashboard({ onLogout }) {
       const patch = {
         liveState,
         updatedAt: serverTimestamp(),
-        stateLog: arrayUnion({ state: liveState, at: serverTimestamp() }),
       };
       if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
       if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
       await updateDoc(resDocRef(res.id), patch);
+      updateDoc(resDocRef(res.id), {
+        stateLog: arrayUnion({ state: liveState, at: serverTimestamp() }),
+      }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo en la actualización optimista, revirtiendo estado...', e);
@@ -307,8 +309,10 @@ export default function StaffDashboard({ onLogout }) {
         liveState: 'finalizado',
         leftAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        stateLog: arrayUnion({ state: 'finalizado', at: serverTimestamp() }),
       });
+      updateDoc(resDocRef(res.id), {
+        stateLog: arrayUnion({ state: 'finalizado', at: serverTimestamp() }),
+      }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
@@ -326,8 +330,10 @@ export default function StaffDashboard({ onLogout }) {
         startedAt: null,
         leftAt: null,
         updatedAt: serverTimestamp(),
-        stateLog: arrayUnion({ state: 'liberada', at: serverTimestamp() }),
       });
+      updateDoc(resDocRef(res.id), {
+        stateLog: arrayUnion({ state: 'liberada', at: serverTimestamp() }),
+      }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo al limpiar mesa, revirtiendo...', e);
