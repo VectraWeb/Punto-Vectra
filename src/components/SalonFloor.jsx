@@ -51,7 +51,13 @@ function defaultPositions(tables) {
   }, {});
 }
 
-function tableColor(tableStatus, liveState) {
+function tableColor(tableStatus, liveState, cleaningTimer) {
+  if (cleaningTimer) {
+    const pct = cleaningTimer.progress;
+    if (pct > 0.66) return '#6f8d4d';
+    if (pct > 0.13) return '#d4a04a';
+    return '#c0392b';
+  }
   if (tableStatus === 'busy' && liveState && LIVE_STATES[liveState]) return LIVE_STATES[liveState].color;
   if (tableStatus === 'busy') return PALETTE.terra;
   if (tableStatus === 'soon') return PALETTE.soon;
@@ -73,7 +79,7 @@ function tableTextColor(tableStatus) {
 }
 
 const SalonFloor = React.memo(function SalonFloor({
-  tables, tableStatus, onTableClick,
+  tables, tableStatus, cleaningTimers, onTableClick,
   isEditing, onToggleEdit, onSaveLayout,
   sectors, isEditingSectors, onToggleEditSectors, onSaveSectors,
 }) {
@@ -527,10 +533,17 @@ const SalonFloor = React.memo(function SalonFloor({
           {tables.map((t) => {
             const pos = positions[t.id] || { x: 0, y: 0 };
             const s = tableStatus(t.id);
-            const bg = tableColor(s.status, s.res?.liveState);
-            const fg = tableTextColor(s.status);
-            const label = tableLabel(s.status, s.res?.liveState, s.res?.time);
+            const ct = cleaningTimers?.[t.id] || null;
+            const bg = tableColor(s.status, s.res?.liveState, ct);
+            const fg = ct ? '#fff' : tableTextColor(s.status);
+            const label = ct ? null : tableLabel(s.status, s.res?.liveState, s.res?.time);
             const dim = TABLE_DIMS[t.shape] || TABLE_DIMS.round;
+
+            const formatCountdown = (sec) => {
+              const m = Math.floor(sec / 60);
+              const seg = sec % 60;
+              return `${String(m).padStart(2, '0')}:${String(seg).padStart(2, '0')}`;
+            };
 
             return (
               <div
@@ -574,27 +587,40 @@ const SalonFloor = React.memo(function SalonFloor({
                 }}>
                   {t.name}
                 </span>
-                <span style={{
-                  fontSize: '8px',
-                  color: fg,
-                  opacity: 0.8,
-                  marginTop: '1px',
-                  textAlign: 'center',
-                  maxWidth: dim.w - 10,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {label}
-                </span>
-                <span style={{
-                  fontSize: '7px',
-                  color: fg,
-                  opacity: 0.5,
-                  marginTop: '1px',
-                }}>
-                  {t.capacity}p
-                </span>
+                {ct ? (
+                  <>
+                    <span style={{ fontSize: '9px', color: fg, opacity: 0.9, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatCountdown(ct.remainingSec)}
+                    </span>
+                    <div style={{ width: dim.w - 20, height: '3px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', marginTop: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${ct.progress * 100}%`, height: '100%', background: '#fff', borderRadius: '2px', transition: 'width 1s linear' }} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span style={{
+                      fontSize: '8px',
+                      color: fg,
+                      opacity: 0.8,
+                      marginTop: '1px',
+                      textAlign: 'center',
+                      maxWidth: dim.w - 10,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {label}
+                    </span>
+                    <span style={{
+                      fontSize: '7px',
+                      color: fg,
+                      opacity: 0.5,
+                      marginTop: '1px',
+                    }}>
+                      {t.capacity}p
+                    </span>
+                  </>
+                )}
               </div>
             );
           })}

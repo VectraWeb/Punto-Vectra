@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { seedMesasIfNeeded, subscribeMesas, syncMesasWithConfig } from '../services/mesasHelpers';
+import { useCleaningTimers } from '../hooks/useCleaningTimers';
 import SalonFloor from './SalonFloor';
 import LiveStateModal from './LiveStateModal';
 import ResModal from './ResModal';
@@ -273,7 +274,10 @@ export default function StaffDashboard({ onLogout }) {
         updatedAt: serverTimestamp(),
       };
       if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
-      if (liveState === 'para_limpiar') patch.leftAt = serverTimestamp();
+      if (liveState === 'para_limpiar') {
+        patch.leftAt = serverTimestamp();
+        patch.cleaningStartedAt = new Date().toISOString();
+      }
       await updateDoc(resDocRef(res.id), patch);
       updateDoc(resDocRef(res.id), {
         stateLog: arrayUnion({ state: liveState, at: new Date().toISOString() }),
@@ -385,6 +389,9 @@ export default function StaffDashboard({ onLogout }) {
     });
     return { free, busy, soon, reserved, seatsBusy };
   }, [tables, tableStatus]);
+
+  // ── Cleaning Timers ──────────────────────────────────────────────────────────
+  const { cleaningTimers, finishNow, extendCleaning, cancelCleaning } = useCleaningTimers(reservations, date, tables);
 
   const analyticsData = useMemo(() => {
     const src = analyticsPeriod === 'day' ? reservations : analyticsRes;
@@ -825,6 +832,7 @@ export default function StaffDashboard({ onLogout }) {
         <SalonFloor
           tables={tables}
           tableStatus={tableStatus}
+          cleaningTimers={cleaningTimers}
           isEditing={editingLayout}
           onToggleEdit={() => setEditingLayout(prev => !prev)}
           sectors={sectors}
@@ -863,11 +871,14 @@ export default function StaffDashboard({ onLogout }) {
         <LiveStateModal
           res={showLiveMenu}
           tables={tables}
+          cleaningTimer={cleaningTimers[showLiveMenu.tableId] || null}
           onSelect={(state) => updateLiveState(showLiveMenu, state)}
           onEdit={() => { setEditing(showLiveMenu); setShowLiveMenu(null); setShowModal(true); }}
           onClose={() => setShowLiveMenu(null)}
-          onFinalize={() => finalizeReservation(showLiveMenu)}
+          onFinalize={() => finishNow(showLiveMenu)}
           onReset={() => resetLiveState(showLiveMenu)}
+          onExtend={() => extendCleaning(showLiveMenu)}
+          onCancelCleaning={() => cancelCleaning(showLiveMenu)}
         />
       )}
 

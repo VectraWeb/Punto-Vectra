@@ -19,7 +19,17 @@ export function Overlay({ children, onClose }) {
   );
 }
 
-export default function LiveStateModal({ res, tables, onSelect, onEdit, onClose, onFinalize, onReset }) {
+function formatCountdown(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+export default function LiveStateModal({
+  res, tables, cleaningTimer,
+  onSelect, onEdit, onClose, onFinalize, onReset,
+  onExtend, onCancelCleaning,
+}) {
   const table = tables.find(t => t.id === res.tableId);
   return (
     <Overlay onClose={onClose}>
@@ -53,7 +63,48 @@ export default function LiveStateModal({ res, tables, onSelect, onEdit, onClose,
         })}
       </div>
 
-      {res.liveState === 'para_limpiar' && (
+      {res.liveState === 'para_limpiar' && cleaningTimer && (
+        <div style={{ marginBottom: '16px', padding: '14px', background: C.white, borderRadius: '14px', border: `1px solid ${C.creamDeep}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', color: C.muted, fontWeight: 600 }}>Limpieza automática</span>
+            <span style={{
+              fontFamily: '"Fraunces", serif', fontSize: '22px', fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+              color: cleaningTimer.progress > 0.66 ? C.free : cleaningTimer.progress > 0.13 ? '#d4a04a' : '#c0392b',
+            }}>
+              {formatCountdown(cleaningTimer.remainingSec)}
+            </span>
+          </div>
+          <div style={{ width: '100%', height: '6px', background: C.creamDeep, borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{
+              width: `${cleaningTimer.progress * 100}%`, height: '100%',
+              background: cleaningTimer.progress > 0.66 ? C.free : cleaningTimer.progress > 0.13 ? '#d4a04a' : '#c0392b',
+              borderRadius: '3px', transition: 'width 1s linear',
+            }} />
+          </div>
+          <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+            <button onClick={onFinalize} style={{
+              flex: 1, padding: '10px', background: C.free, border: 'none', borderRadius: '10px',
+              cursor: 'pointer', color: '#fff', fontSize: '12px', fontWeight: 600,
+            }}>
+              Finalizar ahora
+            </button>
+            <button onClick={onExtend} style={{
+              flex: 1, padding: '10px', background: '#d4a04a', border: 'none', borderRadius: '10px',
+              cursor: 'pointer', color: '#fff', fontSize: '12px', fontWeight: 600,
+            }}>
+              +5 min
+            </button>
+            <button onClick={onCancelCleaning} style={{
+              padding: '10px', background: 'transparent', border: `1.5px solid ${C.muted}`, borderRadius: '10px',
+              cursor: 'pointer', color: C.muted, fontSize: '12px',
+            }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {res.liveState === 'para_limpiar' && !cleaningTimer && (
         <div style={{ marginBottom: '16px' }}>
           <button onClick={onFinalize} style={{ width: '100%', padding: '14px', background: C.free, border: 'none', borderRadius: '12px', cursor: 'pointer', color: '#fff', fontSize: '14px', fontWeight: 600 }}>
             Finalizar Reserva y Liberar Mesa
