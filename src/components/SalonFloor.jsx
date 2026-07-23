@@ -619,6 +619,7 @@ const SalonFloor = React.memo(function SalonFloor({
         padding: '14px 20px', marginTop: '8px',
         background: PALETTE.white, borderRadius: '14px',
         border: `1px solid ${PALETTE.creamDeep}`,
+        justifyContent: 'center',
       }}>
         {Object.entries(LIVE_STATES).map(([key, state]) => (
           <div key={key} style={{
