@@ -9,17 +9,25 @@ import {
   serverTimestamp, query, where, runTransaction, arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { seedMesasIfNeeded, subscribeMesas, syncMesasWithConfig } from '../services/mesasHelpers';
+import { syncMesasWithConfig } from '../services/mesasHelpers';
 import { useCleaningTimers } from '../hooks/useCleaningTimers';
+import { useReservations, useAnalyticsReservations } from '../hooks/useReservations';
+import { useConfig } from '../hooks/useConfig';
+import { useMesas } from '../hooks/useMesas';
+import { useStaff } from '../hooks/useStaff';
 import SalonFloor from './SalonFloor';
 import LiveStateModal from './LiveStateModal';
 import ResModal from './ResModal';
 import SettingsModal from './SettingsModal';
+import { AnalyticsPanel, Stat } from './AnalyticsPanel';
+import { DashboardHeader } from './DashboardHeader';
+import ReservationList from './ReservationList';
+import TableGrid from './TableGrid';
 import StaffModal from './StaffModal';
 import SectoresModal from './SectoresModal';
 import CalendarPicker from './CalendarPicker';
 import {
-  C, LIVE_STATES, SERVICES, DEFAULT_CONFIG, configToArray,
+  C, LIVE_STATES, SERVICES, DEFAULT_CONFIG,
   t2m, m2t, genSlots, buildTables, todayISO, formatDate,
   detectService, detectTime, notificarN8N, computeStateDurations,
 } from '../utils';
@@ -30,7 +38,6 @@ const resDocRef = (id) => doc(db, 'reservations', id);
 const mesaReservadaRef = (tableId, date, service) =>
   doc(db, 'mesasReservadas', `${tableId}_${date}_${service}`);
 const cfgRef = () => doc(db, 'config', 'restaurant');
-const staffCol = () => collection(db, 'staff');
 const staffDoc = (id) => doc(db, 'staff', id);
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -41,9 +48,6 @@ export default function StaffDashboard({ onLogout }) {
   const [date, setDate] = useState(todayISO);
   const [service, setService] = useState(detectService);
   const [currentTime, setCurrentTime] = useState(() => detectTime(detectService()));
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
-  const [reservations, setReservations] = useState([]);
-  const [mesas, setMesas] = useState([]);
   const [online, setOnline] = useState(navigator.onLine);
 
   // Modales
@@ -52,26 +56,27 @@ export default function StaffDashboard({ onLogout }) {
   const [preTable, setPreTable] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
-  const [showCalendar, setShowCalendar] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
-  const [analyticsRes, setAnalyticsRes] = useState([]);
   const [mainTab, setMainTab] = useState('mesas');
   const [editingLayout, setEditingLayout] = useState(false);
   const [optimisticStates, setOptimisticStates] = useState({});
   const [quickActionMenu, setQuickActionMenu] = useState(null);
-  const [staff, setStaff] = useState([]);
-  const [sectors, setSectors] = useState([]);
   const [showStaff, setShowStaff] = useState(false);
   const [showSectors, setShowSectors] = useState(false);
   const [editingSectors, setEditingSectors] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
   const deferredPrompt = useRef(null);
   const [canInstall, setCanInstall] = useState(false);
   const pressTimer = useRef(null);
   const isLongPress = useRef(false);
-  const calendarRef = useRef(null);
   const configLoaded = useRef(false);
+
+  // ── Hooks de datos externos ────────────────────────────────────────────────
+  const { config, sectors, setSectors, saveSectors } = useConfig();
+  const mesas = useMesas(config);
+  const staff = useStaff();
+  const reservations = useReservations(date);
+  const analyticsRes = useAnalyticsReservations(date, showAnalytics, analyticsPeriod);
 
   const tables = useMemo(() => {
     if (mesas.length > 0) return mesas;
@@ -120,86 +125,22 @@ export default function StaffDashboard({ onLogout }) {
     if (!slots.includes(currentTime)) setCurrentTime(slots[Math.floor(slots.length / 2)]);
   }, [service]);
 
-  // ── Cargar configuración del restaurante desde Firestore ───────────────────
-  useEffect(() => {
-    const unsub = onSnapshot(cfgRef(), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.mesaTipos) {
-          setConfig(data.mesaTipos);
-        } else {
-          setConfig(configToArray(data));
-        }
-        if (data.sectors) setSectors(data.sectors);
-      }
-    });
-    return unsub;
-  }, []);
 
-  // ── Sembrar colección mesas si no existe + escucharla ────────────────────
-  useEffect(() => { seedMesasIfNeeded(config); }, [config]);
-  useEffect(() => {
-    const unsub = subscribeMesas(setMesas);
-    return unsub;
-  }, []);
-
-  // ── Escucha en tiempo real de reservas para la fecha seleccionada ──────────
-  useEffect(() => {
-    const q = query(resCol(), where('date', '==', date));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setReservations(data);
-      },
-      (err) => { console.error('[Andi] Firestore error:', err); }
-    );
-    return unsub;
-  }, [date]);
-
-  // ── Fetch analytics data para semana/mes ─────────────────────────────────────
-  useEffect(() => {
-    if (!showAnalytics || analyticsPeriod === 'day') { setAnalyticsRes([]); return; }
-    const days = analyticsPeriod === 'week' ? 7 : 30;
-    const dates = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(date + 'T12:00:00');
-      d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().slice(0, 10));
-    }
-    (async () => {
-      const snap = await getDocs(query(resCol(), where('date', 'in', dates)));
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setAnalyticsRes(all);
-    })();
-  }, [showAnalytics, analyticsPeriod, date]);
-
-  // ── Escucha en tiempo real del personal ──────────────────────────────────
-  useEffect(() => {
-    const unsub = onSnapshot(staffCol(), (snap) => {
-      setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return unsub;
-  }, []);
-
-  // ── Limpiar sectores al cambiar de día ────────────────────────────────────
   const lastDateRef = useRef(date);
   useEffect(() => {
     if (lastDateRef.current !== date && sectors.length > 0) {
-      setDoc(cfgRef(), { sectors: [] }, { merge: true });
-      setSectors([]);
+      saveSectors([]);
     }
     lastDateRef.current = date;
-  }, [date]);
+  }, [date, sectors, saveSectors]);
 
-  // ── Persistir configuración ────────────────────────────────────────────────
+  // ── Persistir configuración ────────────────────────────────────────────────────────
   const saveConfig = useCallback(async (c) => {
-    setConfig(c);
     try {
       await setDoc(cfgRef(), { mesaTipos: c, sectors }, { merge: true });
       await syncMesasWithConfig(c);
     } catch (e) { console.error(e); }
-  }, []);
+  }, [sectors]);
 
   // ── CRUD de reservas ───────────────────────────────────────────────────────
   const saveRes = useCallback(async (data) => {
@@ -509,14 +450,41 @@ export default function StaffDashboard({ onLogout }) {
   // ─── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: C.cream, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-        <div style={{
-          width: '48px', height: '48px', border: `4px solid ${C.creamDeep}`,
-          borderTopColor: C.terra, borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <p style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest }}>Cargando Andi...</p>
+      <div style={{ minHeight: '100vh', background: C.cream, fontFamily: '"Manrope", system-ui, sans-serif' }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Manrope:wght@300;400;500;600;700&display=swap');
+          @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+          .skeleton { background: linear-gradient(90deg, #ebe3d5 25%, #f5efe6 50%, #ebe3d5 75%); background-size: 800px 100%; animation: shimmer 1.4s infinite; border-radius: 10px; }
+        `}</style>
+        {/* Header skeleton */}
+        <div style={{ background: C.forest, padding: '24px 20px 28px', borderBottomLeftRadius: '28px', borderBottomRightRadius: '28px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <div className="skeleton" style={{ width: '70px', height: '10px', marginBottom: '8px', opacity: 0.4 }} />
+              <div className="skeleton" style={{ width: '80px', height: '30px', opacity: 0.4 }} />
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {[1,2,3,4].map(i => <div key={i} className="skeleton" style={{ width: '38px', height: '38px', borderRadius: '12px', opacity: 0.3 }} />)}
+            </div>
+          </div>
+          <div className="skeleton" style={{ width: '100%', height: '44px', borderRadius: '12px', opacity: 0.35 }} />
+        </div>
+        {/* Service tabs skeleton */}
+        <div style={{ padding: '20px 16px 8px', display: 'flex', gap: '8px' }}>
+          {[1,2].map(i => <div key={i} className="skeleton" style={{ flex: 1, height: '56px', borderRadius: '14px' }} />)}
+        </div>
+        {/* Stats skeleton */}
+        <div style={{ padding: '0 16px 16px', display: 'flex', gap: '8px' }}>
+          {[1,2,3,4].map(i => <div key={i} className="skeleton" style={{ flex: 1, height: '52px', borderRadius: '12px' }} />)}
+        </div>
+        {/* Tabs skeleton */}
+        <div style={{ padding: '0 16px', display: 'flex', gap: '4px', marginBottom: '12px' }}>
+          {[1,2,3].map(i => <div key={i} className="skeleton" style={{ flex: 1, height: '52px', borderRadius: '12px' }} />)}
+        </div>
+        {/* Table grid skeleton */}
+        <div style={{ padding: '0 16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: '6px' }}>
+          {Array.from({ length: 12 }).map((_, i) => <div key={i} className="skeleton" style={{ aspectRatio: '1', borderRadius: '10px' }} />)}
+        </div>
       </div>
     );
   }
@@ -547,101 +515,18 @@ export default function StaffDashboard({ onLogout }) {
       `}</style>
 
       {/* ── HEADER ── */}
-      <header style={{ background: C.forest, color: C.cream, padding: '24px 20px 28px', borderBottomLeftRadius: '28px', borderBottomRightRadius: '28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-          <div>
-            <p style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', opacity: 0.55, margin: 0 }}>Recepción</p>
-            <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: '34px', fontStyle: 'italic', fontWeight: 600, margin: '2px 0 0', lineHeight: 1, letterSpacing: '-0.02em' }}>Andi</h1>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {/* Indicador online/offline */}
-            <div title={online ? 'Conectado' : 'Sin conexión — cambios en cola'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '10px', fontSize: '11px' }}>
-              {online
-                ? <><Wifi size={13} color="#6fd98d" /><span style={{ color: '#6fd98d' }}>Online</span></>
-                : <><WifiOff size={13} color={C.soon} /><span style={{ color: C.soon }}>Offline</span></>
-              }
-            </div>
-            {/* Desktop: botones individuales */}
-            <div className="header-btns" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button onClick={() => setShowAnalytics(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-                <BarChart3 size={18} />
-              </button>
-              <button onClick={() => setShowSettings(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-                <Settings size={18} />
-              </button>
-              <button onClick={() => setShowStaff(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-                <Users size={18} />
-              </button>
-              <button onClick={() => setShowSectors(true)} title="Sectores del salón" style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-              </button>
-              {canInstall && (
-                <button onClick={handleInstall} title="Instalar Andi en tu celular" style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer', fontSize: '10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  App
-                </button>
-              )}
-              <button onClick={onLogout} title="Salir del panel staff" style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>
-                <LogOut size={18} />
-              </button>
-            </div>
-            {/* Mobile: menú hamburguesa */}
-            <div style={{ position: 'relative' }}>
-              <button className="header-menu-btn" onClick={() => setShowMenu(!showMenu)} style={{
-                display: 'none', background: 'rgba(255,255,255,0.15)', border: 'none', color: C.cream,
-                padding: '10px', borderRadius: '12px', cursor: 'pointer',
-              }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-              </button>
-              {showMenu && (
-                <>
-                  <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 150 }} />
-                  <div className="mobile-dropdown" style={{
-                    position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-                    background: C.forest, borderRadius: '14px', padding: '6px',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.3)', zIndex: 200,
-                    display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '180px',
-                  }}>
-                    {[
-                      { icon: <BarChart3 size={16} />, label: 'Analíticas', action: () => { setShowAnalytics(true); setShowMenu(false); } },
-                      { icon: <Settings size={16} />, label: 'Configuración', action: () => { setShowSettings(true); setShowMenu(false); } },
-                      { icon: <Users size={16} />, label: 'Mozos', action: () => { setShowStaff(true); setShowMenu(false); } },
-                      { icon: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>, label: 'Sectores', action: () => { setShowSectors(true); setShowMenu(false); } },
-                      ...(canInstall ? [{ icon: <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>, label: 'Instalar App', action: () => { handleInstall(); setShowMenu(false); } }] : []),
-                      { icon: <LogOut size={16} />, label: 'Salir', action: () => { onLogout(); setShowMenu(false); } },
-                    ].map((item, i) => (
-                      <button key={i} onClick={item.action} style={{
-                        display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px',
-                        background: 'transparent', border: 'none', color: C.cream, borderRadius: '10px',
-                        cursor: 'pointer', fontSize: '13px', fontWeight: 500, textAlign: 'left', width: '100%',
-                      }}>
-                        {item.icon}{item.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Navegación de fecha */}
-        <div ref={calendarRef} style={{ position: 'relative', width: '100%' }}>
-          <button onClick={() => setShowCalendar(!showCalendar)} style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', color: C.cream, fontSize: '15px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-            <span>{formatDate(date)}</span>
-          </button>
-
-          {showCalendar && (
-            <CalendarPicker
-              date={date}
-              onSelect={(d) => { setDate(d); setShowCalendar(false); }}
-              onClose={() => setShowCalendar(false)}
-              colors={C}
-            />
-          )}
-        </div>
-      </header>
+      <DashboardHeader
+        online={online}
+        canInstall={canInstall}
+        handleInstall={handleInstall}
+        date={date}
+        setDate={setDate}
+        setShowAnalytics={setShowAnalytics}
+        setShowSettings={setShowSettings}
+        setShowStaff={setShowStaff}
+        setShowSectors={setShowSectors}
+        onLogout={onLogout}
+      />
 
       {/* ── SELECTOR DE SERVICIO ── */}
       <div style={{ padding: '20px 16px 8px', display: 'flex', gap: '8px' }}>
@@ -691,139 +576,28 @@ export default function StaffDashboard({ onLogout }) {
 
       {/* ── GRILLA DE MESAS ── */}
       {mainTab === 'mesas' && (
-        <div style={{ padding: '0 16px 24px', maxHeight: '60vh', overflowY: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: '6px' }}>
-            {tables.map(t => {
-              const s = tableStatus(t.id);
-              const live = s.status === 'busy' && s.res.liveState ? LIVE_STATES[s.res.liveState] : null;
-
-              let bg, fg, border, sub;
-              if (s.status === 'free') {
-                bg = C.white; fg = C.forest; border = C.creamDeep; sub = `${t.capacity}p`;
-              } else if (s.status === 'reserved') {
-                bg = '#e8ddd0'; fg = C.forest; border = C.terra;
-                sub = `→ ${s.res.time}`;
-              } else if (s.status === 'busy') {
-                bg = live?.color || C.terra; fg = C.white; border = live?.color || C.terra;
-                sub = s.res.customerName?.split(' ')[0] || '—';
-              } else {
-                bg = C.soon; fg = C.white; border = C.soon; sub = 'A limpiar';
-              }
-
-              return (
-                <button key={t.id} onClick={() => {
-                  if (s.status === 'free') {
-                    setPreTable(t); setEditing(null); setShowModal(true);
-                  } else if (s.status === 'reserved') {
-                    setShowLiveMenu(s.res);
-                  } else {
-                    setShowLiveMenu(s.res);
-                  }
-                }} style={{
-                  aspectRatio: t.shape === 'rectangular' ? '2/1' : '1', background: bg, color: fg,
-                  border: `1.5px solid ${border}`, borderRadius: t.shape === 'round' ? '50%' : t.shape === 'square' ? '12px' : '10px',
-                  cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center', padding: '4px',
-                  position: 'relative',
-                }}>
-                  {live && (
-                    <span style={{ position: 'absolute', top: '5px', right: '5px', width: '8px', height: '8px', borderRadius: '50%', background: live.dot, border: '1.5px solid rgba(255,255,255,0.5)' }} />
-                  )}
-                  <div style={{ fontFamily: '"Fraunces", serif', fontSize: '17px', fontWeight: 600 }}>{t.name}</div>
-                  <div style={{ fontSize: '10px', opacity: 0.85, marginTop: '2px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
-                    {live ? live.label : sub}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <TableGrid
+          tables={tables}
+          tableStatus={tableStatus}
+          onTableClick={(t, s) => {
+            if (s.status === 'free') {
+              setPreTable(t); setEditing(null); setShowModal(true);
+            } else {
+              setShowLiveMenu(s.res);
+            }
+          }}
+        />
       )}
 
       {/* ── LISTADO DE RESERVAS ── */}
       {mainTab === 'reservas' && (
         <div style={{ padding: '0 16px 24px' }}>
-          {sortedRes.length === 0 ? (
-            <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
-              Sin reservas para este servicio
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {sortedRes.map(r => {
-                const table = tables.find(t => t.id === r.tableId);
-                const isDone = r.liveState === 'para_limpiar' || r.liveState === 'finalizada';
-                const started = r.liveState && !isDone;
-                const live = started ? LIVE_STATES[r.liveState] : null;
-
-                let badgeLabel = 'Próxima';
-                let badgeColor = C.forestSoft;
-                if (r.liveState === 'finalizada') {
-                  badgeLabel = 'Finalizada';
-                  badgeColor = C.muted;
-                } else if (r.liveState === 'para_limpiar') {
-                  badgeLabel = 'A limpiar';
-                  badgeColor = C.soon;
-                } else if (live) {
-                  badgeLabel = live.label;
-                  badgeColor = live.color;
-                }
-                return (
-                  <button key={r.id} onClick={() => { setEditing(r); setShowModal(true); }} style={{
-                    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
-                    background: C.white, border: `1px solid ${C.creamDeep}`,
-                    borderRadius: '14px', cursor: 'pointer', textAlign: 'left',
-                    color: C.espresso, opacity: isDone ? 0.5 : 1,
-                  }}>
-                    {/* Indicador de hora con color */}
-                    <div style={{
-                      width: '52px', minWidth: '52px', height: '52px', borderRadius: '12px',
-                      background: badgeColor, color: C.cream,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontFamily: '"Fraunces", serif', fontSize: '15px', fontWeight: 600,
-                      flexDirection: 'column', gap: '1px',
-                    }}>
-                      <span>{r.time}</span>
-                      <span style={{ fontSize: '8px', opacity: 0.85 }}>{badgeLabel}</span>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.customerName}</div>
-                      <div style={{ fontSize: '11px', color: C.muted, display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', flexWrap: 'wrap' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{r.partySize}</span>
-                        <span>·</span>
-                        <span style={{ fontWeight: 600, color: C.forest }}>{table?.name || '—'}</span>
-                        <span>·</span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
-                        {r.phone && (<><span>·</span><span>{r.phone}</span></>)}
-                        {r.staffName && (<><span>·</span><span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><User size={10} />{r.staffName}</span></>)}
-                      </div>
-                      {r.notes && <div style={{ fontSize: '11px', color: C.terra, marginTop: '3px', fontStyle: 'italic' }}>{r.notes}</div>}
-                    </div>
-                    {!isDone && (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowLiveMenu(r);
-                        }}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setShowLiveMenu(r); } }}
-                        style={{
-                          flexShrink: 0, background: badgeColor,
-                          border: 'none', borderRadius: '10px', padding: '6px 8px',
-                          cursor: 'pointer', color: C.white,
-                          fontSize: '10px', fontWeight: 600, display: 'flex', flexDirection: 'column',
-                          alignItems: 'center', gap: '2px', minWidth: '52px',
-                        }}
-                      >
-                        {started ? <RefreshCw size={12} /> : <span style={{ fontSize: '14px' }}>▶</span>}
-                        <span>{badgeLabel}</span>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <ReservationList
+            sortedRes={sortedRes}
+            tables={tables}
+            onEdit={(r) => { setEditing(r); setShowModal(true); }}
+            onAction={(r) => setShowLiveMenu(r)}
+          />
         </div>
       )}
 
@@ -999,112 +773,3 @@ export default function StaffDashboard({ onLogout }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Subcomponentes que solo se usan en StaffDashboard
-// ═══════════════════════════════════════════════════════════════════════════════
-function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
-  const { totalCustomers, avgStay, stateBreakdown } = data;
-  const fmtMin = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m}min`;
-  const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']];
-
-  return (
-    <Overlay onClose={onClose}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Analíticas</h3>
-        <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
-      </div>
-
-      {/* Selector de período */}
-      <div style={{ display: 'flex', gap: '4px', background: C.creamDeep, borderRadius: '12px', padding: '4px', marginBottom: '24px' }}>
-        {periods.map(([key, label]) => (
-          <button key={key} onClick={() => onPeriodChange(key)} style={{
-            flex: 1, padding: '8px', borderRadius: '10px', border: 'none', cursor: 'pointer',
-            background: period === key ? C.white : 'transparent',
-            color: period === key ? C.forest : C.muted,
-            fontWeight: period === key ? 600 : 400,
-            fontSize: '13px', fontFamily: 'inherit',
-            boxShadow: period === key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-          }}>{label}</button>
-        ))}
-      </div>
-
-      {totalCustomers === 0 ? (
-        <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
-          Sin datos para este período
-        </div>
-      ) : (
-        <>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
-              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.terra, lineHeight: 1 }}>{totalCustomers}</div>
-              <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Clientes</div>
-            </div>
-            <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
-              <div style={{ fontFamily: '"Fraunces", serif', fontSize: '32px', fontWeight: 700, color: C.forest, lineHeight: 1 }}>{fmtMin(avgStay)}</div>
-              <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', letterSpacing: '0.05em' }}>Perm. promedio</div>
-            </div>
-          </div>
-
-          <div style={{ fontSize: '13px', fontWeight: 600, color: C.espresso, marginBottom: '12px', letterSpacing: '0.03em' }}>
-            Desglose por estado y comensales
-          </div>
-
-          {stateBreakdown && Object.keys(stateBreakdown).length > 0 ? (
-            Object.entries(stateBreakdown)
-              .sort(([a], [b]) => Number(a) - Number(b))
-              .map(([ps, states]) => (
-                <div key={ps} style={{ marginBottom: '12px', background: C.white, borderRadius: '12px', padding: '12px', border: `1px solid ${C.creamDeep}` }}>
-                  <div style={{ fontSize: '11px', fontWeight: 600, color: C.forest, marginBottom: '6px' }}>
-                    {ps} comensales
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {Object.entries(states).map(([state, { avg }]) => (
-                      <div key={state} style={{
-                        background: C.creamDeep, borderRadius: '8px', padding: '4px 8px',
-                        fontSize: '11px', color: C.espresso, whiteSpace: 'nowrap',
-                        display: 'inline-flex', alignItems: 'center', gap: '2px',
-                      }}>
-                        <span style={{ color: C.muted }}>{(LIVE_STATES[state]?.label || state).slice(0, 6)}</span>
-                        <span style={{ fontWeight: 600 }}>{fmtMin(avg)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))
-          ) : (
-            <div style={{ padding: '16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '12px' }}>
-              Las transiciones de estado aparecerán aquí a medida que cambien las mesas en el salón.
-            </div>
-          )}
-        </>
-      )}
-    </Overlay>
-  );
-}
-
-function Overlay({ children, onClose }) {
-  return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
-      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', zIndex: 200, padding: '16px',
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: C.cream, borderRadius: '24px',
-        padding: '28px 20px 40px', width: '100%', maxWidth: '480px',
-        maxHeight: '92vh', overflowY: 'auto',
-      }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Stat({ color, label, value }) {
-  return (
-    <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '12px', textAlign: 'center' }}>
-      <div style={{ fontFamily: '"Fraunces", serif', fontSize: '28px', fontWeight: 700, color, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: '10px', color: C.muted, marginTop: '4px', letterSpacing: '0.05em' }}>{label}</div>
-    </div>
-  );
-}

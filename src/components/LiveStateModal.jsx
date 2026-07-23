@@ -1,7 +1,7 @@
 import React from 'react';
 import { C, LIVE_STATES } from '../utils';
 
-export function Overlay({ children, onClose }) {
+export function Overlay({ children, onClose, maxWidth = '480px' }) {
   return (
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
@@ -10,7 +10,7 @@ export function Overlay({ children, onClose }) {
     }}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{
         background: C.cream, borderRadius: '24px',
-        padding: '28px 20px 40px', width: '100%', maxWidth: '480px',
+        padding: '28px 20px 40px', width: '100%', maxWidth,
         maxHeight: '92vh', overflowY: 'auto',
       }}>
         {children}

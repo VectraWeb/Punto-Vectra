@@ -20,10 +20,10 @@ function Counter({ label, value, onChange }) {
 
 function TipoMesaCard({ item, index, onChange, onRemove }) {
   return (
-    <div style={{ background: C.white, borderRadius: '14px', padding: '14px', border: `1px solid ${C.creamDeep}` }}>
+    <div style={{ background: C.white, borderRadius: '14px', padding: '14px', border: `1px solid ${C.creamDeep}`, flex: '1 1 240px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
         <span style={{ fontSize: '13px', fontWeight: 600, color: C.forest }}>
-          {index + 1}. Mesa de {item.capacidad} {item.capacidad === 1 ? 'persona' : 'personas'}
+          Mesa de {item.capacidad} {item.capacidad === 1 ? 'persona' : 'personas'}
         </span>
         <button onClick={onRemove} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#e06060', padding: '4px', display: 'flex', alignItems: 'center' }}>
           <Trash2 size={14} />
@@ -97,7 +97,7 @@ export default function SettingsModal({ config, onSave, onClose }) {
   const totalMesas = local.reduce((s, i) => s + i.cantidad, 0);
 
   return (
-    <Overlay onClose={onClose}>
+    <Overlay onClose={onClose} maxWidth="820px">
       <style>{`.settings-scroll::-webkit-scrollbar { display: none; } .settings-scroll { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <h3 style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest, margin: 0 }}>Configuración</h3>
@@ -108,7 +108,7 @@ export default function SettingsModal({ config, onSave, onClose }) {
         Definí los tipos de mesa: capacidad (personas), forma y cantidad. Total: <strong>{totalMesas} mesas</strong>.
       </p>
 
-      <div className="settings-scroll" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px', maxHeight: '50vh', overflowY: 'auto' }}>
+      <div className="settings-scroll" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px', maxHeight: '60vh', overflowY: 'auto' }}>
         {local.map((item, i) => (
           <TipoMesaCard key={i} item={item} index={i} onChange={v => updateItem(i, v)} onRemove={() => removeItem(i)} />
         ))}

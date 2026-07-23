@@ -233,7 +233,7 @@ const SalonFloor = React.memo(function SalonFloor({
 
   const handleSectorDragStart = useCallback((sectorId, e) => {
     if (!isEditingSectors) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     e.stopPropagation();
     const sector = (sectors || []).find(s => s.id === sectorId);
     if (!sector) return;
@@ -250,11 +250,11 @@ const SalonFloor = React.memo(function SalonFloor({
       const dy = (cy - startY) / effectiveScale;
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        onSaveSectors((sectors || []).map(s =>
-          s.id === sectorId
-            ? { ...s, x: orig.x + dx, y: orig.y + dy, w: orig.w, h: orig.h }
-            : s
-        ));
+        const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
+        if (el) {
+          el.style.left = `${orig.x + dx}px`;
+          el.style.top = `${orig.y + dy}px`;
+        }
       });
       sectorDragRef.current = { sectorId, dx, dy };
     };
@@ -281,7 +281,7 @@ const SalonFloor = React.memo(function SalonFloor({
 
   const handleSectorResize = useCallback((sectorId, handle, e) => {
     if (!isEditingSectors) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     e.stopPropagation();
     const sector = (sectors || []).find(s => s.id === sectorId);
     if (!sector) return;
@@ -499,6 +499,7 @@ const SalonFloor = React.memo(function SalonFloor({
                   borderRadius: '8px',
                   cursor: isEditingSectors ? 'move' : 'default',
                   zIndex: isEditingSectors ? 20 : 1,
+                  touchAction: 'none',
                   pointerEvents: isEditingSectors ? 'auto' : 'none',
                 }}
               >
@@ -509,23 +510,31 @@ const SalonFloor = React.memo(function SalonFloor({
                   pointerEvents: 'none',
                 }}>{sec.name}</span>
 
-                {isEditingSectors && handles.map(h => (
-                  <div
-                    key={h.key}
-                    onPointerDown={(e) => handleSectorResize(sec.id, h.key, e)}
-                    style={{
+          {isEditingSectors && handles.map(h => {
+                    const isMobile = window.matchMedia('(pointer: coarse)').matches;
+                    const hSize = isMobile ? 22 : 10;
+                    const hStyle = {
                       position: 'absolute',
-                      left: h.left, top: h.top,
-                      width: HANDLE_SIZE, height: HANDLE_SIZE,
+                      left: h.left - (hSize - 10) / 2,
+                      top: h.top - (hSize - 10) / 2,
+                      width: hSize, height: hSize,
                       background: sec.color,
                       borderRadius: '50%',
                       cursor: h.cursor,
                       zIndex: 25,
-                      border: '1.5px solid #fff',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                    }}
-                  />
-                ))}
+                      border: '2px solid #fff',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                      touchAction: 'none',
+                    };
+                    return (
+                      <div
+                        key={h.key}
+                        onPointerDown={(e) => handleSectorResize(sec.id, h.key, e)}
+                        onTouchStart={(e) => handleSectorResize(sec.id, h.key, e)}
+                        style={hStyle}
+                      />
+                    );
+                  })}
               </div>
             );
           })}
