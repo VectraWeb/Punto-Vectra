@@ -145,11 +145,7 @@ export default function App() {
           </React.Suspense>
         </PinGate>
       ) : (
-        <VistaCliente
-          onStaffAccess={handleStaffAccess}
-          canInstall={canInstall}
-          onInstall={handleInstall}
-        />
+        <VistaCliente onStaffAccess={handleStaffAccess} />
       )}
 
       {/* ── MODAL: GUÍA DE INSTALACIÓN (iOS / otros) ── */}
