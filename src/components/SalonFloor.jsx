@@ -615,28 +615,32 @@ const SalonFloor = React.memo(function SalonFloor({
 
       {/* ── LEYENDA DE COLORES ── */}
       <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: '8px',
-        padding: '12px 16px', marginTop: '8px',
+        display: 'flex', flexWrap: 'wrap', gap: '6px 16px',
+        padding: '14px 20px', marginTop: '8px',
+        background: PALETTE.white, borderRadius: '14px',
+        border: `1px solid ${PALETTE.creamDeep}`,
       }}>
         {Object.entries(LIVE_STATES).map(([key, state]) => (
           <div key={key} style={{
-            display: 'flex', alignItems: 'center', gap: '4px',
-            fontSize: '10px', color: PALETTE.muted,
+            display: 'flex', alignItems: 'center', gap: '6px',
+            fontSize: '12px', color: PALETTE.espresso, fontWeight: 500,
           }}>
             <span style={{
-              width: '8px', height: '8px', borderRadius: '50%',
+              width: '12px', height: '12px', borderRadius: '50%',
               background: state.color, flexShrink: 0,
+              boxShadow: `0 0 0 2px ${PALETTE.white}, 0 0 0 3px ${state.color}33`,
             }} />
             {state.label}
           </div>
         ))}
         <div style={{
-          display: 'flex', alignItems: 'center', gap: '4px',
-          fontSize: '10px', color: PALETTE.muted,
+          display: 'flex', alignItems: 'center', gap: '6px',
+          fontSize: '12px', color: PALETTE.espresso, fontWeight: 500,
         }}>
           <span style={{
-            width: '8px', height: '8px', borderRadius: '50%',
+            width: '12px', height: '12px', borderRadius: '50%',
             background: PALETTE.free, flexShrink: 0,
+            boxShadow: `0 0 0 2px ${PALETTE.white}, 0 0 0 3px ${PALETTE.free}33`,
           }} />
           Libre
         </div>
