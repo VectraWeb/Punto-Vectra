@@ -1,16 +1,7 @@
 // PinGate.jsx — Barrera de acceso con PIN numérico
 import React, { useState, useRef, useEffect } from 'react';
 import { Lock } from 'lucide-react';
-
-const C = {
-  cream: '#f5efe6',
-  creamDeep: '#ebe3d5',
-  forest: '#7a3a1e',
-  terra: '#c4602f',
-  espresso: '#2a1f1a',
-  muted: '#8b7d6b',
-  white: '#fffdf8',
-};
+import { C } from '../utils';
 
 const STAFF_PIN = import.meta.env.VITE_STAFF_PIN || '2024';
 const STORAGE_KEY = 'isStaff';
@@ -63,10 +54,7 @@ export default function PinGate({ onAuthenticated, onBack, children }) {
       padding: '24px',
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Manrope:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; }
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
-        .pin-shake { animation: shake 0.4s ease-in-out; }
       `}</style>
 
       <div style={{

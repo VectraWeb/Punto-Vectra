@@ -2,27 +2,13 @@ import React, { useState } from 'react';
 import { X, Trash2 } from 'lucide-react';
 import { C } from '../utils';
 import { Overlay } from './LiveStateModal';
+import { inp, Field } from './ResModal';
 
 export const SECTOR_COLORS = [
   '#7a3a1e', '#c4602f', '#6f8d4d', '#4a90d9', '#9b59b6',
   '#d4a04a', '#e67e22', '#2a1f1a', '#e09368', '#6b8e7b',
   '#7b1f2e', '#c49a35', '#455a64', '#00897b', '#5c6bc0',
 ];
-
-function Field({ label, children }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.muted, fontWeight: 600, marginBottom: '6px' }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-const inp = {
-  width: '100%', padding: '12px 14px', fontSize: '16px',
-  background: C.white, border: `1.5px solid ${C.creamDeep}`,
-  borderRadius: '12px', color: C.espresso, outline: 'none',
-};
 
 export default function SectoresModal({ sectors, staff, onSave, onClose }) {
   const [list, setList] = useState([...sectors]);

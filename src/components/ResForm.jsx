@@ -217,7 +217,7 @@ export default function ResForm({ onStaffAccess }) {
               border: `1.5px solid ${C.forest}`,
               borderRadius: '14px', cursor: 'pointer',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-              fontFamily: 'inherit',
+              fontFamily: 'inherit', transition: 'all 0.2s ease',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600 }}>
                 <Icon size={14} />{s.name}
@@ -280,7 +280,7 @@ export default function ResForm({ onStaffAccess }) {
         </Field>
 
         {timeOutOfRange && (
-          <div style={{ padding: '10px 14px', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: '12px', fontSize: '13px', color: '#7a6200', lineHeight: '1.4' }}>
+          <div style={{ padding: '10px 14px', background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px', fontSize: '13px', color: '#6b5a00', lineHeight: '1.4' }}>
             El horario de <strong>{SERVICES[service].name}</strong> es de {SERVICES[service].start} a {SERVICES[service].end}. Probá con otro horario o cambiá a <strong>{service === 'mediodia' ? 'Cena' : 'Mediodía'}</strong>.
           </div>
         )}
@@ -296,7 +296,7 @@ export default function ResForm({ onStaffAccess }) {
         </Field>
 
         {error && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', fontSize: '13px', color: '#991b1b' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 14px', background: '#fef2f2', border: `1px solid ${C.terraSoft}`, borderRadius: '12px', fontSize: '13px', color: '#991b1b' }}>
             <AlertCircle size={16} />
             {error}
           </div>

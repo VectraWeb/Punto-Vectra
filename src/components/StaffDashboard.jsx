@@ -70,6 +70,14 @@ export default function StaffDashboard({ onLogout }) {
   const pressTimer = useRef(null);
   const isLongPress = useRef(false);
   const configLoaded = useRef(false);
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  const showToast = useCallback((msg, type = 'error') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, type });
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
 
   // ── Hooks de datos externos ────────────────────────────────────────────────
   const { config, sectors, setSectors, saveSectors } = useConfig();
@@ -402,7 +410,7 @@ export default function StaffDashboard({ onLogout }) {
 
     if (!isAllowed) {
       const stateLabel = s.status === 'busy' ? 'Ocupada' : 'Reservada';
-      alert(`La mesa no se puede reservar porque su estado actual es "${stateLabel}". Solo se pueden reservar mesas que estén libres o en estado "A limpiar".`);
+      showToast(`La mesa no se puede reservar porque su estado actual es "${stateLabel}". Solo se pueden reservar mesas que estén libres o en estado "A limpiar".`);
       return;
     }
 
@@ -421,7 +429,7 @@ export default function StaffDashboard({ onLogout }) {
       await saveRes(saveData);
       setShowModal(false); setEditing(null); setPreTable(null);
     } catch (e) {
-      alert(e.message || 'Error al guardar la reserva. Intentá de nuevo.');
+      showToast(e.message || 'Error al guardar la reserva. Intentá de nuevo.');
     }
   }, [saveRes, service, date, editing, tableStatus]);
 
@@ -430,7 +438,7 @@ export default function StaffDashboard({ onLogout }) {
       await deleteRes(resData);
       setShowModal(false); setEditing(null);
     } catch (e) {
-      alert('Error al eliminar la reserva. Intentá de nuevo.');
+      showToast('Error al eliminar la reserva. Intentá de nuevo.');
     }
   }, [deleteRes]);
 
@@ -451,11 +459,6 @@ export default function StaffDashboard({ onLogout }) {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: C.cream, fontFamily: '"Manrope", system-ui, sans-serif' }}>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Manrope:wght@300;400;500;600;700&display=swap');
-          @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
-          .skeleton { background: linear-gradient(90deg, #ebe3d5 25%, #f5efe6 50%, #ebe3d5 75%); background-size: 800px 100%; animation: shimmer 1.4s infinite; border-radius: 10px; }
-        `}</style>
         {/* Header skeleton */}
         <div style={{ background: C.forest, padding: '24px 20px 28px', borderBottomLeftRadius: '28px', borderBottomRightRadius: '28px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -490,29 +493,25 @@ export default function StaffDashboard({ onLogout }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: C.cream, color: C.espresso, fontFamily: '"Manrope", system-ui, sans-serif', paddingBottom: '120px' }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Manrope:wght@300;400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
-        input, select, textarea { font-family: inherit; }
-        input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; background: ${C.creamDeep}; border-radius: 3px; outline: none; touch-action: pan-x; -webkit-tap-highlight-color: transparent; }
-        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 28px; height: 28px; background: ${C.terra}; border-radius: 50%; cursor: pointer; box-shadow: 0 2px 6px rgba(196,96,47,0.4); touch-action: none; }
-        input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; background: ${C.terra}; border-radius: 50%; cursor: pointer; border: none; touch-action: none; }
-        button:active { transform: scale(0.97); }
-        button { transition: transform 0.1s; }
-        .live-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-        @media (max-width: 480px) {
-          .header-btns { display: none !important; }
-          .header-menu-btn { display: flex !important; }
-          .stat-grid { gap: 4px !important; }
-          .tab-grid { font-size: 12px !important; }
-          .modal-content { padding: 20px 14px 32px !important; border-radius: 20px !important; }
-        }
-        @media (min-width: 481px) {
-          .header-menu-btn { display: none !important; }
-          .mobile-dropdown { display: none !important; }
-        }
-      `}</style>
+    <div style={{ minHeight: '100vh', background: C.cream, color: C.espresso, fontFamily: '"Manrope", system-ui, sans-serif', paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 0px))' }}>
+      {/* ── TOAST ── */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: '16px', left: '16px', right: '16px', zIndex: 9999,
+          background: toast.type === 'error' ? '#fef2f2' : toast.type === 'success' ? '#f0fdf4' : '#fffbeb',
+          border: `1px solid ${toast.type === 'error' ? C.terraSoft : toast.type === 'success' ? C.free : C.soon}`,
+          borderRadius: '14px', padding: '14px 16px',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          fontSize: '13px', color: C.espresso, fontWeight: 500,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          animation: 'modalIn 0.25s ease-out',
+        }}>
+          <span style={{ flex: 1 }}>{toast.msg}</span>
+          <button onClick={() => setToast(null)} style={{
+            background: 'none', border: 'none', cursor: 'pointer', color: C.muted, padding: '4px',
+          }}><X size={16} /></button>
+        </div>
+      )}
 
       {/* ── HEADER ── */}
       <DashboardHeader
@@ -541,6 +540,7 @@ export default function StaffDashboard({ onLogout }) {
               border: `1.5px solid ${C.forest}`,
               borderRadius: '14px', cursor: 'pointer',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
+              transition: 'all 0.2s ease',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600 }}>
                 <Icon size={14} />{s.name}
@@ -631,7 +631,7 @@ export default function StaffDashboard({ onLogout }) {
 
       {/* ── FAB: Nueva reserva ── */}
       <button onClick={() => { setEditing(null); setPreTable(null); setShowModal(true); }} style={{
-        position: 'fixed', bottom: '24px', right: '24px',
+        position: 'fixed', bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))', right: '24px',
         width: '60px', height: '60px', borderRadius: '30px',
         background: C.terra, color: '#fff', border: 'none',
         boxShadow: '0 8px 24px rgba(196,96,47,0.4)', cursor: 'pointer',

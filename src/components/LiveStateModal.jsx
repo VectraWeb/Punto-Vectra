@@ -3,7 +3,7 @@ import { C, LIVE_STATES } from '../utils';
 
 export function Overlay({ children, onClose, maxWidth = '480px' }) {
   return (
-    <div onClick={onClose} style={{
+    <div className="modal-overlay" onClick={onClose} style={{
       position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
       backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
       justifyContent: 'center', zIndex: 200, padding: '16px',
@@ -57,7 +57,10 @@ export default function LiveStateModal({
             }}>
               <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: state.dot, flexShrink: 0 }} />
               {state.label}
-              {active && <span style={{ marginLeft: 'auto', fontSize: '11px', opacity: 0.8 }}>● actual</span>}
+              {active && <span style={{ marginLeft: 'auto', fontSize: '11px', opacity: 0.8, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
+                actual
+              </span>}
             </button>
           );
         })}

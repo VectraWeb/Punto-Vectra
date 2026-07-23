@@ -19,6 +19,7 @@ export const inp = {
 };
 
 export default function ResModal({ editing, preTable, tables, slots, service, tableStatus, staff, onSave, onDelete, onClose }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState(() => editing ? { ...editing } : {
     customerName: '', phone: '', partySize: 2,
     tableId: preTable?.id || '',
@@ -100,12 +101,26 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
         {editing && (
-          <button onClick={() => onDelete(editing)} style={{
-            padding: '14px', background: 'transparent', border: `1.5px solid #e06060`,
-            borderRadius: '12px', cursor: 'pointer', color: '#e06060',
-          }}>
-            <Trash2 size={18} />
-          </button>
+          confirmDelete ? (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', color: '#e06060', fontWeight: 600 }}>¿Eliminar?</span>
+              <button onClick={() => onDelete(editing)} style={{
+                padding: '10px 14px', background: '#e06060', border: 'none',
+                borderRadius: '10px', cursor: 'pointer', color: '#fff', fontSize: '12px', fontWeight: 600,
+              }}>Sí</button>
+              <button onClick={() => setConfirmDelete(false)} style={{
+                padding: '10px 14px', background: C.creamDeep, border: 'none',
+                borderRadius: '10px', cursor: 'pointer', fontSize: '12px', color: C.muted,
+              }}>No</button>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} style={{
+              padding: '14px', background: 'transparent', border: `1.5px solid #e06060`,
+              borderRadius: '12px', cursor: 'pointer', color: '#e06060',
+            }}>
+              <Trash2 size={18} />
+            </button>
+          )
         )}
         <button onClick={() => {
           if (!valid) return;

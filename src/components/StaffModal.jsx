@@ -10,6 +10,7 @@ const staffDoc = (id) => doc(db, 'staff', id);
 
 export default function StaffModal({ staff, onClose }) {
   const [newName, setNewName] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const addStaff = async () => {
     const name = newName.trim();
@@ -92,11 +93,24 @@ export default function StaffModal({ staff, onClose }) {
               }}>
                 {isActive ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
               </button>
-              <button onClick={() => removeStaff(s)} style={{
-                background: 'none', border: 'none', cursor: 'pointer', color: '#e06060', padding: '4px',
-              }}>
-                <Trash2 size={16} />
-              </button>
+              {confirmDeleteId === s.id ? (
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  <button onClick={() => { removeStaff(s); setConfirmDeleteId(null); }} style={{
+                    padding: '6px 10px', background: '#e06060', border: 'none',
+                    borderRadius: '8px', cursor: 'pointer', color: '#fff', fontSize: '11px', fontWeight: 600,
+                  }}>Sí</button>
+                  <button onClick={() => setConfirmDeleteId(null)} style={{
+                    padding: '6px 10px', background: C.creamDeep, border: 'none',
+                    borderRadius: '8px', cursor: 'pointer', fontSize: '11px', color: C.muted,
+                  }}>No</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDeleteId(s.id)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer', color: '#e06060', padding: '4px',
+                }}>
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
           );
         })}

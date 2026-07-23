@@ -2,30 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Save, RotateCcw, Move } from 'lucide-react';
-
-const PALETTE = {
-  cream:      '#f5efe6',
-  creamDeep:  '#ebe3d5',
-  forest:     '#7a3a1e',
-  forestSoft: '#9B4B2A',
-  terra:      '#c4602f',
-  terraSoft:  '#e09368',
-  espresso:   '#2a1f1a',
-  muted:      '#8b7d6b',
-  free:       '#6f8d4d',
-  soon:       '#d4a04a',
-  white:      '#fffdf8',
-};
-
-const LIVE_STATES = {
-  esperando_cliente:  { label: 'Esperando',       color: '#4a90d9' },
-  comiendo_entrada:   { label: 'Entrada',          color: '#c4602f' },
-  plato_principal:    { label: 'Principal',        color: '#7b1f2e' },
-  en_postre_cafe:     { label: 'Postre / Cafe',    color: '#c49a35' },
-  sobremesa:          { label: 'Sobremesa',        color: '#6b8e7b' },
-  esperando_cuenta:   { label: 'Cuenta',           color: '#9b59b6' },
-  para_limpiar:       { label: 'A limpiar',        color: '#e67e22' },
-};
+import { C as PALETTE, LIVE_STATES } from '../utils';
 
 const CANVAS_W = 1600;
 const CANVAS_H = 700;
@@ -633,6 +610,35 @@ const SalonFloor = React.memo(function SalonFloor({
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── LEYENDA DE COLORES ── */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: '8px',
+        padding: '12px 16px', marginTop: '8px',
+      }}>
+        {Object.entries(LIVE_STATES).map(([key, state]) => (
+          <div key={key} style={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            fontSize: '10px', color: PALETTE.muted,
+          }}>
+            <span style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: state.color, flexShrink: 0,
+            }} />
+            {state.label}
+          </div>
+        ))}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '4px',
+          fontSize: '10px', color: PALETTE.muted,
+        }}>
+          <span style={{
+            width: '8px', height: '8px', borderRadius: '50%',
+            background: PALETTE.free, flexShrink: 0,
+          }} />
+          Libre
         </div>
       </div>
     </div>
