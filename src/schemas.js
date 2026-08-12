@@ -23,9 +23,13 @@
  */
 
 /**
- * @typedef {Object} RestaurantConfig
- * @property {number} cap2 - Cantidad de mesas para 2 personas.
- * @property {number} cap4 - Cantidad de mesas para 4 personas.
- * @property {number} cap5 - Cantidad de mesas para 5 personas.
- * @property {number} cap8 - Cantidad de mesas para 8 personas.
+ * @typedef {Object} MesaTipo
+ * @property {number} id - Identificador único del tipo.
+ * @property {number} capacidad - Capacidad de comensales.
+ * @property {'redonda'|'rectangular'|'cuadrada'} forma - Forma de la mesa.
+ * @property {number} cantidad - Cuántas mesas de este tipo.
+ */
+
+/**
+ * @typedef {MesaTipo[]} RestaurantConfig
  */

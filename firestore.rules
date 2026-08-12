@@ -4,50 +4,76 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper: Verifica si el usuario está autenticado
+    // TODO: When auth is added, replace `if true` with `if isAuthenticated()`
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // --- REGLAS PARA CONFIGURACIÓN DEL RESTAURANTE ---
-    match /config/restaurant {
-      allow read: if true; // Cualquier cliente puede ver la capacidad/configuración del salón
-      allow write: if isAuthenticated(); // Solo el staff puede cambiar la configuración de mesas
+    // Helper: Verifica si el usuario es admin/staff
+    // TODO: When auth is added, check against a roles claim or staff collection
+    function isStaff() {
+      return isAuthenticated();
     }
 
-    // --- REGLAS PARA COLECCIÓN DE MESAS ---
-    // (Incluso si es una colección futura o para el estado actual)
-    match /mesas/{mesaId} {
-      allow read: if true; // Lectura global para ver el plano del salón
-      
-      allow update: if 
-        isAuthenticated() || // El staff tiene control total
-        (
-          // Un cliente solo puede actualizar si está reservando la mesa (ej: cambiando estado de libre a reservada)
-          request.resource.data.status == 'reservada' && 
-          resource.data.status == 'libre'
-        );
-      
-      allow create, delete: if isAuthenticated(); // Solo el staff gestiona la existencia de mesas
-    }
-
-    // --- REGLAS PARA RESERVAS ---
-    // Estructura: reservations/{date}/items/{reservationId}
-    match /reservations/{date}/items/{reservationId} {
-      // Los clientes pueden crear su propia reserva (ej: desde QR)
-      allow create: if true; 
-      
-      // La lectura y eliminación de listas de reservas es exclusiva del personal
-      allow read, delete: if isAuthenticated();
-      
-      // Los mozos (staff) pueden actualizar estados en vivo de las reservas
-      allow update: if isAuthenticated();
-    }
-
-    // --- REGLAS PARA GUARDS (anti-doble-booking) ---
-    // Estructura: reservations/{date}/guards/{guardId}
-    match /reservations/{date}/guards/{guardId} {
+    // --- RESERVATIONS (FLAT) ---
+    // Structure: reservations/{reservationId}  (date is a field, not a path segment)
+    // Used by: client form (create), staff dashboard (read/update/delete), n8n
+    match /reservations/{reservationId} {
+      allow create: if request.resource.data.keys().hasAll(['customerName', 'date', 'service']);
       allow read: if true;
-      allow create, update, delete: if isAuthenticated();
+      allow update: if request.resource.data.keys().hasAny(['liveState', 'tableId', 'estado']);
+      allow delete: if true;
+    }
+
+    // --- RESERVATIONS (LEGACY NESTED) — kept for backward compat, prefer flat ---
+    match /reservations/{date}/items/{itemId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // --- CONFIG ---
+    // Structure: config/{configId}
+    // Used by: salon-layout (positions), restaurant settings
+    match /config/{configId} {
+      // READ: anyone (clients need to see salon layout, capacity, etc.)
+      allow read: if true;
+
+      // WRITE: anyone (staff updates settings, layout positions)
+      // TODO: Restrict to isStaff() when auth is implemented
+      allow write: if true;
+    }
+
+    // --- MESAS RESERVADAS ---
+    // Structure: mesasReservadas/{mesaId}_{date}_{service}
+    // Used by: n8n creates/reads, staff manages
+    match /mesasReservadas/{docId} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasAny(['occupied', 'reservationId']);
+    }
+
+    // --- STAFF ---
+    // Structure: staff/{staffId}
+    // Used by: staff authentication, role management
+    match /staff/{staffId} {
+      // READ: anyone (needed for login lookup)
+      // TODO: Restrict to authenticated users or specific admin roles
+      allow read: if true;
+
+      // WRITE: anyone (for now, since there's no real auth)
+      // TODO: Restrict to isStaff() or admin-only when auth is implemented
+      allow write: if true;
+    }
+
+    // --- MESAS ---
+    // Structure: mesas/{mesaId}
+    // Used by: salon floor display, table management
+    match /mesas/{mesaId} {
+      // READ: anyone (clients see table layout, staff sees all tables)
+      allow read: if true;
+
+      // WRITE: anyone (staff adds/removes/edits tables)
+      // TODO: Restrict to isStaff() when auth is implemented
+      allow write: if true;
     }
   }
 }

@@ -1,0 +1,184 @@
+import { Sun, Moon } from 'lucide-react';
+
+// ─── Paleta ──────────────────────────────────────────────────────────────────
+export const C = {
+  cream: '#f5efe6',
+  creamDeep: '#ebe3d5',
+  forest: '#7a3a1e',
+  forestSoft: '#9B4B2A',
+  terra: '#c4602f',
+  terraSoft: '#e09368',
+  espresso: '#2a1f1a',
+  muted: '#8b7d6b',
+  free: '#6f8d4d',
+  soon: '#d4a04a',
+  white: '#fffdf8',
+};
+
+// ─── Máquina de estados en vivo ──────────────────────────────────────────────
+export const LIVE_STATES = {
+  esperando_cliente: { label: 'Esperando', color: '#4a90d9', dot: '#2171c7' },
+  comiendo_entrada: { label: 'Entrada', color: '#c4602f', dot: '#a04020' },
+  plato_principal: { label: 'Principal', color: '#7b1f2e', dot: '#5c1520' },
+  en_postre_cafe: { label: 'Postre / Café', color: '#c49a35', dot: '#a07820' },
+  sobremesa: { label: 'Sobremesa', color: '#6b8e7b', dot: '#4d6b5a' },
+  esperando_cuenta: { label: 'Cuenta', color: '#9b59b6', dot: '#7d3f9c' },
+  para_limpiar: { label: 'A limpiar', color: '#e67e22', dot: '#c05e0a' },
+};
+
+// ─── Servicios ───────────────────────────────────────────────────────────────
+export const SERVICES = {
+  mediodia: { name: 'Mediodía', start: '11:30', end: '15:00', defaultDuration: 90, icon: Sun },
+  cena: { name: 'Cena', start: '19:30', end: '01:00', defaultDuration: 120, icon: Moon },
+};
+
+// ─── Formas de mesas ─────────────────────────────────────────────────────────
+export const SHAPE_MAP = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
+export const SHAPE_LABELS = { redonda: 'Redonda', rectangular: 'Rectangular', cuadrada: 'Cuadrada' };
+export const SHAPE_KEYS = Object.keys(SHAPE_MAP);
+
+export const DEFAULT_CONFIG = [
+  { id: 1, capacidad: 2, forma: 'rectangular', cantidad: 12 },
+  { id: 2, capacidad: 4, forma: 'rectangular', cantidad: 12 },
+  { id: 3, capacidad: 5, forma: 'redonda', cantidad: 5 },
+  { id: 4, capacidad: 8, forma: 'cuadrada', cantidad: 2 },
+];
+
+export const configToArray = (cfg) => {
+  if (Array.isArray(cfg)) return cfg;
+  if (cfg && typeof cfg === 'object' && cfg.cantidad === undefined) {
+    const groups = [
+      { capacidad: 2, forma: 'rectangular', cantidad: cfg.cap2 || 0 },
+      { capacidad: 4, forma: 'rectangular', cantidad: cfg.cap4 || 0 },
+      { capacidad: 5, forma: 'redonda', cantidad: cfg.cap5 || 0 },
+      { capacidad: 8, forma: 'cuadrada', cantidad: cfg.cap8 || 0 },
+    ];
+    return groups.filter(g => g.cantidad > 0).map((g, i) => ({ ...g, id: i + 1 }));
+  }
+  return cfg || [];
+};
+
+export const buildTables = (cfg) => {
+  const items = Array.isArray(cfg)
+    ? cfg
+    : (cfg && typeof cfg.mesaTipos !== 'undefined' ? cfg.mesaTipos : configToArray(cfg));
+  const tables = [];
+  let n = 1;
+  for (const item of items) {
+    const cap = item.capacidad || item.capacity || 0;
+    const count = item.cantidad ?? 1;
+    for (let i = 0; i < count; i++) {
+      tables.push({
+        id: `m${n}`,
+        name: `M${n}`,
+        capacity: cap,
+        shape: SHAPE_MAP[item.forma] || item.shape || item.forma || 'rectangular',
+        number: n,
+      });
+      n++;
+    }
+  }
+  return tables;
+};
+
+// ─── Utilidades de tiempo ────────────────────────────────────────────────────
+export const t2m = (time, service) => {
+  if (!time) return 0;
+  const [h, m] = time.split(':').map(Number);
+  if (service === 'cena' && h < 12) return (h + 24) * 60 + m;
+  return h * 60 + m;
+};
+
+export const m2t = (mins) => {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+export const genSlots = (service) => {
+  const start = t2m(SERVICES[service].start, service);
+  const end = t2m(SERVICES[service].end, service);
+  const slots = [];
+  for (let m = start; m <= end; m += 15) slots.push(m2t(m));
+  return slots;
+};
+
+export const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+export const formatDate = (iso) => {
+  const d = new Date(iso + 'T12:00:00');
+  const isMobile = window.innerWidth <= 480;
+  if (isMobile) {
+    const day = d.getDate();
+    const month = d.toLocaleDateString('es-AR', { month: 'short' });
+    const weekday = d.toLocaleDateString('es-AR', { weekday: 'short' });
+    return `${weekday} ${day} ${month}`;
+  }
+  return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+};
+
+export const detectService = () => {
+  const h = new Date().getHours();
+  return (h >= 11 && h < 17) ? 'mediodia' : 'cena';
+};
+
+export const detectTime = (svc) => {
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const slots = genSlots(svc);
+  const target = svc === 'cena' && h < 12 ? (h + 24) * 60 + m : h * 60 + m;
+  let best = slots[0], bestDiff = Infinity;
+  for (const s of slots) {
+    const diff = Math.abs(t2m(s, svc) - target);
+    if (diff < bestDiff) { best = s; bestDiff = diff; }
+  }
+  return best;
+};
+
+// ─── Utilidad N8N ────────────────────────────────────────────────────────────
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || '';
+export const notificarN8N = (datos) => {
+  if (!N8N_WEBHOOK_URL) return;
+  fetch(N8N_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  }).catch(err => console.error('[Andi] Error silencioso al notificar a n8n:', err));
+};
+
+// ─── Calcula duración (min) de cada estado desde stateLog ─────────────────
+export const computeStateDurations = (stateLog) => {
+  if (!stateLog || stateLog.length < 2) return [];
+  const toMs = (v) => {
+    if (!v) return 0;
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') return new Date(v).getTime() || 0;
+    if (v.seconds != null) return v.seconds * 1000 + (v.nanoseconds || 0) / 1e6;
+    if (v.toDate) return v.toDate().getTime();
+    if (v.getTime) return v.getTime();
+    return 0;
+  };
+  const sorted = [...stateLog].sort((a, b) => toMs(a.at) - toMs(b.at));
+  const result = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const dur = Math.round((toMs(sorted[i + 1].at) - toMs(sorted[i].at)) / 60000);
+    result.push({ state: sorted[i].state, durationMin: dur });
+  }
+  return result.filter(d => d.durationMin >= 0 && d.durationMin <= 600);
+};
+
+// ─── Analytics helpers ───────────────────────────────────────────────────────
+export const todayISOForAnalytics = (analyticsPeriod, currentDate) => {
+  const days = analyticsPeriod === 'week' ? 7 : 30;
+  const dates = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(currentDate + 'T12:00:00');
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates;
+};
