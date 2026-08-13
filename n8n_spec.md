@@ -239,6 +239,16 @@ La lógica actual está en `functions/webhook.js`. n8n debe replicar esta máqui
 
 El flujo se reinicia con: `hola`, `reservar`, `empezar`, `nueva reserva`, `inicio`
 
+### Consulta de disponibilidad (`consultar_disponibilidad`)
+
+Cuando el cliente pregunta si hay mesa/lugar sin dar todos los datos (ej: "tenés mesa para 4 a las 21?"), el agente responde con `consultar_disponibilidad: true` (además de `crear_reserva: false`). n8n ejecuta el pipeline de disponibilidad **sin crear reserva**:
+
+1. Verificar disponibilidad (`Get Day Reservations` → `mesas` → `Calc Availability`)
+2. Responder con la mesa/horario disponible o avisar que no hay lugar
+3. **No** se crea reserva ni guard
+
+`consultar_disponibilidad` y `crear_reserva` nunca deben ser `true` simultáneamente.
+
 ### Búsqueda de mesa disponible
 
 n8n debe:
@@ -315,10 +325,11 @@ Te esperamos en *Andi*. ¡Hasta pronto! 🍽️
 | Parse WhatsApp | `code` | Extrae el mensaje del usuario del payload de WhatsApp |
 | AI Agent | `langchain.agent` | Gestiona la conversación con el usuario |
 | Get Time + Parse | `code` | Parsea hora y servicio del mensaje del usuario |
-| Get Restaurant Config | `googleFirestore` | Lee `config/restaurant` para saber cantidad de mesas |
-| **Get Day Reservations** | `googleFirestore` | **Lee `allReservations` filtrando por `date` y `service`** |
-| **Calc Availability** | `code` | **Calcula mesas libres: total - reservas existentes** |
-| Create Reservation | `googleFirestore` | Crea reserva en `allReservations` + guard en `reservations/{date}/guards/` |
+| **Get Mesas** | `httpRequest` | **Lee la colección `mesas` (generada por la app desde `config/restaurant.mesaTipos`)** |
+| **Get Day Reservations** | `googleFirestore` | **Lee `reservations` filtrando por `date`** |
+| **Calc Availability** | `code` | **Calcula mesas libres: mesas - reservas existentes (con solapamiento de horario)** |
+| Check Disponibilidad? | `if` | Rutas: `consultar_disponibilidad` → solo informar, sin crear reserva |
+| Create Reservation | `code` + Firestore | Crea reserva en `reservations` + mesa ocupada en `mesasReservadas` |
 | Send WhatsApp | `httpRequest` | Responde al usuario por WhatsApp |
 
 ### Nodo "Get Day Reservations" (IMPORTANTE)

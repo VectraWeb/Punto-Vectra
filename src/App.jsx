@@ -19,19 +19,32 @@ export default function App() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
 
-  // ── Detectar actualización de PWA ────────────────────────────────────────
+  // ── Detectar nueva versión de PWA ────────────────────────────────────────
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
-    // Cuando un nuevo SW toma control → hay update
-    const onControllerChange = () => setUpdateAvailable(true);
-    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+    // Solo avisamos cuando hay un SW realmente más nuevo que el activo.
+    // `controllerchange` NO sirve aquí: con autoUpdate + skipWaiting se
+    // dispara en cada actualización automática y volvería a mostrar el banner
+    // aunque ya estemos en la última versión.
+    const watchedRegs = new WeakSet();
+    const watchForUpdate = (reg) => {
+      if (!reg || watchedRegs.has(reg)) return;
+      watchedRegs.add(reg);
+      reg.addEventListener('updatefound', () => {
+        const newSW = reg.installing;
+        if (!newSW || !navigator.serviceWorker.controller) return;
+        newSW.addEventListener('statechange', () => {
+          if (newSW.state === 'installed') setUpdateAvailable(true);
+        });
+      });
+    };
 
-    // Verificar périodicamente si hay nueva versión
     const checkForUpdates = async () => {
       try {
         const reg = await navigator.serviceWorker.getRegistration();
         if (reg) {
+          watchForUpdate(reg);
           await reg.update();
         }
       } catch (e) {
@@ -45,33 +58,13 @@ export default function App() {
     const initialTimer = setTimeout(checkForUpdates, 30000);
 
     return () => {
-      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       clearInterval(interval);
       clearTimeout(initialTimer);
     };
   }, []);
 
-  // ── Force update: limpiar cache y recargar ───────────────────────────────
-  const handleUpdate = useCallback(async () => {
-    try {
-      // Desregistrar todos los service workers
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for (const reg of regs) {
-          await reg.unregister();
-        }
-      }
-      // Limpiar todos los caches
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        for (const key of keys) {
-          await caches.delete(key);
-        }
-      }
-    } catch (e) {
-      console.warn('[Andi] Error limpiando cache:', e);
-    }
-    // Recargar
+  // ── Aplicar actualización: recargar (el SW nuevo ya está activo) ────────
+  const handleUpdate = useCallback(() => {
     window.location.reload();
   }, []);
 
