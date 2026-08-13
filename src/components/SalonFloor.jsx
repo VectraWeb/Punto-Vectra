@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Save, RotateCcw, Move } from 'lucide-react';
-import { C as PALETTE, LIVE_STATES } from '../utils';
+import { C as PALETTE, LIVE_STATES, rectsOverlap } from '../utils';
+import { useCleaningCountdown } from '../hooks/useCleaningTimers';
 
 const CANVAS_W = 1600;
 const CANVAS_H = 700;
@@ -14,6 +15,76 @@ const TABLE_DIMS = {
 };
 
 const layoutRef = () => doc(db, 'config', 'salon-layout');
+
+// Resuelve una posición arrastrada para que no se superponga con otros sectores
+// (se empuja hacia el lado que requiera menos desplazamiento)
+function resolveSectorDrag(x, y, w, h, others) {
+  let nx = x;
+  let ny = y;
+  for (let iter = 0; iter <= others.length; iter++) {
+    let pushed = false;
+    for (const o of others) {
+      if (!rectsOverlap({ x: nx, y: ny, w, h }, o)) continue;
+      const ox = Math.min(nx + w, o.x + o.w) - Math.max(nx, o.x);
+      const oy = Math.min(ny + h, o.y + o.h) - Math.max(ny, o.y);
+      if (ox <= oy) {
+        const dRight = o.x + o.w - nx;
+        const dLeft = nx + w - o.x;
+        nx += dRight <= dLeft ? dRight : -dLeft;
+      } else {
+        const dDown = o.y + o.h - ny;
+        const dUp = ny + h - o.y;
+        ny += dDown <= dUp ? dDown : -dUp;
+      }
+      pushed = true;
+      break;
+    }
+    if (!pushed) break;
+  }
+  return { x: nx, y: ny };
+}
+
+// Resuelve un redimensionado para que no se superponga: recorta el tamaño
+// justo hasta el borde del otro sector (permite que se toquen)
+function resolveSectorResize(x, y, w, h, handle, others) {
+  let out = { x, y, w, h };
+  for (let iter = 0; iter < 3; iter++) {
+    let clamped = false;
+    for (const o of others) {
+      if (!rectsOverlap(out, o)) continue;
+      const next = { ...out };
+      if (handle.includes('e')) next.w = Math.max(80, Math.min(next.w, o.x - x));
+      if (handle.includes('s')) next.h = Math.max(60, Math.min(next.h, o.y - y));
+      if (handle.includes('w')) next.w = Math.max(80, Math.min(next.w, (x + w) - (o.x + o.w)));
+      if (handle.includes('n')) next.h = Math.max(60, Math.min(next.h, (y + h) - (o.y + o.h)));
+      if (next.w !== out.w || next.h !== out.h) {
+        out = next;
+        clamped = true;
+        break;
+      }
+    }
+    if (!clamped) break;
+  }
+  return out;
+}
+
+// Devuelve los ids de mesas que están dentro o tocando un sector
+function tableIdsInSector(sec, tables, positions) {
+  return tables.filter(t => {
+    const p = positions[t.id];
+    if (!p) return false;
+    const dim = TABLE_DIMS[t.shape] || TABLE_DIMS.round;
+    return rectsOverlap(sec, { x: p.x, y: p.y, w: dim.w, h: dim.h });
+  }).map(t => t.id);
+}
+
+// Asignaciones { name, tableIds } por sector → se usan para sincronizar mozos
+function buildSectorAssignments(sectors, tables, positions) {
+  return (sectors || []).map(sec => ({
+    name: sec.name,
+    tableIds: tableIdsInSector(sec, tables, positions),
+  }));
+}
 
 function defaultPositions(tables) {
   const cols = Math.ceil(Math.sqrt(tables.length * 1.5));
@@ -55,10 +126,112 @@ function tableTextColor(tableStatus) {
   return '#fff';
 }
 
+const formatCountdown = (sec) => {
+  const m = Math.floor(sec / 60);
+  const seg = sec % 60;
+  return `${String(m).padStart(2, '0')}:${String(seg).padStart(2, '0')}`;
+};
+
+// Celda de mesa aislada: hace tick local del countdown de limpieza sin
+// re-renderizar el resto del plano. Props estables permiten React.memo.
+const TableShape = React.memo(function TableShape({
+  t, pos, dim, s, timer, sectorColor,
+  isEditing, isEditingSectors, isMobile,
+  onTableClick, onDragStart,
+}) {
+  const ct = useCleaningCountdown(timer?.expiresAt);
+  const bg = tableColor(s.status, s.res?.liveState, ct);
+  const fg = ct ? '#fff' : tableTextColor(s.status);
+  const tableNum = t.name?.replace('M', '') || String(t.number || '?');
+  const label = ct ? null : tableLabel(s.status, s.res?.liveState, s.res?.time);
+
+  return (
+    <div
+      data-table-id={t.id}
+      onPointerDown={(e) => onDragStart(t.id, e)}
+      onTouchStart={(e) => { if (isEditing) onDragStart(t.id, e); }}
+      onClick={() => {
+        if (!isEditing && onTableClick) onTableClick(t, s);
+      }}
+      style={{
+        position: 'absolute',
+        transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+        width: dim.w,
+        height: dim.h,
+        background: bg,
+        border: `2px solid ${s.status === 'busy' ? bg : s.status === 'soon' ? PALETTE.soon : s.status === 'reserved' ? PALETTE.terra : PALETTE.creamDeep}`,
+        borderRadius: dim.radius,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: isEditing ? 'grab' : 'pointer',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        touchAction: 'none',
+        WebkitTouchCallout: 'none',
+        boxShadow: sectorColor
+          ? `inset 0 0 0 3px ${sectorColor}, 0 2px 6px rgba(0,0,0,0.1)`
+          : '0 2px 6px rgba(0,0,0,0.1)',
+        transition: isEditing ? 'none' : 'background 0.3s',
+        zIndex: isEditingSectors ? 1 : 10,
+        pointerEvents: isEditingSectors ? 'none' : 'auto',
+        willChange: isEditing ? 'transform' : 'auto',
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: isMobile ? 'rotate(-90deg)' : 'none',
+        width: dim.h,
+        height: dim.w,
+      }}>
+        {ct ? (
+          <>
+            <span style={{ fontSize: '9px', color: fg, opacity: 0.9, fontVariantNumeric: 'tabular-nums' }}>
+              {formatCountdown(ct.remainingSec)}
+            </span>
+            <div style={{ width: dim.h - 20, height: '3px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', marginTop: '2px', overflow: 'hidden' }}>
+              <div style={{ width: `${ct.progress * 100}%`, height: '100%', background: '#fff', borderRadius: '2px', transition: 'width 1s linear' }} />
+            </div>
+          </>
+        ) : (
+          <>
+            <span style={{
+              fontFamily: '"Fraunces", serif',
+              fontSize: '16px',
+              fontWeight: 700,
+              color: fg,
+              lineHeight: 1,
+            }}>
+              {tableNum}
+            </span>
+            <span style={{
+              fontSize: '8px',
+              color: fg,
+              opacity: 0.8,
+              marginTop: '3px',
+              textAlign: 'center',
+              maxWidth: dim.h - 10,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {label}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
 const SalonFloor = React.memo(function SalonFloor({
   tables, tableStatus, cleaningTimers, onTableClick,
   isEditing, onToggleEdit, onSaveLayout,
-  sectors, isEditingSectors, onToggleEditSectors, onSaveSectors,
+  sectors, isEditingSectors, onToggleEditSectors, onSaveSectors, onSyncSectors,
 }) {
   const [positions, setPositions] = useState({});
   const [dirty, setDirty] = useState(false);
@@ -141,7 +314,7 @@ const SalonFloor = React.memo(function SalonFloor({
     if (tables.length > 0 && Object.keys(positions).length === 0) {
       setPositions(defaultPositions(tables));
     }
-  }, [tables]);
+  }, [tables, positions]);
 
   useEffect(() => {
     if (isEditing) {
@@ -251,9 +424,7 @@ const SalonFloor = React.memo(function SalonFloor({
         },
       };
     } else if (e.touches.length === 1) {
-      panRef.current = { x: e.touches[0].clientX - offset.x, y: e.touches[0].clientY - offset.y };
-
-      // Doble tap → toggle zoom
+      // Doble tap → toggle zoom (funciona siempre)
       const now = Date.now();
       if (now - lastTapRef.current < 280) {
         lastTapRef.current = 0;
@@ -263,6 +434,9 @@ const SalonFloor = React.memo(function SalonFloor({
         zoomAt(zoom > 1.4 ? 1 / zoom : 2, cx, cy);
       } else {
         lastTapRef.current = now;
+        // Pan solo con zoom activo: en vista completa el toque se deja pasar
+        // para que la página pueda scrollear
+        if (zoom > 1) panRef.current = { x: e.touches[0].clientX - offset.x, y: e.touches[0].clientY - offset.y };
       }
     }
   }, [zoom, offset, isEditing, zoomAt]);
@@ -298,7 +472,7 @@ const SalonFloor = React.memo(function SalonFloor({
         y: e.touches[0].clientY - panRef.current.y,
       }));
     }
-  }, [clampOffset, offset.x, offset.y]);
+  }, [clampOffset, offset.x, offset.y, isEditing]);
 
   const handleTouchEnd = useCallback(() => {
     pinchRef.current = null;
@@ -371,15 +545,17 @@ const SalonFloor = React.memo(function SalonFloor({
       const rawDy = (cy - startY) / effectiveScale;
       const dx = isMobile ? -rawDy : rawDx;
       const dy = isMobile ? rawDx : rawDy;
+      const others = sectors.filter(s => s.id !== sectorId);
+      const resolved = resolveSectorDrag(orig.x + dx, orig.y + dy, orig.w, orig.h, others);
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
         if (el) {
-          el.style.left = `${orig.x + dx}px`;
-          el.style.top = `${orig.y + dy}px`;
+          el.style.left = `${resolved.x}px`;
+          el.style.top = `${resolved.y}px`;
         }
       });
-      sectorDragRef.current = { sectorId, dx, dy };
+      sectorDragRef.current = { sectorId, dx: resolved.x - orig.x, dy: resolved.y - orig.y };
     };
 
     const onUp = () => {
@@ -428,6 +604,10 @@ const SalonFloor = React.memo(function SalonFloor({
       if (handle.includes('s')) h = Math.max(60, orig.h + dy);
       if (handle.includes('n')) { h = Math.max(60, orig.h - dy); y = orig.y + (orig.h - h); }
 
+      const others = sectors.filter(s => s.id !== sectorId);
+      const resolved = resolveSectorResize(x, y, w, h, handle, others);
+      x = resolved.x; y = resolved.y; w = resolved.w; h = resolved.h;
+
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
@@ -466,8 +646,6 @@ const SalonFloor = React.memo(function SalonFloor({
     setDirty(true);
   }, [tables]);
 
-  const scaleFont = (size) => Math.max(6, Math.round(size * fitScale));
-
   return (
     <div style={{ padding: '0 4px 12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', padding: '0 4px' }}>
@@ -486,6 +664,18 @@ const SalonFloor = React.memo(function SalonFloor({
           }}>
             {isEditingSectors ? 'Listo' : 'Sectores'}
           </button>
+          {isEditingSectors && sectors?.length > 0 && (
+            <button onClick={() => {
+              if (onSyncSectors) {
+                onSyncSectors(sectors, buildSectorAssignments(sectors, tables, positions), positions);
+              }
+            }} style={{
+              background: PALETTE.forestSoft, border: 'none', borderRadius: '8px', padding: '5px 10px',
+              cursor: 'pointer', color: PALETTE.cream, fontSize: '10px', fontWeight: 600,
+            }}>
+              Sincronizar mesas
+            </button>
+          )}
           <button onClick={onToggleEdit} style={{
             background: isEditing ? PALETTE.terra : PALETTE.creamDeep,
             color: isEditing ? '#fff' : PALETTE.muted,
@@ -529,7 +719,7 @@ const SalonFloor = React.memo(function SalonFloor({
           background: PALETTE.creamDeep,
           borderRadius: '10px',
           overflow: 'hidden',
-          touchAction: 'none',
+          touchAction: isMobile && zoom <= 1 ? 'pan-y' : 'none',
           position: 'relative',
           cursor: (!isEditing && !isEditingSectors && zoom > 1) ? 'grab' : 'default',
         }}
@@ -723,98 +913,29 @@ const SalonFloor = React.memo(function SalonFloor({
 
           {tables.map((t) => {
             const pos = positions[t.id] || { x: 0, y: 0 };
-            const s = tableStatus(t.id);
-            const ct = cleaningTimers?.[t.id] || null;
-            const bg = tableColor(s.status, s.res?.liveState, ct);
-            const fg = ct ? '#fff' : tableTextColor(s.status);
-            const label = ct ? null : tableLabel(s.status, s.res?.liveState, s.res?.time);
+            const s = tableStatus(t.id) || { status: 'free' };
+            const timer = cleaningTimers?.[t.id] || null;
             const dim = TABLE_DIMS[t.shape] || TABLE_DIMS.round;
-
-            const formatCountdown = (sec) => {
-              const m = Math.floor(sec / 60);
-              const seg = sec % 60;
-              return `${String(m).padStart(2, '0')}:${String(seg).padStart(2, '0')}`;
-            };
+            const secFor = (sectors || []).find(sec => {
+              const p = positions[t.id];
+              return p && rectsOverlap(sec, { x: p.x, y: p.y, w: dim.w, h: dim.h });
+            }) || null;
 
             return (
-              <div
+              <TableShape
                 key={t.id}
-                data-table-id={t.id}
-                onPointerDown={(e) => handleDragStart(t.id, e)}
-                onTouchStart={(e) => { if (isEditing) handleDragStart(t.id, e); }}
-                onClick={() => {
-                  if (!isEditing && onTableClick) onTableClick(t, s);
-                }}
-                style={{
-                  position: 'absolute',
-                  transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-                  width: dim.w,
-                  height: dim.h,
-                  background: bg,
-                  border: `2px solid ${s.status === 'busy' ? bg : s.status === 'soon' ? PALETTE.soon : s.status === 'reserved' ? PALETTE.terra : PALETTE.creamDeep}`,
-                  borderRadius: dim.radius,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: isEditing ? 'grab' : 'pointer',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  touchAction: 'none',
-                  WebkitTouchCallout: 'none',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-                  transition: isEditing ? 'none' : 'background 0.3s',
-                  zIndex: isEditingSectors ? 1 : 10,
-                  pointerEvents: isEditingSectors ? 'none' : 'auto',
-                  willChange: isEditing ? 'transform' : 'auto',
-                }}
-              >
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transform: isMobile ? 'rotate(-90deg)' : 'none',
-                  width: dim.h,
-                  height: dim.w,
-                }}>
-                  {ct ? (
-                    <>
-                      <span style={{ fontSize: '9px', color: fg, opacity: 0.9, fontVariantNumeric: 'tabular-nums' }}>
-                        {formatCountdown(ct.remainingSec)}
-                      </span>
-                      <div style={{ width: dim.h - 20, height: '3px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', marginTop: '2px', overflow: 'hidden' }}>
-                        <div style={{ width: `${ct.progress * 100}%`, height: '100%', background: '#fff', borderRadius: '2px', transition: 'width 1s linear' }} />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span style={{
-                        fontFamily: '"Fraunces", serif',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        color: fg,
-                        lineHeight: 1,
-                      }}>
-                        {t.capacity}p
-                      </span>
-                      <span style={{
-                        fontSize: '8px',
-                        color: fg,
-                        opacity: 0.8,
-                        marginTop: '3px',
-                        textAlign: 'center',
-                        maxWidth: dim.h - 10,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {label}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
+                t={t}
+                pos={pos}
+                dim={dim}
+                s={s}
+                timer={timer}
+                sectorColor={secFor ? secFor.color : null}
+                isEditing={isEditing}
+                isEditingSectors={isEditingSectors}
+                isMobile={isMobile}
+                onTableClick={onTableClick}
+                onDragStart={handleDragStart}
+              />
             );
           })}
         </div>

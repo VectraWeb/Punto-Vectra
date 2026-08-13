@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, UserPlus, ToggleLeft, ToggleRight, Trash2, Grid } from 'lucide-react';
 import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { C } from '../utils';
+import { C, inp, getAssignedTables } from '../utils';
 import { Overlay } from './LiveStateModal';
-import { inp } from './ResModal';
 
 const staffDoc = (id) => doc(db, 'staff', id);
 
@@ -56,7 +55,7 @@ export default function StaffModal({ staff, tables, onClose }) {
 
   const openTableEditor = (s) => {
     setEditingTables(s);
-    const arr = Array.isArray(s.assignedTables) ? s.assignedTables : [];
+    const arr = getAssignedTables(s);
     setTableInput(arr.map(id => id.replace('m', '')).join(', '));
   };
 
@@ -171,7 +170,7 @@ export default function StaffModal({ staff, tables, onClose }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {(staff || []).map(s => {
           const isActive = s.active !== false;
-          const assignedTables = Array.isArray(s.assignedTables) ? s.assignedTables : [];
+          const assignedTables = getAssignedTables(s);
           return (
             <div key={s.id} style={{
               padding: '12px 14px',

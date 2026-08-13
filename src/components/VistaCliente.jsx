@@ -1,5 +1,4 @@
 // VistaCliente.jsx — Vista pública: solo formulario de reserva
-import React from 'react';
 import ResForm from './ResForm';
 import { C } from '../utils';
 

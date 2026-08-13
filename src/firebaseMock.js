@@ -32,7 +32,7 @@ function parseStorageItem(key) {
       return obj;
     };
     return restoreTimestamps(data);
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -125,7 +125,7 @@ export async function setDoc(docRef, data, options = {}) {
   let existing = {};
   try {
     existing = parseStorageItem(key) || {};
-  } catch (e) {}
+  } catch { /* item inválido: se sobrescribe */ }
 
   let finalData;
   if (options.merge) {
@@ -144,7 +144,7 @@ export async function updateDoc(docRef, data) {
   let existing = {};
   try {
     existing = parseStorageItem(key) || {};
-  } catch (e) {}
+  } catch { /* item inválido: se sobrescribe */ }
 
   const finalData = processSpecialFields({ ...existing, ...data }, existing);
   localStorage.setItem(key, JSON.stringify(finalData));
@@ -158,6 +158,7 @@ export async function deleteDoc(docRef) {
 }
 
 export function onSnapshot(ref, onNext, onError) {
+  void onError; // API de Firebase mantiene la firma, este mock no emite errores
   const trigger = () => {
     if (ref.type === 'collection') {
       const docs = getCollectionDocs(ref.path);
@@ -202,6 +203,7 @@ export async function getDocs(ref) {
 }
 
 export function query(collectionRef, ...constraints) {
+  void constraints; // este mock ignora filtros/órdenes
   return collectionRef;
 }
 

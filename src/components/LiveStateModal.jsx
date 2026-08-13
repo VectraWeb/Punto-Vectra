@@ -1,5 +1,5 @@
-import React from 'react';
 import { C, LIVE_STATES } from '../utils';
+import { useCleaningCountdown } from '../hooks/useCleaningTimers';
 
 export function Overlay({ children, onClose, maxWidth = '480px' }) {
   return (
@@ -26,11 +26,12 @@ function formatCountdown(sec) {
 }
 
 export default function LiveStateModal({
-  res, tables, cleaningTimer,
+  res, tables, cleaningTimer: cleaningTimerProp,
   onSelect, onEdit, onClose, onFinalize, onReset,
   onExtend, onCancelCleaning,
 }) {
   const table = tables.find(t => t.id === res.tableId);
+  const cleaningTimer = useCleaningCountdown(cleaningTimerProp?.expiresAt);
   return (
     <Overlay onClose={onClose}>
       <div style={{ marginBottom: '16px' }}>

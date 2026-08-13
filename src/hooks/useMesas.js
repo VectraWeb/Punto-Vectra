@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
 import { subscribeMesas, seedMesasIfNeeded } from '../services/mesasHelpers';
 
 export function useMesas(config) {

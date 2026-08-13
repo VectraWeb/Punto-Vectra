@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
-import { C, SHAPE_LABELS, SHAPE_MAP, SHAPE_KEYS } from '../utils';
+import { C, SHAPE_LABELS, SHAPE_KEYS } from '../utils';
 import { Overlay } from './LiveStateModal';
 
 const CAPACIDAD_OPTIONS = [2, 4, 6, 8, 10, 12];
@@ -18,7 +18,7 @@ function Counter({ label, value, onChange }) {
   );
 }
 
-function TipoMesaCard({ item, index, onChange, onRemove }) {
+function TipoMesaCard({ item, onChange, onRemove }) {
   return (
     <div style={{ background: C.white, borderRadius: '14px', padding: '14px', border: `1px solid ${C.creamDeep}`, flex: '1 1 240px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>

@@ -3,7 +3,7 @@ import { doc, updateDoc, arrayUnion, serverTimestamp, deleteDoc, setDoc } from '
 import { db } from '../services/firebase';
 import { notificarN8N, computeStateDurations } from '../utils';
 
-const CLEANING_DURATION_MS = 5 * 60 * 1000;
+export const CLEANING_DURATION_MS = 5 * 60 * 1000;
 const EXTEND_MS = 5 * 60 * 1000;
 
 const resDocRef = (id) => doc(db, 'reservations', id);
@@ -15,6 +15,26 @@ function toMs(v) {
   if (v.toMillis) return v.toMillis();
   if (v.seconds) return v.seconds * 1000;
   return new Date(v).getTime();
+}
+
+// Countdown local por mesa: solo los componentes que lo necesitan
+// (mesa en limpieza) hacen tick cada segundo, sin re-renderizar el resto.
+export function useCleaningCountdown(expiresAt) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  if (!expiresAt) return null;
+
+  const remainingMs = expiresAt - now;
+  return {
+    remainingSec: Math.max(0, Math.ceil(remainingMs / 1000)),
+    progress: Math.max(0, Math.min(1, remainingMs / CLEANING_DURATION_MS)),
+  };
 }
 
 async function saveMetrics(res, tables) {
@@ -53,8 +73,10 @@ async function saveMetrics(res, tables) {
 }
 
 export function useCleaningTimers(reservations, date, tables) {
+  // Estado interno por reserva (no cambia por segundo)
   const timersRef = useRef({});
-  const [displayTimers, setDisplayTimers] = useState({});
+  // Solamente expiración por mesa: estable entre inicio/fin/extensión
+  const [sharedTimers, setSharedTimers] = useState({});
   const finalizingRef = useRef(false);
   const doFinalizeRef = useRef(null);
 
@@ -97,69 +119,63 @@ export function useCleaningTimers(reservations, date, tables) {
     finalizingRef.current = false;
   }, [date, tables]);
 
-  doFinalizeRef.current = doFinalize;
+  useEffect(() => {
+    doFinalizeRef.current = doFinalize;
+  }, [doFinalize]);
+
+  const removeShared = useCallback((tableId) => {
+    setSharedTimers(prev => { const n = { ...prev }; delete n[tableId]; return n; });
+  }, []);
 
   const startTimer = useCallback((res) => {
     if (timersRef.current[res.id]) return;
 
     const startedAt = toMs(res.cleaningStartedAt);
-    const elapsed = Date.now() - startedAt;
-    const remainingMs = CLEANING_DURATION_MS - elapsed;
+    const expiresAt = startedAt + CLEANING_DURATION_MS;
 
-    if (remainingMs <= 0) {
+    if (expiresAt <= Date.now()) {
       doFinalizeRef.current(res);
       return;
     }
 
-    const remainingSec = Math.ceil(remainingMs / 1000);
-
-    const timerData = { remainingSec, intervalId: null, startedAt, res, expiresAt: startedAt + CLEANING_DURATION_MS };
+    const timerData = { resId: res.id, tableId: res.tableId, res, expiresAt, intervalId: null };
     timersRef.current[res.id] = timerData;
-    setDisplayTimers(prev => ({ ...prev, [res.tableId]: { remainingSec, progress: remainingMs / CLEANING_DURATION_MS, resId: res.id } }));
+    setSharedTimers(prev => ({ ...prev, [res.tableId]: { expiresAt, resId: res.id } }));
 
+    // El intervalo solo existe para auto-finalizar al vencer: no toca estado
+    // de React, así el plano no se re-renderiza cada segundo.
     timerData.intervalId = setInterval(() => {
       const t = timersRef.current[res.id];
       if (!t) { clearInterval(timerData.intervalId); return; }
 
-      const now = Date.now();
-      const newRemaining = t.expiresAt - now;
-
-      if (newRemaining <= 0) {
+      if (t.expiresAt <= Date.now()) {
         clearInterval(timerData.intervalId);
         delete timersRef.current[res.id];
-        setDisplayTimers(prev => { const n = { ...prev }; delete n[res.tableId]; return n; });
-        doFinalizeRef.current(res);
-        return;
+        removeShared(t.tableId);
+        doFinalizeRef.current(t.res);
       }
-
-      t.remainingSec = Math.ceil(newRemaining / 1000);
-      setDisplayTimers(prev => ({
-        ...prev,
-        [res.tableId]: { remainingSec: t.remainingSec, progress: newRemaining / CLEANING_DURATION_MS, resId: res.id },
-      }));
     }, 1000);
-  }, []);
+  }, [removeShared]);
 
   const finishNow = useCallback((res) => {
     const timer = timersRef.current[res.id];
     if (timer) {
       clearInterval(timer.intervalId);
       delete timersRef.current[res.id];
-      setDisplayTimers(prev => { const n = { ...prev }; delete n[res.tableId]; return n; });
+      removeShared(timer.tableId);
     }
     doFinalizeRef.current(res);
-  }, []);
+  }, [removeShared]);
 
   const extendCleaning = useCallback(async (res) => {
     const timer = timersRef.current[res.id];
     if (timer) {
       timer.expiresAt += EXTEND_MS;
-      timer.remainingSec += 300;
       const newStartedAt = new Date(timer.expiresAt - CLEANING_DURATION_MS);
       await updateDoc(resDocRef(res.id), { cleaningStartedAt: newStartedAt.toISOString() }).catch(() => {});
-      setDisplayTimers(prev => ({
+      setSharedTimers(prev => ({
         ...prev,
-        [res.tableId]: { remainingSec: timer.remainingSec, progress: (timer.expiresAt - Date.now()) / CLEANING_DURATION_MS, resId: res.id },
+        [res.tableId]: { expiresAt: timer.expiresAt, resId: res.id },
       }));
     }
   }, []);
@@ -169,7 +185,7 @@ export function useCleaningTimers(reservations, date, tables) {
     if (timer) {
       clearInterval(timer.intervalId);
       delete timersRef.current[res.id];
-      setDisplayTimers(prev => { const n = { ...prev }; delete n[res.tableId]; return n; });
+      removeShared(timer.tableId);
     }
     await updateDoc(resDocRef(res.id), {
       liveState: null,
@@ -177,7 +193,7 @@ export function useCleaningTimers(reservations, date, tables) {
       leftAt: null,
       updatedAt: serverTimestamp(),
     }).catch(() => {});
-  }, []);
+  }, [removeShared]);
 
   useEffect(() => {
     const cleaning = reservations.filter(
@@ -192,10 +208,10 @@ export function useCleaningTimers(reservations, date, tables) {
       if (!activeIds.has(id)) {
         clearInterval(timer.intervalId);
         delete timersRef.current[id];
-        setDisplayTimers(prev => { const n = { ...prev }; delete n[timer.res.tableId]; return n; });
+        removeShared(timer.tableId);
       }
     }
-  }, [reservations, startTimer]);
+  }, [reservations, startTimer, removeShared]);
 
   useEffect(() => {
     return () => {
@@ -206,5 +222,5 @@ export function useCleaningTimers(reservations, date, tables) {
     };
   }, []);
 
-  return { cleaningTimers: displayTimers, finishNow, extendCleaning, cancelCleaning };
+  return { cleaningTimers: sharedTimers, finishNow, extendCleaning, cancelCleaning };
 }

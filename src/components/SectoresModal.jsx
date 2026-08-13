@@ -1,14 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Trash2 } from 'lucide-react';
-import { C } from '../utils';
+import { C, inp, SECTOR_COLORS } from '../utils';
 import { Overlay } from './LiveStateModal';
-import { inp, Field } from './ResModal';
-
-export const SECTOR_COLORS = [
-  '#7a3a1e', '#c4602f', '#6f8d4d', '#4a90d9', '#9b59b6',
-  '#d4a04a', '#e67e22', '#2a1f1a', '#e09368', '#6b8e7b',
-  '#7b1f2e', '#c49a35', '#455a64', '#00897b', '#5c6bc0',
-];
+import { Field } from './ResModal';
 
 export default function SectoresModal({ sectors, staff, onSave, onClose }) {
   const [list, setList] = useState([...sectors]);
@@ -17,12 +11,13 @@ export default function SectoresModal({ sectors, staff, onSave, onClose }) {
 
   const staffCount = (staff || []).filter(s => s.active !== false).length;
   const availableColors = SECTOR_COLORS.slice(0, Math.max(staffCount, 1));
+  const activeStaff = (staff || []).filter(s => s && s.active !== false);
 
   const addSector = () => {
     const id = `sec_${Date.now()}`;
     const newSector = {
       id,
-      name: staff?.find(s => s.active !== false && !list.some(ls => ls.name === s.name))?.name || `Sector ${list.length + 1}`,
+      name: `Sector ${list.length + 1}`,
       color: availableColors[list.length % availableColors.length],
       x: 180 + list.length * 30, y: 60 + list.length * 30, w: 400, h: 250,
     };
@@ -90,18 +85,54 @@ export default function SectoresModal({ sectors, staff, onSave, onClose }) {
       {editing && (
         <div style={{ background: C.creamDeep, borderRadius: '14px', padding: '16px', marginTop: '4px' }}>
           <p style={{ fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.muted, fontWeight: 600, marginBottom: '10px' }}>Editando: {editing.name}</p>
-          <Field label="Nombre">
-            <input value={editing.name} onChange={e => updateSector(editing.id, { name: e.target.value })} style={inp} />
+
+          <Field label="Mozo del sector">
+            <select
+              value={activeStaff.find(s => s.name === editing.name)?.id || ''}
+              onChange={e => {
+                const id = e.target.value;
+                if (!id) { updateSector(editing.id, { name: '' }); return; }
+                const s = activeStaff.find(st => st.id === id);
+                if (!s) return;
+                const idx = activeStaff.indexOf(s);
+                updateSector(editing.id, {
+                  name: s.name,
+                  color: availableColors[idx % availableColors.length],
+                });
+              }}
+              style={inp}
+            >
+              <option value="">— sin mozo —</option>
+              {activeStaff.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
           </Field>
+
+          <div style={{ marginTop: '12px' }}>
+            <Field label="Nombre (si no elegís mozo)">
+              <input value={editing.name} onChange={e => updateSector(editing.id, { name: e.target.value })} style={inp} />
+            </Field>
+          </div>
           <div style={{ marginTop: '12px' }}>
             <label style={{ display: 'block', fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.muted, fontWeight: 600, marginBottom: '8px' }}>Color</label>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
               {availableColors.map(c => (
                 <button key={c} onClick={() => updateSector(editing.id, { color: c })} style={{
                   width: '28px', height: '28px', borderRadius: '8px', background: c, border: editing.color === c ? `3px solid ${C.espresso}` : '3px solid transparent',
                   cursor: 'pointer', transition: 'border 0.1s',
                 }} />
               ))}
+              <input
+                type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(editing.color) ? editing.color : '#7a3a1e'}
+                onChange={e => updateSector(editing.id, { color: e.target.value })}
+                title="Color personalizado"
+                style={{
+                  width: '36px', height: '36px', padding: 0, border: `3px solid ${editing.color === '#7a3a1e' ? 'transparent' : C.espresso}`,
+                  borderRadius: '10px', cursor: 'pointer', background: 'none',
+                }}
+              />
             </div>
           </div>
         </div>

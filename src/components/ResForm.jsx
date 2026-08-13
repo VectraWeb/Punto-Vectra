@@ -1,12 +1,12 @@
 // ResForm.jsx — Formulario de reserva independiente para clientes
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Sun, Moon, Check, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Check, AlertCircle } from 'lucide-react';
 import {
   collection, doc, onSnapshot, setDoc, serverTimestamp,
   query, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { C, SERVICES, DEFAULT_CONFIG, configToArray, t2m, todayISO, detectService, buildTables } from '../utils';
+import { C, SERVICES, DEFAULT_CONFIG, configToArray, t2m, todayISO, detectService } from '../utils';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resCol = () => collection(db, 'reservations');
@@ -34,9 +34,9 @@ function Field({ label, children }) {
 // ResForm — Formulario de reserva para clientes
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ResForm({ onStaffAccess }) {
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [, setConfig] = useState(DEFAULT_CONFIG);
   const [service, setService] = useState(detectService);
-  const [date, setDate] = useState(todayISO());
+  const [date] = useState(todayISO());
   const [reservations, setReservations] = useState([]);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -56,8 +56,6 @@ export default function ResForm({ onStaffAccess }) {
     if (clickTimer.current) clearTimeout(clickTimer.current);
     clickTimer.current = setTimeout(() => { clickCount.current = 0; }, 1500);
   }, [onStaffAccess]);
-
-  const tables = useMemo(() => buildTables(config), [config]);
 
   const nowHHMM = () => {
     const d = new Date();

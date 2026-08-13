@@ -61,6 +61,11 @@ export const getAssignedTables = (s) => {
   return nums ? nums.map(n => `m${n}`) : [];
 };
 
+// ─── Geometría de sectores ───────────────────────────────────────────────────
+// Dos rectángulos se consideran superpuestos si se tocan o cruzan
+export const rectsOverlap = (a, b) =>
+  a.x <= b.x + b.w && a.x + a.w >= b.x && a.y <= b.y + b.h && a.y + a.h >= b.y;
+
 export const configToArray = (cfg) => {
   if (Array.isArray(cfg)) return cfg;
   if (cfg && typeof cfg === 'object' && cfg.cantidad === undefined) {
@@ -156,6 +161,30 @@ export const detectTime = (svc) => {
   return best;
 };
 
+// ─── Horarios y servicios ────────────────────────────────────────────────────
+export const timeBelongsToService = (time, svc) => {
+  if (!time || !SERVICES[svc]) return false;
+  const [h, m] = time.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return false;
+  const [sh, sm] = (SERVICES[svc].start || '00:00').split(':').map(Number);
+  const [eh, em] = (SERVICES[svc].end || '00:00').split(':').map(Number);
+  let start = sh * 60 + sm;
+  let end = eh * 60 + em;
+  if (end < start) end += 24 * 60;
+  const t = h * 60 + m + (h < 12 ? 24 * 60 : 0);
+  return t >= start && t <= end;
+};
+
+// Determina el servicio al que pertenece una hora (ej: 21:30 → cena)
+export const serviceFromTime = (time, fallback) => {
+  if (!time) return fallback;
+  const inLunch = timeBelongsToService(time, 'mediodia');
+  const inDinner = timeBelongsToService(time, 'cena');
+  if (inLunch && !inDinner) return 'mediodia';
+  if (inDinner && !inLunch) return 'cena';
+  return fallback;
+};
+
 // ─── Utilidad N8N ────────────────────────────────────────────────────────────
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || '';
 export const notificarN8N = (datos) => {
@@ -199,3 +228,26 @@ export const todayISOForAnalytics = (analyticsPeriod, currentDate) => {
   }
   return dates;
 };
+
+// --- Utilitarios compartidos de UI / auth (fuera de componentes para fast-refresh) ---
+export const inp = {
+  width: '100%', padding: '12px 14px', fontSize: '16px',
+  background: C.white, border: '1.5px solid ' + C.creamDeep,
+  borderRadius: '12px', color: C.espresso, outline: 'none',
+};
+
+export const SECTOR_COLORS = [
+  '#7a3a1e', '#c4602f', '#6f8d4d', '#4a90d9', '#9b59b6',
+  '#d4a04a', '#e67e22', '#2a1f1a', '#e09368', '#6b8e7b',
+  '#7b1f2e', '#c49a35', '#455a64', '#00897b', '#5c6bc0',
+];
+
+const STAFF_AUTH_KEY = 'isStaff';
+
+export function isStaffAuthenticated() {
+  return localStorage.getItem(STAFF_AUTH_KEY) === 'true';
+}
+
+export function logoutStaff() {
+  localStorage.removeItem(STAFF_AUTH_KEY);
+}

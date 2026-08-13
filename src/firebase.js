@@ -3,7 +3,6 @@
 
 import { initializeApp } from 'firebase/app';
 import {
-  getFirestore,
   connectFirestoreEmulator, // ◄ Agregamos la conexión para pruebas locales
   initializeFirestore,
   persistentLocalCache,

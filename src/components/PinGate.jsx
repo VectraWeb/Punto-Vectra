@@ -1,18 +1,10 @@
 // PinGate.jsx — Barrera de acceso con PIN numérico
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Lock } from 'lucide-react';
-import { C } from '../utils';
+import { C, isStaffAuthenticated } from '../utils';
 
 const STAFF_PIN = import.meta.env.VITE_STAFF_PIN || '2024';
 const STORAGE_KEY = 'isStaff';
-
-export function isStaffAuthenticated() {
-  return localStorage.getItem(STORAGE_KEY) === 'true';
-}
-
-export function logoutStaff() {
-  localStorage.removeItem(STORAGE_KEY);
-}
 
 export default function PinGate({ onAuthenticated, onBack, children }) {
   const [authenticated, setAuthenticated] = useState(() => isStaffAuthenticated());

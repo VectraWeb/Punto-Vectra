@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { C } from '../utils';
 
 export default function CalendarPicker({ date, onSelect, onClose, colors: C }) {
   const [viewDate, setViewDate] = useState(() => {
@@ -13,7 +12,7 @@ export default function CalendarPicker({ date, onSelect, onClose, colors: C }) {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, [onClose]);
 
   const daysInMonth = new Date(viewDate.year, viewDate.month + 1, 0).getDate();
   const startDay = new Date(viewDate.year, viewDate.month, 1).getDay();

@@ -2,10 +2,10 @@
 // PWA de gestión de mesas con sincronización en tiempo real vía Firebase Firestore
 // Incluye máquina de estados en vivo para mozos
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import VistaCliente from './components/VistaCliente';
-import PinGate, { logoutStaff } from './components/PinGate';
-import { C } from './utils';
+import PinGate from './components/PinGate';
+import { C, logoutStaff } from './utils';
 
 const StaffDashboard = React.lazy(() => import('./components/StaffDashboard'));
 
@@ -17,28 +17,7 @@ const VERSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
 export default function App() {
   const [staffMode, setStaffMode] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [canInstall, setCanInstall] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const deferredPrompt = useRef(null);
-  const currentVersion = useRef(null);
-
-  // ── Detectar beforeinstallprompt (Android/Chrome) ────────────────────────
-  useEffect(() => {
-    const handler = (e) => {
-      e.preventDefault();
-      deferredPrompt.current = e;
-      setCanInstall(true);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  // ── Detectar si ya está instalada como PWA ───────────────────────────────
-  useEffect(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || window.navigator.standalone === true;
-    if (isStandalone) setCanInstall(false);
-  }, []);
 
   // ── Detectar actualización de PWA ────────────────────────────────────────
   useEffect(() => {
@@ -94,20 +73,6 @@ export default function App() {
     }
     // Recargar
     window.location.reload();
-  }, []);
-
-  // ── Instalar PWA ─────────────────────────────────────────────────────────
-  const handleInstall = useCallback(async () => {
-    if (deferredPrompt.current) {
-      // Android/Chrome: instalar nativamente
-      deferredPrompt.current.prompt();
-      const { outcome } = await deferredPrompt.current.userChoice;
-      if (outcome === 'accepted') setCanInstall(false);
-      deferredPrompt.current = null;
-    } else {
-      // iOS / otros: mostrar guía manual
-      setShowInstallGuide(true);
-    }
   }, []);
 
   const handleStaffAccess = useCallback(() => {

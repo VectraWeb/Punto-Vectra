@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, doc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const resCol = () => collection(db, 'reservations');
@@ -28,7 +28,6 @@ export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod) {
 
   useEffect(() => {
     if (!showAnalytics || analyticsPeriod === 'day') {
-      setAnalyticsRes([]);
       return;
     }
     const days = analyticsPeriod === 'week' ? 7 : 30;
@@ -49,5 +48,7 @@ export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod) {
     })();
   }, [showAnalytics, analyticsPeriod, date]);
 
-  return analyticsRes;
+  // Derivado: cuando el panel está cerrado o en modo día no se exponen datos
+  // viejos (evita limpiar estado dentro del efecto)
+  return (showAnalytics && analyticsPeriod !== 'day') ? analyticsRes : [];
 }

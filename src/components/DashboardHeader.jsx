@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Settings, Users, LogOut, Wifi, WifiOff, BarChart3 } from 'lucide-react';
 import CalendarPicker from './CalendarPicker';
 import { C, formatDate } from '../utils';
 
 export function DashboardHeader({
-  online, canInstall, handleInstall, date, setDate,
+  online, handleInstall, date, setDate,
   setShowAnalytics, setShowSettings, setShowStaff, setShowSectors, onLogout
 }) {
   const [showMenu, setShowMenu] = useState(false);

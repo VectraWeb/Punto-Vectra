@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { X, Trash2 } from 'lucide-react';
-import { C, getAssignedTables } from '../utils';
+import { C, inp, getAssignedTables, SERVICES, serviceFromTime } from '../utils';
 import { Overlay } from './LiveStateModal';
 
 export function Field({ label, children }) {
@@ -12,13 +12,7 @@ export function Field({ label, children }) {
   );
 }
 
-export const inp = {
-  width: '100%', padding: '12px 14px', fontSize: '16px',
-  background: C.white, border: `1.5px solid ${C.creamDeep}`,
-  borderRadius: '12px', color: C.espresso, outline: 'none',
-};
-
-export default function ResModal({ editing, preTable, tables, slots, service, tableStatus, staff, onSave, onDelete, onClose }) {
+export default function ResModal({ editing, preTable, tables, service, tableStatus, staff, onSave, onDelete, onClose }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState(() => editing ? { ...editing } : {
     customerName: '', phone: '', partySize: 2,
@@ -30,16 +24,16 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const selectedTable = tables.find(t => t.id === form.tableId);
   const valid = form.customerName.trim() && form.time && form.partySize > 0;
+  const svcForTime = serviceFromTime(form.time, service);
+  const timeInOtherService = form.time && svcForTime !== service;
 
-  // Al asignar un mozo, auto-seleccionar su primera mesa libre
-  const prevStaffId = useRef(form.staffId);
-  useEffect(() => {
-    if (form.staffId === prevStaffId.current) return;
-    prevStaffId.current = form.staffId;
-    if (!form.staffId) return;
-    const mozo = staff.find(s => s.id === form.staffId);
+  // Al asignar un mozo, auto-seleccionar su primera mesa libre (en el evento,
+  // sin efecto: evita re-renders en cascada al abrir el modal)
+  const handleStaffChange = (v) => {
+    set('staffId', v);
+    if (!v) return;
+    const mozo = staff.find(s => s.id === v);
     if (!mozo) return;
     const assigned = getAssignedTables(mozo);
     for (const id of assigned) {
@@ -51,7 +45,7 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
         return;
       }
     }
-  }, [form.staffId]);
+  };
 
   return (
     <Overlay onClose={onClose}>
@@ -87,7 +81,8 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
                {tables.filter(t => {
                   const s = tableStatus(t.id);
                   const isCurrentRes = editing && editing.tableId === t.id;
-                  return (s.status === 'free' || s.status === 'soon' || isCurrentRes) && t.capacity >= form.partySize;
+                  const matchesMozo = !form.staffId || getAssignedTables(staff.find(st => st.id === form.staffId)).includes(t.id);
+                  return (s.status === 'free' || s.status === 'soon' || isCurrentRes) && t.capacity >= form.partySize && matchesMozo;
                 }).map(t => (
                 <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>
               ))}
@@ -99,11 +94,19 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
           <Field label="Horario">
             <input type="time" value={form.time} onChange={e => set('time', e.target.value)} style={inp} />
           </Field>
+          {timeInOtherService && (
+            <div style={{
+              fontSize: '12px', background: C.soon + '22', color: C.espresso,
+              border: `1px solid ${C.soon}66`, borderRadius: '10px', padding: '10px 12px',
+            }}>
+              El horario <strong>{form.time}</strong> corresponde al servicio de <strong>{SERVICES[svcForTime].name}</strong>. La reserva se guardará en <strong>{SERVICES[svcForTime].name}</strong>.
+            </div>
+          )}
         </div>
 
         {staff.length > 0 && (
           <Field label="Mozo asignado">
-            <select value={form.staffId} onChange={e => set('staffId', e.target.value)} style={inp}>
+            <select value={form.staffId} onChange={e => handleStaffChange(e.target.value)} style={inp}>
               <option value="">— sin asignar —</option>
               {staff.filter(s => s.active !== false).map(s => (
                 <option key={s.id} value={s.id}>{s.name}</option>
@@ -145,7 +148,7 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
         <button onClick={() => {
           if (!valid) return;
           const staffMember = staff.find(s => s.id === form.staffId);
-          onSave({ ...form, service, staffName: staffMember?.name || '' });
+          onSave({ ...form, service: svcForTime, staffName: staffMember?.name || '' });
         }} style={{
           flex: 1, padding: '14px', background: valid ? C.terra : C.creamDeep,
           border: 'none', borderRadius: '12px', cursor: valid ? 'pointer' : 'not-allowed',
