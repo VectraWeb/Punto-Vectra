@@ -83,8 +83,8 @@ export default function StaffDashboard({ onLogout }) {
   const analyticsRes = useAnalyticsReservations(date, showAnalytics, analyticsPeriod);
 
   const tables = useMemo(() => {
-    if (mesas.length > 0) return mesas;
-    return buildTables(config);
+    const base = mesas.length > 0 ? mesas : buildTables(config);
+    return base.map(t => t.capacity === 2 ? { ...t, shape: 'square-sm' } : t);
   }, [mesas, config]);
   const slots = useMemo(() => genSlots(service), [service]);
 
@@ -326,16 +326,12 @@ export default function StaffDashboard({ onLogout }) {
   }, [date]);
 
   const deleteRes = useCallback(async (resData) => {
-    if (!resData.tableId) {
-      await deleteDoc(resDocRef(resData.id));
-      return;
-    }
-    const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
     try {
-      await runTransaction(db, async (transaction) => {
-        transaction.delete(mesaRef);
-        transaction.delete(resDocRef(resData.id));
-      });
+      if (resData.tableId) {
+        const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
+        await deleteDoc(mesaRef);
+      }
+      await deleteDoc(resDocRef(resData.id));
     } catch (e) { console.error(e); throw e; }
   }, [date]);
 

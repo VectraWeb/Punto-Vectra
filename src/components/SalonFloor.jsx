@@ -12,6 +12,7 @@ const TABLE_DIMS = {
   rectangular: { w: 130, h: 65, radius: '12px' },
   round:       { w: 90, h: 90, radius: '50%' },
   square:      { w: 100, h: 100, radius: '14px' },
+  'square-sm': { w: 70, h: 70, radius: '10px' },
 };
 
 const layoutRef = () => doc(db, 'config', 'salon-layout');

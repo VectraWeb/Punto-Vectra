@@ -25,7 +25,7 @@ const TableGrid = React.memo(function TableGrid({ tables, tableStatus, onTableCl
           return (
             <button key={t.id} onClick={() => onTableClick(t, s)} style={{
               aspectRatio: t.shape === 'rectangular' ? '2/1' : '1', background: bg, color: fg,
-              border: `1.5px solid ${border}`, borderRadius: t.shape === 'round' ? '50%' : t.shape === 'square' ? '12px' : '10px',
+              border: `1.5px solid ${border}`, borderRadius: t.shape === 'round' ? '50%' : t.shape === 'square' ? '12px' : t.shape === 'square-sm' ? '10px' : '10px',
               cursor: 'pointer', display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center', padding: '4px',
               position: 'relative',

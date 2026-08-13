@@ -38,7 +38,7 @@ export const SHAPE_LABELS = { redonda: 'Redonda', rectangular: 'Rectangular', cu
 export const SHAPE_KEYS = Object.keys(SHAPE_MAP);
 
 export const DEFAULT_CONFIG = [
-  { id: 1, capacidad: 2, forma: 'rectangular', cantidad: 12 },
+  { id: 1, capacidad: 2, forma: 'cuadrada', cantidad: 12 },
   { id: 2, capacidad: 4, forma: 'rectangular', cantidad: 12 },
   { id: 3, capacidad: 5, forma: 'redonda', cantidad: 5 },
   { id: 4, capacidad: 8, forma: 'cuadrada', cantidad: 2 },
@@ -70,7 +70,7 @@ export const configToArray = (cfg) => {
   if (Array.isArray(cfg)) return cfg;
   if (cfg && typeof cfg === 'object' && cfg.cantidad === undefined) {
     const groups = [
-      { capacidad: 2, forma: 'rectangular', cantidad: cfg.cap2 || 0 },
+      { capacidad: 2, forma: 'cuadrada', cantidad: cfg.cap2 || 0 },
       { capacidad: 4, forma: 'rectangular', cantidad: cfg.cap4 || 0 },
       { capacidad: 5, forma: 'redonda', cantidad: cfg.cap5 || 0 },
       { capacidad: 8, forma: 'cuadrada', cantidad: cfg.cap8 || 0 },
@@ -94,7 +94,7 @@ export const buildTables = (cfg) => {
         id: `m${n}`,
         name: `M${n}`,
         capacity: cap,
-        shape: SHAPE_MAP[item.forma] || item.shape || item.forma || 'rectangular',
+        shape: cap === 2 ? 'square' : (SHAPE_MAP[item.forma] || item.shape || item.forma || 'rectangular'),
         number: n,
       });
       n++;

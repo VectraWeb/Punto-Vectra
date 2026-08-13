@@ -211,6 +211,22 @@ export function where() {
   return {};
 }
 
+export function writeBatch() {
+  const ops = [];
+  return {
+    set(docRef, data, options) { ops.push({ type: 'set', docRef, data, options }); },
+    delete(docRef) { ops.push({ type: 'delete', docRef }); },
+    update(docRef, data) { ops.push({ type: 'update', docRef, data }); },
+    async commit() {
+      for (const op of ops) {
+        if (op.type === 'set') await setDoc(op.docRef, op.data, op.options);
+        else if (op.type === 'delete') await deleteDoc(op.docRef);
+        else if (op.type === 'update') await updateDoc(op.docRef, op.data);
+      }
+    }
+  };
+}
+
 export async function runTransaction(dbRef, updateFunction) {
   const transaction = {
     get: async (docRef) => {
