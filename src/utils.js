@@ -44,6 +44,23 @@ export const DEFAULT_CONFIG = [
   { id: 4, capacidad: 8, forma: 'cuadrada', cantidad: 2 },
 ];
 
+export const DEFAULT_ASSIGNMENTS = {
+  leo: [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 160, 161, 162, 163, 164],
+  mica: [51, 52, 53, 54, 55, 56, 57, 58, 59, 150, 151, 152, 153, 154],
+  mauro: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 140, 141, 142, 143, 144],
+  rosanna: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 120, 121, 122, 123, 124],
+  jota: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  miguel: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 130, 131, 132, 133, 134],
+};
+
+export const getAssignedTables = (s) => {
+  if (!s) return [];
+  const fromDb = Array.isArray(s.assignedTables) ? s.assignedTables : [];
+  if (fromDb.length > 0) return fromDb;
+  const nums = DEFAULT_ASSIGNMENTS[(s.name || '').toLowerCase().trim()];
+  return nums ? nums.map(n => `m${n}`) : [];
+};
+
 export const configToArray = (cfg) => {
   if (Array.isArray(cfg)) return cfg;
   if (cfg && typeof cfg === 'object' && cfg.cantidad === undefined) {

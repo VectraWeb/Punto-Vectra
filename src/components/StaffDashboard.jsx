@@ -22,7 +22,6 @@ import SettingsModal from './SettingsModal';
 import { AnalyticsPanel, Stat } from './AnalyticsPanel';
 import { DashboardHeader } from './DashboardHeader';
 import ReservationList from './ReservationList';
-import TableGrid from './TableGrid';
 import StaffModal from './StaffModal';
 import SectoresModal from './SectoresModal';
 import CalendarPicker from './CalendarPicker';
@@ -30,6 +29,7 @@ import {
   C, LIVE_STATES, SERVICES, DEFAULT_CONFIG,
   t2m, m2t, genSlots, buildTables, todayISO, formatDate,
   detectService, detectTime, notificarN8N, computeStateDurations,
+  getAssignedTables,
 } from '../utils';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
@@ -58,12 +58,15 @@ export default function StaffDashboard({ onLogout }) {
   const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
-  const [mainTab, setMainTab] = useState('mesas');
+  const [mainTab, setMainTab] = useState('reservas');
   const [editingLayout, setEditingLayout] = useState(false);
   const [optimisticStates, setOptimisticStates] = useState({});
   const [quickActionMenu, setQuickActionMenu] = useState(null);
   const [showStaff, setShowStaff] = useState(false);
   const [showSectors, setShowSectors] = useState(false);
+  const [selectedMozoTab, setSelectedMozoTab] = useState(null);
+  const [showMozoMesas, setShowMozoMesas] = useState(false);
+  const lastMozoTap = useRef({});
   const [editingSectors, setEditingSectors] = useState(false);
   const deferredPrompt = useRef(null);
   const [canInstall, setCanInstall] = useState(false);
@@ -563,9 +566,12 @@ export default function StaffDashboard({ onLogout }) {
         <Stat color={C.soon} label="A limpiar" value={stats.soon} />
       </div>
 
-      {/* ── TABS: MESAS / RESERVAS / PLANO ── */}
+      {/* ── TABS: RESERVAS / PLANO ── */}
       <div style={{ padding: '0 16px', display: 'flex', gap: '4px', marginBottom: '12px' }}>
-        {[['mesas', 'Mesas', `${tables.length} mesas`], ['reservas', 'Reservas', `${sortedRes.length} items`], ['plano', 'Plano', 'Arrastrable']].map(([key, label, sub]) => (
+        {[
+          ['reservas', 'Reservas', `${sortedRes.length} items`],
+          ['plano', 'Plano', 'Arrastrable'],
+        ].map(([key, label, sub]) => (
           <button key={key} onClick={() => setMainTab(key)} style={{
             flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
             background: mainTab === key ? C.forest : C.creamDeep,
@@ -578,32 +584,164 @@ export default function StaffDashboard({ onLogout }) {
         ))}
       </div>
 
-      {/* ── GRILLA DE MESAS ── */}
-      {mainTab === 'mesas' && (
-        <TableGrid
-          tables={tables}
-          tableStatus={tableStatus}
-          onTableClick={(t, s) => {
-            if (s.status === 'free') {
-              setPreTable(t); setEditing(null); setShowModal(true);
-            } else {
-              setShowLiveMenu(s.res);
-            }
-          }}
-        />
-      )}
+      {/* ── RESERVAS: botones de mozo + reservas ── */}
+      {mainTab === 'reservas' && (() => {
+        const activeStaff = (staff || []).filter(s => s && s.active !== false);
+        const selected = activeStaff.find(s => s.id === selectedMozoTab) || null;
+        const assignedIds = selected ? getAssignedTables(selected) : [];
+        const mozoRes = selected ? svcRes.filter(r => r.staffName === selected.name) : [];
 
-      {/* ── LISTADO DE RESERVAS ── */}
-      {mainTab === 'reservas' && (
-        <div style={{ padding: '0 16px 24px' }}>
-          <ReservationList
-            sortedRes={sortedRes}
-            tables={tables}
-            onEdit={(r) => { setEditing(r); setShowModal(true); }}
-            onAction={(r) => setShowLiveMenu(r)}
-          />
-        </div>
-      )}
+        const handleMozoTap = (s) => {
+          const now = Date.now();
+          const prev = lastMozoTap.current[s.id] || 0;
+          lastMozoTap.current[s.id] = now;
+          if (now - prev < 300) {
+            setSelectedMozoTab(s.id);
+            setShowMozoMesas(true);
+          } else {
+            setSelectedMozoTab(s.id);
+            setShowMozoMesas(false);
+          }
+        };
+
+        return (
+          <div style={{ padding: '0 16px 24px' }}>
+            {/* Botones: Todas + Mozos */}
+            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '4px', WebkitOverflowScrolling: 'touch' }}>
+              <button onClick={() => { setSelectedMozoTab('__todas__'); setShowMozoMesas(false); }} style={{
+                flexShrink: 0, padding: '10px 14px', borderRadius: '12px', border: 'none',
+                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minWidth: '70px',
+                background: selectedMozoTab === '__todas__' ? C.forest : C.creamDeep,
+                color: selectedMozoTab === '__todas__' ? C.cream : C.espresso,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <div style={{
+                    width: '28px', height: '28px', borderRadius: '50%',
+                    background: selectedMozoTab === '__todas__' ? C.cream : C.forestSoft,
+                    color: selectedMozoTab === '__todas__' ? C.forest : C.cream,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '12px', fontWeight: 700, flexShrink: 0,
+                  }}>
+                    ✕
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap' }}>Todas</div>
+                    <div style={{ fontSize: '10px', opacity: 0.7 }}>Sin mozo</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '10px', opacity: 0.8, fontWeight: 600 }}>
+                  {sortedRes.filter(r => !r.staffName).length} reserva{sortedRes.filter(r => !r.staffName).length !== 1 ? 's' : ''}
+                </div>
+              </button>
+              {activeStaff.map(s => {
+                const assigned = getAssignedTables(s);
+                const count = svcRes.filter(r => r.staffName === s.name).length;
+                const isSelected = selected && selected.id === s.id;
+                return (
+                  <button key={s.id} onClick={() => handleMozoTap(s)} style={{
+                    flexShrink: 0, padding: '10px 14px', borderRadius: '12px', border: 'none',
+                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minWidth: '80px',
+                    background: isSelected ? C.forest : C.creamDeep,
+                    color: isSelected ? C.cream : C.espresso,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <div style={{
+                        width: '28px', height: '28px', borderRadius: '50%',
+                        background: isSelected ? C.cream : C.forest,
+                        color: isSelected ? C.forest : C.cream,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '12px', fontWeight: 700, flexShrink: 0,
+                      }}>
+                        {s.name?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap' }}>{s.name}</div>
+                        <div style={{ fontSize: '10px', opacity: 0.7 }}>{assigned.length} mesas</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '10px', opacity: 0.8, fontWeight: 600 }}>
+                      {count > 0 ? `${count} reserva${count !== 1 ? 's' : ''}` : 'Sin reservas'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Mesas del mozo (doble tap) */}
+            {selected && showMozoMesas && (
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: C.forest, marginBottom: '10px' }}>
+                  Mesas de {selected.name} ({assignedIds.length})
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))', gap: '6px' }}>
+                  {assignedIds.map(id => {
+                    const t = tables.find(tb => tb.id === id);
+                    const tNum = id.replace('m', '');
+                    const resOnTable = mozoRes.find(r => r.tableId === id);
+                    const status = resOnTable ? tableStatus(id) : { status: 'free' };
+                    let bg = C.white;
+                    let border = C.creamDeep;
+                    let textColor = C.espresso;
+                    let label = '';
+                    if (status.status === 'busy') { bg = C.terra; border = C.terra; textColor = C.cream; label = 'O'; }
+                    else if (status.status === 'reserved') { bg = C.forestSoft; border = C.forestSoft; textColor = C.cream; label = 'R'; }
+                    else if (status.status === 'soon') { bg = C.soon; border = C.soon; textColor = C.cream; label = 'L'; }
+                    return (
+                      <button key={id} onClick={() => {
+                        if (resOnTable) {
+                          if (status.status === 'free') { setPreTable(t); setEditing(null); setShowModal(true); }
+                          else { setShowLiveMenu(resOnTable); }
+                        } else { setPreTable(t); setEditing(null); setShowModal(true); }
+                      }} style={{
+                        aspectRatio: '1', borderRadius: '10px', border: `1.5px solid ${border}`,
+                        background: bg, color: textColor, cursor: 'pointer',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        gap: '2px', fontSize: '11px', fontWeight: 600, fontFamily: 'inherit',
+                      }}>
+                        <span style={{ fontSize: '14px', fontWeight: 700 }}>{t ? t.name.replace('M', '') : tNum}</span>
+                        {t && <span style={{ fontSize: '8px', opacity: 0.7 }}>{t.capacity}p</span>}
+                        {label && <span style={{ fontSize: '8px', opacity: 0.8 }}>{label}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Reservas del mozo seleccionado */}
+            {selected && (
+              mozoRes.length > 0 ? (
+                <ReservationList
+                  sortedRes={mozoRes}
+                  tables={tables}
+                  onEdit={(r) => { setEditing(r); setShowModal(true); }}
+                  onAction={(r) => setShowLiveMenu(r)}
+                />
+              ) : (
+                <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
+                  {selected.name} no tiene reservas en este servicio
+                </div>
+              )
+            )}
+
+            {/* Sin mozo seleccionado: Todas (reservas sin mozo asignado) */}
+            {!selected && (
+              sortedRes.filter(r => !r.staffName).length > 0 ? (
+                <ReservationList
+                  sortedRes={sortedRes.filter(r => !r.staffName)}
+                  tables={tables}
+                  onEdit={(r) => { setEditing(r); setShowModal(true); }}
+                  onAction={(r) => setShowLiveMenu(r)}
+                />
+              ) : (
+                <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
+                  No hay reservas sin mozo asignado
+                </div>
+              )
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── PLANO DEL SALON ── */}
       {mainTab === 'plano' && (
@@ -689,6 +827,7 @@ export default function StaffDashboard({ onLogout }) {
       {showStaff && (
         <StaffModal
           staff={staff}
+          tables={tables}
           onClose={() => setShowStaff(false)}
         />
       )}

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Trash2 } from 'lucide-react';
-import { C } from '../utils';
+import { C, getAssignedTables } from '../utils';
 import { Overlay } from './LiveStateModal';
 
 export function Field({ label, children }) {
@@ -32,6 +32,26 @@ export default function ResModal({ editing, preTable, tables, slots, service, ta
 
   const selectedTable = tables.find(t => t.id === form.tableId);
   const valid = form.customerName.trim() && form.time && form.partySize > 0;
+
+  // Al asignar un mozo, auto-seleccionar su primera mesa libre
+  const prevStaffId = useRef(form.staffId);
+  useEffect(() => {
+    if (form.staffId === prevStaffId.current) return;
+    prevStaffId.current = form.staffId;
+    if (!form.staffId) return;
+    const mozo = staff.find(s => s.id === form.staffId);
+    if (!mozo) return;
+    const assigned = getAssignedTables(mozo);
+    for (const id of assigned) {
+      const t = tables.find(tbl => tbl.id === id);
+      if (!t || t.capacity < form.partySize) continue;
+      const st = tableStatus(id);
+      if (st.status === 'free' || st.status === 'soon') {
+        set('tableId', id);
+        return;
+      }
+    }
+  }, [form.staffId]);
 
   return (
     <Overlay onClose={onClose}>

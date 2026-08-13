@@ -69,8 +69,63 @@ const SalonFloor = React.memo(function SalonFloor({
   const [fitScale, setFitScale] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  );
   const pinchRef = useRef(null);
   const panRef = useRef(null);
+  const lastTapRef = useRef(0);
+
+  const effectiveScale = fitScale * zoom;
+
+  const clampOffset = useCallback((o) => {
+    const el = containerRef.current;
+    if (!el) return o;
+    const w = el.clientWidth || 0;
+    const h = el.clientHeight || 0;
+    const visualW = (isMobile ? CANVAS_H : CANVAS_W) * effectiveScale;
+    const visualH = (isMobile ? CANVAS_W : CANVAS_H) * effectiveScale;
+    const maxX = Math.max(0, (visualW - w) / 2);
+    const maxY = Math.max(0, (visualH - h) / 2);
+    return {
+      x: Math.max(-maxX, Math.min(maxX, o.x)),
+      y: Math.max(-maxY, Math.min(maxY, o.y)),
+    };
+  }, [isMobile, effectiveScale]);
+
+  const zoomAt = useCallback((factor, cx, cy) => {
+    setZoom(prev => {
+      const newZ = Math.min(3, Math.max(1, prev * factor));
+      const k = newZ / prev;
+      setOffset(prevOff => clampOffset({
+        x: cx + k * (prevOff.x - cx),
+        y: cy + k * (prevOff.y - cy),
+      }));
+      return newZ;
+    });
+  }, [clampOffset]);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  }, []);
+
+  // Wheel zoom (PC) — listener no-pasivo para poder cancelar el scroll
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (isEditing) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const k = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      zoomAt(k, cx, cy);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [isEditing, zoomAt]);
 
   useEffect(() => {
     const unsub = onSnapshot(layoutRef(), (snap) => {
@@ -96,17 +151,27 @@ const SalonFloor = React.memo(function SalonFloor({
   }, [isEditing]);
 
   useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
     const calcFit = () => {
       if (!containerRef.current) return;
       const containerW = containerRef.current.clientWidth;
-      setFitScale(containerW / CANVAS_W);
+      const containerH = containerRef.current.clientHeight;
+      if (isMobile) {
+        setFitScale(Math.min(containerW / CANVAS_H, containerH / CANVAS_W));
+      } else {
+        setFitScale(containerW / CANVAS_W);
+      }
     };
     calcFit();
     window.addEventListener('resize', calcFit);
     return () => window.removeEventListener('resize', calcFit);
-  }, []);
-
-  const effectiveScale = fitScale * zoom;
+  }, [isMobile]);
 
   const handleDragStart = useCallback((tableId, e) => {
     if (!isEditing) return;
@@ -133,8 +198,10 @@ const SalonFloor = React.memo(function SalonFloor({
     const onMove = (ev) => {
       const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
       const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
-      const dx = (cx - startX) / effectiveScale;
-      const dy = (cy - startY) / effectiveScale;
+      const rawDx = (cx - startX) / effectiveScale;
+      const rawDy = (cy - startY) / effectiveScale;
+      const dx = isMobile ? -rawDy : rawDx;
+      const dy = isMobile ? rawDx : rawDy;
       const newX = startPos.x + dx;
       const newY = startPos.y + dy;
 
@@ -168,18 +235,37 @@ const SalonFloor = React.memo(function SalonFloor({
     window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('touchend', onUp);
-  }, [isEditing, positions, tables, effectiveScale]);
+  }, [isEditing, positions, tables, effectiveScale, isMobile]);
 
   const handleTouchStart = useCallback((e) => {
     if (isEditing) return;
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
-      pinchRef.current = { dist: Math.sqrt(dx * dx + dy * dy), zoom };
-    } else if (e.touches.length === 1 && zoom > 1) {
+      pinchRef.current = {
+        dist: Math.sqrt(dx * dx + dy * dy),
+        zoom,
+        mid: {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+        },
+      };
+    } else if (e.touches.length === 1) {
       panRef.current = { x: e.touches[0].clientX - offset.x, y: e.touches[0].clientY - offset.y };
+
+      // Doble tap → toggle zoom
+      const now = Date.now();
+      if (now - lastTapRef.current < 280) {
+        lastTapRef.current = 0;
+        const rect = containerRef.current?.getBoundingClientRect();
+        const cx = e.touches[0].clientX - (rect?.left || 0);
+        const cy = e.touches[0].clientY - (rect?.top || 0);
+        zoomAt(zoom > 1.4 ? 1 / zoom : 2, cx, cy);
+      } else {
+        lastTapRef.current = now;
+      }
     }
-  }, [zoom, offset, isEditing]);
+  }, [zoom, offset, isEditing, zoomAt]);
 
   const handleTouchMove = useCallback((e) => {
     if (isEditing) return;
@@ -189,14 +275,72 @@ const SalonFloor = React.memo(function SalonFloor({
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const ratio = dist / pinchRef.current.dist;
-      setZoom(Math.min(Math.max(pinchRef.current.zoom * ratio, 1), 3));
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+      const startZoom = pinchRef.current.zoom;
+      const newZ = Math.min(3, Math.max(1, startZoom * ratio));
+      const k = newZ / startZoom;
+      const startMid = pinchRef.current.mid;
+      // Mover el offset para acompanar el centro del pellizco
+      const driftX = midX - startMid.x;
+      const driftY = midY - startMid.y;
+      setOffset(prev => clampOffset({
+        x: midX + k * (prev.x - startMid.x) + driftX,
+        y: midY + k * (prev.y - startMid.y) + driftY,
+      }));
+      panRef.current = { x: midX - offset.x, y: midY - offset.y };
+      setZoom(newZ);
     } else if (e.touches.length === 1 && panRef.current) {
       e.preventDefault();
-      setOffset({ x: e.touches[0].clientX - panRef.current.x, y: e.touches[0].clientY - panRef.current.y });
+      setOffset(clampOffset({
+        x: e.touches[0].clientX - panRef.current.x,
+        y: e.touches[0].clientY - panRef.current.y,
+      }));
     }
+  }, [clampOffset, offset.x, offset.y]);
+
+  const handleTouchEnd = useCallback(() => {
+    pinchRef.current = null;
+    panRef.current = null;
   }, []);
 
-  const handleTouchEnd = useCallback(() => { pinchRef.current = null; panRef.current = null; }, []);
+  // ── Pan con mouse en PC ────────────────────────────────────────────────
+  const mousePanRef = useRef(null);
+
+  const handleMouseDown = useCallback((e) => {
+    if (isEditing || isEditingSectors || zoom <= 1) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    mousePanRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+  }, [isEditing, isEditingSectors, zoom, offset]);
+
+  const handleMouseMove = useCallback((e) => {
+    if (!mousePanRef.current) return;
+    e.preventDefault();
+    setOffset(clampOffset({
+      x: e.clientX - mousePanRef.current.x,
+      y: e.clientY - mousePanRef.current.y,
+    }));
+  }, [clampOffset]);
+
+  const handleMouseUp = useCallback(() => {
+    mousePanRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) return;
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      el.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isMobile, handleMouseDown, handleMouseMove, handleMouseUp]);
 
   const handleSave = useCallback(async () => {
     try {
@@ -223,8 +367,10 @@ const SalonFloor = React.memo(function SalonFloor({
     const onMove = (ev) => {
       const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
       const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
-      const dx = (cx - startX) / effectiveScale;
-      const dy = (cy - startY) / effectiveScale;
+      const rawDx = (cx - startX) / effectiveScale;
+      const rawDy = (cy - startY) / effectiveScale;
+      const dx = isMobile ? -rawDy : rawDx;
+      const dy = isMobile ? rawDx : rawDy;
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         const el = document.querySelector(`[data-sector-id="${sectorId}"]`);
@@ -254,7 +400,7 @@ const SalonFloor = React.memo(function SalonFloor({
     window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('touchend', onUp);
-  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors]);
+  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors, isMobile]);
 
   const handleSectorResize = useCallback((sectorId, handle, e) => {
     if (!isEditingSectors) return;
@@ -271,8 +417,10 @@ const SalonFloor = React.memo(function SalonFloor({
     const onMove = (ev) => {
       const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
       const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
-      const dx = (cx - startX) / effectiveScale;
-      const dy = (cy - startY) / effectiveScale;
+      const rawDx = (cx - startX) / effectiveScale;
+      const rawDy = (cy - startY) / effectiveScale;
+      const dx = isMobile ? -rawDy : rawDx;
+      const dy = isMobile ? rawDx : rawDy;
       let { x, y, w, h } = orig;
 
       if (handle.includes('e')) w = Math.max(80, orig.w + dx);
@@ -311,7 +459,7 @@ const SalonFloor = React.memo(function SalonFloor({
     window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('touchend', onUp);
-  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors]);
+  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors, isMobile]);
 
   const handleReset = useCallback(() => {
     setPositions(defaultPositions(tables));
@@ -375,23 +523,80 @@ const SalonFloor = React.memo(function SalonFloor({
         onTouchEnd={handleTouchEnd}
         style={{
           width: '100%',
-          maxWidth: '1500px',
+          maxWidth: isMobile ? '600px' : '1500px',
           margin: '0 auto',
-          aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+          aspectRatio: isMobile ? `${CANVAS_H} / ${CANVAS_W}` : `${CANVAS_W} / ${CANVAS_H}`,
           background: PALETTE.creamDeep,
           borderRadius: '10px',
           overflow: 'hidden',
           touchAction: 'none',
           position: 'relative',
+          cursor: (!isEditing && !isEditingSectors && zoom > 1) ? 'grab' : 'default',
         }}
       >
+        {/* Botones de zoom flotantes */}
+        {!isEditing && !isEditingSectors && (
+          <div style={{
+            position: 'absolute', right: '10px', top: '10px', zIndex: 30,
+            display: 'flex', flexDirection: 'column', gap: '4px',
+          }}>
+            <button
+              onClick={() => {
+                const rect = containerRef.current?.getBoundingClientRect();
+                const cx = (rect?.left || 0) + (rect?.width || 0) / 2;
+                const cy = (rect?.top || 0) + (rect?.height || 0) / 2;
+                zoomAt(1.35, cx, cy);
+              }}
+              title="Acercar"
+              style={{
+                width: '34px', height: '34px', borderRadius: '9px', border: 'none',
+                background: 'rgba(255,255,255,0.92)', color: PALETTE.forest,
+                cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center',
+                justifyContent: 'center', backdropFilter: 'blur(4px)',
+              }}
+            >+</button>
+            <button
+              onClick={() => {
+                const rect = containerRef.current?.getBoundingClientRect();
+                const cx = (rect?.left || 0) + (rect?.width || 0) / 2;
+                const cy = (rect?.top || 0) + (rect?.height || 0) / 2;
+                zoomAt(1 / 1.35, cx, cy);
+              }}
+              title="Alejar"
+              style={{
+                width: '34px', height: '34px', borderRadius: '9px', border: 'none',
+                background: 'rgba(255,255,255,0.92)', color: PALETTE.forest,
+                cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center',
+                justifyContent: 'center', backdropFilter: 'blur(4px)',
+              }}
+            >−</button>
+            {zoom > 1 && (
+              <button
+                onClick={resetView}
+                title="Restablecer vista"
+                style={{
+                  width: '34px', height: '34px', borderRadius: '9px', border: 'none',
+                  background: 'rgba(255,255,255,0.92)', color: PALETTE.terra,
+                  cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+                  fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', backdropFilter: 'blur(4px)',
+                }}
+              >⟲</button>
+            )}
+          </div>
+        )}
         <div data-canvas style={{
           position: 'absolute',
-          top: 0, left: 0,
+          top: isMobile ? '50%' : 0,
+          left: isMobile ? '50%' : 0,
           width: CANVAS_W,
           height: CANVAS_H,
-          transform: `translate(${offset.x}px, ${offset.y}px) scale(${fitScale * zoom})`,
-          transformOrigin: 'top left',
+          transform: isMobile
+            ? `translate(${offset.x}px, ${offset.y}px) translate(-50%, -50%) rotate(90deg) scale(${effectiveScale})`
+            : `translate(${offset.x}px, ${offset.y}px) scale(${effectiveScale})`,
+          transformOrigin: isMobile ? 'center' : 'top left',
         }}>
           <svg width={CANVAS_W} height={CANVAS_H} style={{ position: 'absolute', top: 0, left: 0 }}>
             <defs>
@@ -564,49 +769,51 @@ const SalonFloor = React.memo(function SalonFloor({
                   willChange: isEditing ? 'transform' : 'auto',
                 }}
               >
-                <span style={{
-                  fontFamily: '"Fraunces", serif',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  color: fg,
-                  lineHeight: 1,
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transform: isMobile ? 'rotate(-90deg)' : 'none',
+                  width: dim.h,
+                  height: dim.w,
                 }}>
-                  {t.name}
-                </span>
-                {ct ? (
-                  <>
-                    <span style={{ fontSize: '9px', color: fg, opacity: 0.9, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatCountdown(ct.remainingSec)}
-                    </span>
-                    <div style={{ width: dim.w - 20, height: '3px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', marginTop: '2px', overflow: 'hidden' }}>
-                      <div style={{ width: `${ct.progress * 100}%`, height: '100%', background: '#fff', borderRadius: '2px', transition: 'width 1s linear' }} />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <span style={{
-                      fontSize: '8px',
-                      color: fg,
-                      opacity: 0.8,
-                      marginTop: '1px',
-                      textAlign: 'center',
-                      maxWidth: dim.w - 10,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {label}
-                    </span>
-                    <span style={{
-                      fontSize: '7px',
-                      color: fg,
-                      opacity: 0.5,
-                      marginTop: '1px',
-                    }}>
-                      {t.capacity}p
-                    </span>
-                  </>
-                )}
+                  {ct ? (
+                    <>
+                      <span style={{ fontSize: '9px', color: fg, opacity: 0.9, fontVariantNumeric: 'tabular-nums' }}>
+                        {formatCountdown(ct.remainingSec)}
+                      </span>
+                      <div style={{ width: dim.h - 20, height: '3px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', marginTop: '2px', overflow: 'hidden' }}>
+                        <div style={{ width: `${ct.progress * 100}%`, height: '100%', background: '#fff', borderRadius: '2px', transition: 'width 1s linear' }} />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{
+                        fontFamily: '"Fraunces", serif',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        color: fg,
+                        lineHeight: 1,
+                      }}>
+                        {t.capacity}p
+                      </span>
+                      <span style={{
+                        fontSize: '8px',
+                        color: fg,
+                        opacity: 0.8,
+                        marginTop: '3px',
+                        textAlign: 'center',
+                        maxWidth: dim.h - 10,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {label}
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}
