@@ -3,87 +3,100 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: Verifica si el usuario está autenticado.
-    // La app firma una sesión anónima al arrancar (src/firebase.js), por lo que
-    // las escrituras exigen request.auth != null sin pedir login al usuario.
-    // Esto bloquea requests externos sin sesión (scrapers, scripts con curl).
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    // Clientes: sesión anónima (formulario público, solo crear reservas).
+    // Staff: debe tener el custom claim `staff: true` (ver functions/admin.js).
     function isAuthenticated() {
       return request.auth != null;
     }
-
-    // --- RESERVATIONS (FLAT) ---
-    // Structure: reservations/{reservationId}  (date is a field, not a path segment)
-    // Used by: client form (create), staff dashboard (read/update/delete), n8n
-    match /reservations/{reservationId} {
-      allow create: if isAuthenticated()
-        && request.resource.data.keys().hasAll(['customerName', 'date', 'service']);
-      allow read: if true;
-      allow update: if isAuthenticated()
-        && request.resource.data.keys().hasAny([
-          'liveState', 'tableId', 'estado',
-          'pedidoEstado', 'stateLog',
-          'startedAt', 'leftAt',
-          'cleaningStartedAt', 'cleaningCompletedAt'
-        ]);
-      allow delete: if isAuthenticated();
+    function isStaff() {
+      return request.auth != null && request.auth.token.staff == true;
     }
 
-    // --- RESERVATIONS (LEGACY NESTED) — kept for backward compat, prefer flat ---
+    // Creación de reservas desde el formulario público: solo campos mínimos,
+    // siempre 'pendiente' y sin mesa asignada (imposible forjar reservas confirmadas).
+    function isClientReservationCreate() {
+      return isAuthenticated()
+        && request.resource.data.keys().hasOnly([
+          'id', 'customerName', 'partySize', 'time', 'duration',
+          'service', 'notes', 'estado', 'date', 'staffId', 'staffName',
+          'mesa_id', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.customerName is string
+        && request.resource.data.customerName.size() >= 2
+        && request.resource.data.customerName.size() <= 60
+        && request.resource.data.partySize is int
+        && request.resource.data.partySize >= 1
+        && request.resource.data.partySize <= 20
+        && request.resource.data['service'] in ['mediodia', 'cena']
+        && request.resource.data.date is string
+        && request.resource.data.date.size() == 10
+        && request.resource.data.time is string
+        && request.resource.data.time.size() == 5
+        && request.resource.data.duration is int
+        && request.resource.data.duration >= 30
+        && request.resource.data.duration <= 240;
+    }
+
+    // ── RESERVATIONS (FLAT) ──────────────────────────────────────────────────
+    // Structure: reservations/{reservationId}  (date is a field, not a path segment)
+    // Usada por: formulario cliente (create), staff dashboard (read/update/delete), n8n
+    match /reservations/{reservationId} {
+      allow create: if isClientReservationCreate() || isStaff();
+      // PII (customerName, phone): nunca lectura pública.
+      allow read:   if isAuthenticated();
+      allow update: if isStaff();
+      allow delete: if isStaff();
+    }
+
+    // ── RESERVATIONS (LEGACY NESTED) — kept for backward compat, prefer flat ──
     match /reservations/{date}/items/{itemId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow write: if false;
     }
 
-    // --- MÉTRICAS DE RESERVAS ---
+    // ── MÉTRICAS DE RESERVAS ─────────────────────────────────────────────────
     // Structure: metricas_reservas/{reservationId}
-    // Used by: useCleaningTimers (saveMetrics) — sin regla explícita Firestore
-    // deniega por defecto, por eso se declara aquí.
+    // Usada por: useCleaningTimers (saveMetrics) — solo staff
     match /metricas_reservas/{reservationId} {
-      allow read: if true;
-      allow create, update: if isAuthenticated();
+      allow read: if isStaff();
+      allow create, update: if isStaff();
     }
 
-    // --- CONFIG ---
+    // ── CONFIG ───────────────────────────────────────────────────────────────
     // Structure: config/{configId}
-    // Used by: salon-layout (positions), restaurant settings
+    // READ: cualquiera (el formulario público lee config/restaurant)
+    // WRITE: solo staff
     match /config/{configId} {
-      // READ: anyone (clients need to see salon layout, capacity, etc.)
       allow read: if true;
-
-      // WRITE: solo sesión autenticada (staff actualiza settings y layout)
-      allow create, update, delete: if isAuthenticated();
+      allow create, update, delete: if isStaff();
     }
 
-    // --- MESAS RESERVADAS ---
+    // ── MESAS RESERVADAS ─────────────────────────────────────────────────────
     // Structure: mesasReservadas/{mesaId}_{date}_{service}
-    // Used by: n8n creates/reads (con service account, que saltea las reglas), staff manages
+    // Usada por: staff (transacciones), n8n/webhook con service account (saltea reglas)
     match /mesasReservadas/{docId} {
-      allow read: if true;
-      allow create, update: if isAuthenticated()
-        && request.resource.data.keys().hasAny(['occupied', 'reservationId']);
-      allow delete: if isAuthenticated();
+      allow read: if isStaff();
+      allow create, update: if isStaff()
+        && request.resource.data.keys().hasOnly(['occupied', 'reservationId', 'time', 'partySize']);
+      allow delete: if isStaff();
     }
 
-    // --- STAFF ---
+    // ── STAFF ────────────────────────────────────────────────────────────────
     // Structure: staff/{staffId}
-    // Used by: staff authentication, role management
+    // Solo staff puede leer/escribir (los mozos son datos internos)
     match /staff/{staffId} {
-      // READ: anyone (needed for login lookup)
-      allow read: if true;
-
-      // WRITE: solo sesión autenticada
-      allow create, update, delete: if isAuthenticated();
+      allow read: if isStaff();
+      allow create, update, delete: if isStaff();
     }
 
-    // --- MESAS ---
+    // ── MESAS ────────────────────────────────────────────────────────────────
     // Structure: mesas/{mesaId}
-    // Used by: salon floor display, table management
+    // Solo staff (el plano y el seed corren dentro del dashboard)
     match /mesas/{mesaId} {
-      // READ: anyone (clients see table layout, staff sees all tables)
-      allow read: if true;
-
-      // WRITE: solo sesión autenticada
-      allow create, update, delete: if isAuthenticated();
+      allow read: if isStaff();
+      allow create, update, delete: if isStaff();
     }
   }
 }

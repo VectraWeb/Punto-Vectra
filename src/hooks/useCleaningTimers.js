@@ -77,12 +77,15 @@ export function useCleaningTimers(reservations, date, tables) {
   const timersRef = useRef({});
   // Solamente expiración por mesa: estable entre inicio/fin/extensión
   const [sharedTimers, setSharedTimers] = useState({});
-  const finalizingRef = useRef(false);
+  // Reservas en proceso de finalización: un Set por id permite que dos mesas
+  // expiren en el mismo tick sin que una pierda su finalización (antes era un
+  // boolean global y la segunda mesa quedaba "para_limpiar" para siempre).
+  const finalizingRef = useRef(new Set());
   const doFinalizeRef = useRef(null);
 
   const doFinalize = useCallback(async (res) => {
-    if (finalizingRef.current) return;
-    finalizingRef.current = true;
+    if (finalizingRef.current.has(res.id)) return;
+    finalizingRef.current.add(res.id);
 
     const tableName = tables.find(t => t.id === res.tableId)?.name || res.tableId;
     const startTs = toMs(res.startedAt || res.createdAt);
@@ -115,7 +118,7 @@ export function useCleaningTimers(reservations, date, tables) {
     } catch (e) {
       console.warn('[CleaningTimer] Error al finalizar:', e);
     } finally {
-      finalizingRef.current = false;
+      finalizingRef.current.delete(res.id);
     }
   }, [date, tables]);
 

@@ -146,7 +146,8 @@ export default function StaffDashboard({ onLogout }) {
 
   // ── CRUD de reservas ───────────────────────────────────────────────────────
   const saveRes = useCallback(async (data) => {
-    const id = data.id || `r${Date.now()}`;
+    // ID único: sufijo aleatorio evita colisiones de reservas simultáneas
+    const id = data.id || `r${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const { _oldMesaRef, _prevResId, _prevMesaRef, ...cleanData } = data;
     // La mesa toma el número que el mozo eligió para ella: el plano se adapta
     // al mozo, y la reserva queda vinculada a ese número, no al físico.
