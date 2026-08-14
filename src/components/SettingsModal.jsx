@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { C, SHAPE_LABELS, SHAPE_KEYS } from '../utils';
-import { Overlay } from './LiveStateModal';
+import { Overlay } from './ui';
 
 const CAPACIDAD_OPTIONS = [2, 4, 6, 8, 10, 12];
 

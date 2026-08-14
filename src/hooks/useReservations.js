@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import { toLocalISO } from '../utils';
 
 const resCol = () => collection(db, 'reservations');
+const MAX_IN_VALUES = 10;
 
 export function useReservations(date) {
   const [reservations, setReservations] = useState([]);
@@ -35,12 +37,18 @@ export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod) {
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(date + 'T12:00:00');
       d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().slice(0, 10));
+      dates.push(toLocalISO(d));
     }
     (async () => {
       try {
-        const snap = await getDocs(query(resCol(), where('date', 'in', dates)));
-        const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const chunks = [];
+        for (let i = 0; i < dates.length; i += MAX_IN_VALUES) {
+          chunks.push(dates.slice(i, i + MAX_IN_VALUES));
+        }
+        const results = await Promise.all(
+          chunks.map(c => getDocs(query(resCol(), where('date', 'in', c))))
+        );
+        const all = results.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() })));
         setAnalyticsRes(all);
       } catch (err) {
         console.error('[Andi] Analytics fetch error:', err);

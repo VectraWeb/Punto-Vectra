@@ -1,41 +1,13 @@
 import { collection, doc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
-import { db } from './firebase';
+import { db } from '../firebase';
+import { buildTables } from '../utils';
 
 export const mesasCol = () => collection(db, 'mesas');
 export const mesaDoc = (id) => doc(db, 'mesas', id);
 
-const SHAPE_MAP_LOCAL = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square', 'cuadrada chica': 'square-sm' };
-
-function normalizeConfig(config) {
-  if (!config) return [];
-  if (Array.isArray(config)) return config;
-  if (typeof config === 'object') {
-    const groups = [
-      { capacidad: 2, forma: 'rectangular', cantidad: config.cap2 || 0 },
-      { capacidad: 4, forma: 'rectangular', cantidad: config.cap4 || 0 },
-      { capacidad: 5, forma: 'redonda', cantidad: config.cap5 || 0 },
-      { capacidad: 8, forma: 'cuadrada', cantidad: config.cap8 || 0 },
-    ];
-    return groups.filter(g => g.cantidad > 0);
-  }
-  return [];
-}
-
-export const buildMesasList = (config) => {
-  const items = normalizeConfig(config);
-  const mesas = [];
-  let num = 1;
-  for (const item of items) {
-    const cap = item.capacidad || item.capacity || 0;
-    const count = item.cantidad || 1;
-    const shape = SHAPE_MAP_LOCAL[item.forma] || item.shape || 'rectangular';
-    for (let i = 0; i < count; i++) {
-      mesas.push({ id: `m${num}`, name: `M${num}`, number: num, capacity: cap, shape });
-      num++;
-    }
-  }
-  return mesas;
-};
+// Unifica la construcción de mesas en utils.buildTables para evitar que el
+// seed de la colección "mesas" diverja del plano (formas/capacidades).
+export const buildMesasList = (config) => buildTables(config);
 
 export const seedMesasIfNeeded = async (config) => {
   const snap = await getDocs(mesasCol());

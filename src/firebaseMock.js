@@ -203,12 +203,19 @@ export async function getDocs(ref) {
 }
 
 export function query(collectionRef, ...constraints) {
-  void constraints; // este mock ignora filtros/órdenes
+  for (const c of constraints) {
+    if (c && c.op === 'in' && Array.isArray(c.value) && c.value.length > 10) {
+      console.warn(
+        `[firebaseMock] where('${c.field}', 'in', [...]) con ${c.value.length} valores ` +
+        'excede el límite real de Firestore (máx. 10). Esta query fallará en producción.'
+      );
+    }
+  }
   return collectionRef;
 }
 
-export function where() {
-  return {};
+export function where(field, op, value) {
+  return { field, op, value };
 }
 
 export function writeBatch() {

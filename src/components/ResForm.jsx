@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { C, SERVICES, DEFAULT_CONFIG, configToArray, t2m, todayISO, detectService } from '../utils';
+import { Field } from './ui';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resCol = () => collection(db, 'reservations');
@@ -20,15 +21,6 @@ const inp = {
   borderRadius: '12px', color: C.espresso, outline: 'none',
   fontFamily: 'inherit',
 };
-
-function Field({ label, children }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.muted, fontWeight: 600, marginBottom: '6px' }}>{label}</label>
-      {children}
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResForm — Formulario de reserva para clientes
@@ -128,7 +120,7 @@ export default function ResForm({ onStaffAccess }) {
     const date = todayISO();
 
     const validEstados = ['pendiente', 'confirmada', 'esperando_cliente'];
-    const duplicate = reservations.some(r =>
+    const duplicate = form.phone && reservations.some(r =>
       (r.customerPhone === form.phone || r.phone === form.phone) &&
       r.service === service &&
       validEstados.includes(r.estado || '')

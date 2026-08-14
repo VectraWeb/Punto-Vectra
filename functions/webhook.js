@@ -11,6 +11,7 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import crypto from 'crypto';
 
 // ── Firebase Admin SDK (solo inicializar una vez) ──────────────────────────
 if (!admin.apps.length) {
@@ -20,10 +21,14 @@ const db = admin.firestore();
 
 // ── Variables de entorno ────────────────────────────────────────────────────
 // Configurar en Firebase Functions config o en .env para Supabase:
-//   firebase functions:config:set whatsapp.token="TU_TOKEN" whatsapp.verify_token="TU_VERIFY_TOKEN"
+//   firebase functions:config:set whatsapp.token="TU_TOKEN" whatsapp.verify_token="TU_VERIFY_TOKEN" whatsapp.app_secret="TU_APP_SECRET"
+// El APP_SECRET es el "App Secret" de la app de Meta: permite verificar la
+// firma X-Hub-Signature-256 de cada request. Sin él, la verificación se omite
+// con un warning (NO desplegar en producción sin configurarlo).
 const WHATSAPP_TOKEN        = process.env.WHATSAPP_TOKEN        || functions.config().whatsapp?.token;
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || functions.config().whatsapp?.verify_token;
 const WHATSAPP_PHONE_ID     = process.env.WHATSAPP_PHONE_ID     || functions.config().whatsapp?.phone_id;
+const WHATSAPP_APP_SECRET   = process.env.WHATSAPP_APP_SECRET   || functions.config().whatsapp?.app_secret;
 
 // ── Constantes de negocio ───────────────────────────────────────────────────
 const SERVICES = {
@@ -40,6 +45,25 @@ const t2m = (time, service) => {
 // Sesiones de conversación en memoria (para producción: usar Firestore o Redis)
 // key: phoneNumber → { step, name, partySize, date, time, service }
 const sessions = new Map();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Verificación de firma de Meta (X-Hub-Signature-256)
+// ═══════════════════════════════════════════════════════════════════════════════
+function isValidSignature(req) {
+  if (!WHATSAPP_APP_SECRET) {
+    console.warn('[Andi] WHATSAPP_APP_SECRET no configurado: se omite la verificación de firma.');
+    return true;
+  }
+  const sig = req.headers['x-hub-signature-256'];
+  if (!sig) return false;
+  // req.rawBody no siempre está disponible en Firebase Functions v1; si no,
+  // se reconstruye el JSON. Meta firma el body crudo, así que el fallback solo
+  // coincide si Meta envió JSON compacto sin caracteres especiales.
+  const raw = req.rawBody || Buffer.from(JSON.stringify(req.body));
+  const expected = 'sha256=' + crypto.createHmac('sha256', WHATSAPP_APP_SECRET).update(raw).digest('hex');
+  if (sig.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ENDPOINT GET — Verificación del Webhook por Meta
@@ -62,6 +86,16 @@ export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
   // ═══════════════════════════════════════════════════════════════════════════
   if (req.method === 'POST') {
     try {
+      if (!WHATSAPP_TOKEN || !WHATSAPP_PHONE_ID) {
+        console.error('[Andi] WHATSAPP_TOKEN/PHONE_ID no configurados.');
+        return res.sendStatus(503);
+      }
+
+      if (!isValidSignature(req)) {
+        console.warn('[Andi] Firma inválida, se rechaza el request.');
+        return res.sendStatus(401);
+      }
+
       const body = req.body;
 
       // Validar estructura del payload de Meta
@@ -79,7 +113,20 @@ export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
 
       const from    = message.from;           // Número del cliente
       const msgBody = message.text?.body?.trim() || '';
-      const msgId   = message.id;
+
+      // Dedup: Meta reintenta POSTs fallidos; cada message.id se procesa una sola vez
+      const dedupRef = db.doc(`webhook_events/${message.id}`);
+      try {
+        let duplicate = false;
+        await db.runTransaction(async (tx) => {
+          const snap = await tx.get(dedupRef);
+          if (snap.exists) { duplicate = true; return; }
+          tx.set(dedupRef, { at: Date.now(), from });
+        });
+        if (duplicate) return res.sendStatus(200);
+      } catch (e) {
+        console.warn('[Andi] Error en dedup, se procesa igual:', e);
+      }
 
       console.log(`[Andi] Mensaje de ${from}: "${msgBody}"`);
 
@@ -211,68 +258,74 @@ async function handleConversation(phone, message) {
 // ═══════════════════════════════════════════════════════════════════════════════
 async function findAndBookTable({ date, time, service, partySize, name }, phone) {
   try {
-    // 1. Cargar configuración de mesas
+    // 1. Cargar configuración de mesas (fuera de la transacción: cambia poco)
     const cfgSnap = await db.doc('config/restaurant').get();
     const cfg     = cfgSnap.exists ? cfgSnap.data() : { cap2: 2, cap4: 2, cap5: 2, cap8: 2 };
     const tables  = buildTables(cfg);
 
-    // 2. Cargar reservas del día (flat structure: reservations/{id})
-    const resSnap = await db.collection('reservations').where('date', '==', date).get();
-    let reservations = resSnap.docs.map(d => d.data());
-    // Filtrar estados inactivos (cancelado, no_show, ausente)
-    const estadosInactivos = ['cancelado', 'no_show', 'ausente'];
-    reservations = reservations.filter(r => !estadosInactivos.includes(r.estado));
-
-    // 3. Calcular duración y ventana de tiempo
+    // 2. Chequeo de disponibilidad + inserción en UNA transacción, para evitar
+    //    dobles reservas si dos conversaciones llegan al mismo tiempo.
     const duration = SERVICES[service].defaultDuration;
     const newStart = t2m(time, service);
     const newEnd   = newStart + duration;
 
-    // 4. Encontrar mesas con capacidad suficiente que no tengan conflicto
     const candidateTables = tables
       .filter(t => t.capacity >= partySize)
       .sort((a, b) => a.capacity - b.capacity); // preferir la más pequeña que alcance
 
-    const available = candidateTables.find(table => {
-      const conflict = reservations.some(r => {
-        if (r.tableId !== table.id || r.service !== service) return false;
-        const rStart = t2m(r.time, r.service);
-        const rEnd   = rStart + r.duration;
-        return newStart < rEnd && newEnd > rStart;
-      });
-      return !conflict;
-    });
-
-    if (!available) return { success: false };
-
-    // 5. Insertar reserva en Firestore (flat structure: reservations/{id})
     const id = `r${Date.now()}`;
-    await db.collection('reservations').doc(id).set({
-      id,
-      customerName: name,
-      phone,
-      partySize,
-      tableId:  available.id,
-      mesa_id:  available.id,
-      time,
-      duration,
-      service,
-      date,
-      estado:   'confirmada',
-      source:   'whatsapp_bot',
-      notes:    'Reservado vía WhatsApp Bot',
-      liveState: null,
-      startedAt: null,
-      leftAt:   null,
-      staffId:  null,
-      staffName: null,
-      customerPhone: phone,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    let booked = null;
+
+    await db.runTransaction(async (tx) => {
+      const resSnap = await tx.get(
+        db.collection('reservations').where('date', '==', date)
+      );
+      let reservations = resSnap.docs.map(d => d.data());
+      const estadosInactivos = ['cancelado', 'no_show', 'ausente'];
+      reservations = reservations.filter(r => !estadosInactivos.includes(r.estado));
+
+      const available = candidateTables.find(table => {
+        const conflict = reservations.some(r => {
+          if (r.tableId !== table.id || r.service !== service) return false;
+          const rStart = t2m(r.time, r.service);
+          const rEnd   = rStart + r.duration;
+          return newStart < rEnd && newEnd > rStart;
+        });
+        return !conflict;
+      });
+
+      if (!available) return;
+
+      tx.set(db.collection('reservations').doc(id), {
+        id,
+        customerName: name,
+        phone,
+        partySize,
+        tableId:  available.id,
+        mesa_id:  available.id,
+        time,
+        duration,
+        service,
+        date,
+        estado:   'confirmada',
+        source:   'whatsapp_bot',
+        notes:    'Reservado vía WhatsApp Bot',
+        liveState: null,
+        startedAt: null,
+        leftAt:   null,
+        staffId:  null,
+        staffName: null,
+        customerPhone: phone,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      booked = { tableName: available.name };
     });
 
-    console.log(`[Andi] Reserva creada: ${name} → ${available.name} ${date} ${time}`);
-    return { success: true, tableName: available.name };
+    if (!booked) return { success: false };
+
+    console.log(`[Andi] Reserva creada: ${name} → ${booked.tableName} ${date} ${time}`);
+    return { success: true, tableName: booked.tableName };
 
   } catch (err) {
     console.error('[Andi] Error en findAndBookTable:', err);
@@ -342,8 +395,9 @@ function detectServiceFromTime(time) {
   const mEnd   = t2m('15:00', 'mediodia');
   if (mins >= mStart && mins <= mEnd) return 'mediodia';
   const cStart = t2m('19:30', 'cena');
-  // cena llega hasta 01:00 del día siguiente
-  if (mins >= cStart || h < 2) return 'cena';
+  const cEnd   = t2m('01:00', 'cena'); // 01:00 del día siguiente
+  const cMins  = h < 12 ? mins + 24 * 60 : mins;
+  if (cMins >= cStart && cMins <= cEnd) return 'cena';
   return null;
 }
 
@@ -357,23 +411,27 @@ function parseTime(text) {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
+function toLocalISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function parseDate(text) {
   const msg = text.toLowerCase().trim();
   const today = new Date();
-  if (msg === 'hoy') return today.toISOString().slice(0, 10);
+  if (msg === 'hoy') return toLocalISO(today);
   if (msg === 'mañana' || msg === 'manana') {
     const t = new Date(today); t.setDate(t.getDate() + 1);
-    return t.toISOString().slice(0, 10);
+    return toLocalISO(t);
   }
   // formato dd/mm o dd/mm/yy o dd/mm/yyyy
-  const match = msg.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?$/);
+  const match = msg.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
   if (match) {
     const day   = parseInt(match[1]);
     const month = parseInt(match[2]) - 1;
     const year  = match[3] ? (match[3].length === 2 ? 2000 + parseInt(match[3]) : parseInt(match[3])) : today.getFullYear();
     const d = new Date(year, month, day);
     if (isNaN(d)) return null;
-    return d.toISOString().slice(0, 10);
+    return toLocalISO(d);
   }
   return null;
 }

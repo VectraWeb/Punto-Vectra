@@ -15,13 +15,13 @@ const ReservationList = React.memo(function ReservationList({ sortedRes, tables,
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       {sortedRes.map(r => {
         const table = tables.find(t => t.id === r.tableId);
-        const isDone = r.liveState === 'para_limpiar' || r.liveState === 'finalizada';
+        const isDone = r.liveState === 'finalizado' || r.liveState === 'para_limpiar';
         const started = r.liveState && !isDone;
         const live = started ? LIVE_STATES[r.liveState] : null;
 
         let badgeLabel = 'Próxima';
         let badgeColor = C.forestSoft;
-        if (r.liveState === 'finalizada') {
+        if (r.liveState === 'finalizado') {
           badgeLabel = 'Finalizada';
           badgeColor = C.muted;
         } else if (r.liveState === 'para_limpiar') {
@@ -55,7 +55,7 @@ const ReservationList = React.memo(function ReservationList({ sortedRes, tables,
               <div style={{ fontSize: '11px', color: C.muted, display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Users size={10} />{r.partySize}</span>
                 <span>·</span>
-                <span style={{ fontWeight: 600, color: C.forest }}>{table?.name || '—'}</span>
+                <span style={{ fontWeight: 600, color: C.forest }}>{r.mesa || table?.name || '—'}</span>
                 <span>·</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} />{r.time}</span>
                 {r.phone && (<><span>·</span><span>{r.phone}</span></>)}

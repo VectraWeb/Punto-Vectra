@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { X, Trash2 } from 'lucide-react';
 import { C, inp, SECTOR_COLORS } from '../utils';
-import { Overlay } from './LiveStateModal';
-import { Field } from './ResModal';
+import { Overlay, Field } from './ui';
 
 export default function SectoresModal({ sectors, staff, onSave, onClose }) {
   const [list, setList] = useState([...sectors]);

@@ -109,6 +109,8 @@ input[type="range"]::-moz-range-thumb {
   .pedidos-filtros { gap: 4px !important; }
   .pedidos-filtros button { padding: 6px 4px !important; font-size: 10px !important; }
   .online-badge { display: none !important; }
+  .desktop-tabs { display: none !important; }
+  .mobile-bottom-nav { display: flex !important; }
 }
 @media (min-width: 481px) {
   .header-menu-btn { display: none !important; }
@@ -117,4 +119,6 @@ input[type="range"]::-moz-range-thumb {
   .pedidos-filtros button { padding: 10px 16px !important; font-size: 13px !important; border-radius: 10px !important; }
   body { font-size: 16px; }
   h1, h2, h3 { font-size: 120%; }
+  .desktop-tabs { display: flex !important; }
+  .mobile-bottom-nav { display: none !important; }
 }

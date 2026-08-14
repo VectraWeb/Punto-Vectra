@@ -3,32 +3,44 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: Verifica si el usuario está autenticado
-    // TODO: When auth is added, replace `if true` with `if isAuthenticated()`
+    // Helper: Verifica si el usuario está autenticado.
+    // La app firma una sesión anónima al arrancar (src/firebase.js), por lo que
+    // las escrituras exigen request.auth != null sin pedir login al usuario.
+    // Esto bloquea requests externos sin sesión (scrapers, scripts con curl).
     function isAuthenticated() {
       return request.auth != null;
-    }
-
-    // Helper: Verifica si el usuario es admin/staff
-    // TODO: When auth is added, check against a roles claim or staff collection
-    function isStaff() {
-      return isAuthenticated();
     }
 
     // --- RESERVATIONS (FLAT) ---
     // Structure: reservations/{reservationId}  (date is a field, not a path segment)
     // Used by: client form (create), staff dashboard (read/update/delete), n8n
     match /reservations/{reservationId} {
-      allow create: if request.resource.data.keys().hasAll(['customerName', 'date', 'service']);
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasAll(['customerName', 'date', 'service']);
       allow read: if true;
-      allow update: if request.resource.data.keys().hasAny(['liveState', 'tableId', 'estado']);
-      allow delete: if true;
+      allow update: if isAuthenticated()
+        && request.resource.data.keys().hasAny([
+          'liveState', 'tableId', 'estado',
+          'pedidoEstado', 'stateLog',
+          'startedAt', 'leftAt',
+          'cleaningStartedAt', 'cleaningCompletedAt'
+        ]);
+      allow delete: if isAuthenticated();
     }
 
     // --- RESERVATIONS (LEGACY NESTED) — kept for backward compat, prefer flat ---
     match /reservations/{date}/items/{itemId} {
       allow read: if true;
       allow write: if false;
+    }
+
+    // --- MÉTRICAS DE RESERVAS ---
+    // Structure: metricas_reservas/{reservationId}
+    // Used by: useCleaningTimers (saveMetrics) — sin regla explícita Firestore
+    // deniega por defecto, por eso se declara aquí.
+    match /metricas_reservas/{reservationId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
     }
 
     // --- CONFIG ---
@@ -38,17 +50,18 @@ service cloud.firestore {
       // READ: anyone (clients need to see salon layout, capacity, etc.)
       allow read: if true;
 
-      // WRITE: anyone (staff updates settings, layout positions)
-      // TODO: Restrict to isStaff() when auth is implemented
-      allow write: if true;
+      // WRITE: solo sesión autenticada (staff actualiza settings y layout)
+      allow create, update, delete: if isAuthenticated();
     }
 
     // --- MESAS RESERVADAS ---
     // Structure: mesasReservadas/{mesaId}_{date}_{service}
-    // Used by: n8n creates/reads, staff manages
+    // Used by: n8n creates/reads (con service account, que saltea las reglas), staff manages
     match /mesasReservadas/{docId} {
       allow read: if true;
-      allow write: if request.resource.data.keys().hasAny(['occupied', 'reservationId']);
+      allow create, update: if isAuthenticated()
+        && request.resource.data.keys().hasAny(['occupied', 'reservationId']);
+      allow delete: if isAuthenticated();
     }
 
     // --- STAFF ---
@@ -56,12 +69,10 @@ service cloud.firestore {
     // Used by: staff authentication, role management
     match /staff/{staffId} {
       // READ: anyone (needed for login lookup)
-      // TODO: Restrict to authenticated users or specific admin roles
       allow read: if true;
 
-      // WRITE: anyone (for now, since there's no real auth)
-      // TODO: Restrict to isStaff() or admin-only when auth is implemented
-      allow write: if true;
+      // WRITE: solo sesión autenticada
+      allow create, update, delete: if isAuthenticated();
     }
 
     // --- MESAS ---
@@ -71,9 +82,8 @@ service cloud.firestore {
       // READ: anyone (clients see table layout, staff sees all tables)
       allow read: if true;
 
-      // WRITE: anyone (staff adds/removes/edits tables)
-      // TODO: Restrict to isStaff() when auth is implemented
-      allow write: if true;
+      // WRITE: solo sesión autenticada
+      allow create, update, delete: if isAuthenticated();
     }
   }
 }

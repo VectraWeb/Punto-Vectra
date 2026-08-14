@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { C } from '../utils';
-import { ShoppingCart, Clock, CheckCircle, XCircle, MessageCircle } from 'lucide-react';
+import { ShoppingCart, Clock, CheckCircle, XCircle, MessageCircle, PackageCheck } from 'lucide-react';
 
 const PEDIDO_ESTADOS = {
   pendiente:    { label: 'Pendiente',  color: C.soon,     icon: Clock },
   en_preparacion: { label: 'En preparación', color: C.terraSoft, icon: ShoppingCart },
   listo:        { label: 'Listo',      color: C.free,     icon: CheckCircle },
-  entregado:    { label: 'Entregado',  color: C.forest,   icon: CheckCircle },
+  entregado:    { label: 'Entregado',  color: C.forest,   icon: PackageCheck },
   cancelado:    { label: 'Cancelado',  color: '#b0b0b0',  icon: XCircle },
 };
 

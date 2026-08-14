@@ -44,21 +44,9 @@ export const DEFAULT_CONFIG = [
   { id: 4, capacidad: 8, forma: 'cuadrada', cantidad: 2 },
 ];
 
-export const DEFAULT_ASSIGNMENTS = {
-  leo: [60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 160, 161, 162, 163, 164],
-  mica: [51, 52, 53, 54, 55, 56, 57, 58, 59, 150, 151, 152, 153, 154],
-  mauro: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 140, 141, 142, 143, 144],
-  rosanna: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 120, 121, 122, 123, 124],
-  jota: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-  miguel: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 130, 131, 132, 133, 134],
-};
-
 export const getAssignedTables = (s) => {
   if (!s) return [];
-  const fromDb = Array.isArray(s.assignedTables) ? s.assignedTables : [];
-  if (fromDb.length > 0) return fromDb;
-  const nums = DEFAULT_ASSIGNMENTS[(s.name || '').toLowerCase().trim()];
-  return nums ? nums.map(n => `m${n}`) : [];
+  return Array.isArray(s.assignedTables) ? s.assignedTables : [];
 };
 
 // ─── Geometría de sectores ───────────────────────────────────────────────────
@@ -130,9 +118,14 @@ export const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// Formatea una fecha en ISO local (YYYY-MM-DD). A diferencia de
+// toISOString().slice(0,10), no se desplaza con el huso horario.
+export const toLocalISO = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export const formatDate = (iso) => {
   const d = new Date(iso + 'T12:00:00');
-  const isMobile = window.innerWidth <= 480;
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 480;
   if (isMobile) {
     const day = d.getDate();
     const month = d.toLocaleDateString('es-AR', { month: 'short' });
@@ -224,7 +217,7 @@ export const todayISOForAnalytics = (analyticsPeriod, currentDate) => {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(currentDate + 'T12:00:00');
     d.setDate(d.getDate() - i);
-    dates.push(d.toISOString().slice(0, 10));
+    dates.push(toLocalISO(d));
   }
   return dates;
 };
@@ -244,10 +237,16 @@ export const SECTOR_COLORS = [
 
 const STAFF_AUTH_KEY = 'isStaff';
 
+const staffPin = () => import.meta.env.VITE_STAFF_PIN || '2024';
+
 export function isStaffAuthenticated() {
-  return localStorage.getItem(STAFF_AUTH_KEY) === 'true';
+  return sessionStorage.getItem(STAFF_AUTH_KEY) === btoa('andi:' + staffPin());
+}
+
+export function markStaffAuthenticated() {
+  sessionStorage.setItem(STAFF_AUTH_KEY, btoa('andi:' + staffPin()));
 }
 
 export function logoutStaff() {
-  localStorage.removeItem(STAFF_AUTH_KEY);
+  sessionStorage.removeItem(STAFF_AUTH_KEY);
 }

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Settings, Users, LogOut, Wifi, WifiOff, BarChart3 } from 'lucide-react';
 import CalendarPicker from './CalendarPicker';
 import { C, formatDate } from '../utils';
@@ -9,7 +9,6 @@ export function DashboardHeader({
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
-  const calendarRef = useRef(null);
 
   return (
       <header style={{ background: C.forest, color: C.cream, padding: '24px 20px 28px', borderBottomLeftRadius: '28px', borderBottomRightRadius: '28px' }}>
@@ -89,7 +88,7 @@ export function DashboardHeader({
         </div>
 
         {/* Navegación de fecha */}
-        <div ref={calendarRef} style={{ position: 'relative', width: '100%' }}>
+        <div style={{ position: 'relative', width: '100%' }}>
           <button onClick={() => setShowCalendar(!showCalendar)} style={{ width: '100%', padding: '12px 16px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '12px', color: C.cream, fontSize: '15px', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
             <span>{formatDate(date)}</span>

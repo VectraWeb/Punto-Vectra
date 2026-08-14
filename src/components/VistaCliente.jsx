@@ -10,10 +10,6 @@ export default function VistaCliente({ onStaffAccess }) {
       background: C.cream, color: C.espresso,
       fontFamily: '"Manrope", system-ui, sans-serif',
     }}>
-      <style>{`
-        * { box-sizing: border-box; }
-        input, select, textarea { font-family: inherit; }
-      `}</style>
 
       {/* Fondo decorativo completo */}
       <div style={{

@@ -66,8 +66,8 @@ describe('buildTables', () => {
   it('builds tables from old object config (backward compat)', () => {
     const tables = buildTables({ cap2: 2, cap4: 1, cap5: 0, cap8: 0 });
     expect(tables).toHaveLength(3);
-    expect(tables[0]).toEqual({ id: 'm1', name: 'M1', capacity: 2, shape: 'rectangular', number: 1 });
-    expect(tables[1]).toEqual({ id: 'm2', name: 'M2', capacity: 2, shape: 'rectangular', number: 2 });
+    expect(tables[0]).toEqual({ id: 'm1', name: 'M1', capacity: 2, shape: 'square', number: 1 });
+    expect(tables[1]).toEqual({ id: 'm2', name: 'M2', capacity: 2, shape: 'square', number: 2 });
     expect(tables[2]).toEqual({ id: 'm3', name: 'M3', capacity: 4, shape: 'rectangular', number: 3 });
   });
 

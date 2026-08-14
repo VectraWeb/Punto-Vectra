@@ -1,42 +1,25 @@
 import { useState } from 'react';
-import { X, UserPlus, ToggleLeft, ToggleRight, Trash2, Grid } from 'lucide-react';
+import { X, UserPlus, ToggleLeft, ToggleRight, Trash2, Grid, Plus } from 'lucide-react';
 import { doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { C, inp, getAssignedTables } from '../utils';
-import { Overlay } from './LiveStateModal';
+import { Overlay } from './ui';
 
 const staffDoc = (id) => doc(db, 'staff', id);
 
-const DEFAULT_ASSIGNMENTS = {
-  leo: [60,61,62,63,64,65,66,67,68,69,160,161,162,163,164],
-  mica: [51,52,53,54,55,56,57,58,59,150,151,152,153,154],
-  mauro: [40,41,42,43,44,45,46,47,48,49,140,141,142,143,144],
-  rosanna: [20,21,22,23,24,25,26,27,28,29,120,121,122,123,124],
-  jota: [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19],
-  miguel: [30,31,32,33,34,35,36,37,38,39,130,131,132,133,134],
-};
-
-function getDefaultTables(name) {
-  if (!name) return [];
-  const lower = name.toLowerCase().trim();
-  const nums = DEFAULT_ASSIGNMENTS[lower];
-  if (!nums) return [];
-  return nums.map(n => `m${n}`);
-}
-
-export default function StaffModal({ staff, tables, onClose }) {
+export default function StaffModal({ staff, sectors, saveSectors, onClose }) {
   const [newName, setNewName] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [editingTables, setEditingTables] = useState(null);
-  const [tableInput, setTableInput] = useState('');
+  const [editingNumbers, setEditingNumbers] = useState([]);
+  const [numInput, setNumInput] = useState('');
 
   const addStaff = async () => {
     const name = newName.trim();
     if (!name) return;
     try {
       const id = `s${Date.now()}`;
-      const assignedTables = getDefaultTables(name);
-      await setDoc(staffDoc(id), { name, active: true, assignedTables, createdAt: serverTimestamp() });
+      await setDoc(staffDoc(id), { name, active: true, assignedTables: [], createdAt: serverTimestamp() });
       setNewName('');
     } catch (e) { console.error(e); }
   };
@@ -50,36 +33,75 @@ export default function StaffModal({ staff, tables, onClose }) {
   const removeStaff = async (s) => {
     try {
       await deleteDoc(staffDoc(s.id));
+      if (sectors && saveSectors) {
+        const filtered = sectors.filter(sec => sec.name !== s.name);
+        if (filtered.length !== sectors.length) {
+          await saveSectors(filtered);
+        }
+      }
     } catch (e) { console.error(e); }
   };
 
   const openTableEditor = (s) => {
     setEditingTables(s);
-    const arr = getAssignedTables(s);
-    setTableInput(arr.map(id => id.replace('m', '')).join(', '));
+    // Los IDs físicos legados (m13...) no son números elegidos: no se muestran.
+    setEditingNumbers(getAssignedTables(s).map(String).filter(n => !/^m\d+$/i.test(n)));
+    setNumInput('');
   };
 
-  const saveTables = async () => {
+  // Parsea entradas rápidas: "1,2,3,4,5", "1-8", "1..8", "1,3-5,7" o mezclas
+  const parseNumbers = (input) => {
+    const out = [];
+    for (const tok of input.split(/[,\s]+/).filter(Boolean)) {
+      const t = tok.trim().replace(/^m/i, '');
+      const range = t.match(/^(\d+)\s*[-.]{1,2}\s*(\d+)$/);
+      if (range) {
+        const a = parseInt(range[1], 10);
+        const b = parseInt(range[2], 10);
+        if (a <= b && b - a < 500) {
+          for (let n = a; n <= b; n++) out.push(String(n));
+          continue;
+        }
+      }
+      if (/^\d+$/.test(t)) out.push(t);
+    }
+    return out;
+  };
+
+  const addNumbers = () => {
+    const parsed = parseNumbers(numInput);
+    if (parsed.length === 0) return;
+    setEditingNumbers(prev => {
+      const seen = new Set(prev.map(n => String(n).replace(/^m/i, '')));
+      const next = [...prev];
+      for (const n of parsed) {
+        if (!seen.has(n)) { seen.add(n); next.push(n); }
+      }
+      return next;
+    });
+    setNumInput('');
+  };
+
+  const removeNumber = (i) => {
+    setEditingNumbers(prev => prev.filter((_, idx) => idx !== i));
+  };
+
+  const saveNumbers = async () => {
     if (!editingTables) return;
-    const nums = tableInput
-      .split(/[,\s]+/)
-      .map(s => s.trim())
-      .filter(s => s !== '' && !isNaN(s));
-    const tableIds = nums.map(n => `m${n}`);
+    const nums = editingNumbers
+      .filter(n => String(n).trim() !== '')
+      .filter(n => !/^m\d+$/i.test(String(n)));
     try {
-      await setDoc(staffDoc(editingTables.id), { assignedTables: tableIds }, { merge: true });
+      await setDoc(staffDoc(editingTables.id), { assignedTables: nums }, { merge: true });
       setEditingTables(null);
-      setTableInput('');
+      setEditingNumbers([]);
+      setNumInput('');
     } catch (e) { console.error(e); }
   };
 
   const getTableNames = (tableIds) => {
     if (!Array.isArray(tableIds) || tableIds.length === 0) return 'Sin mesas';
-    if (!Array.isArray(tables)) return tableIds.map(id => id.replace('m', '')).join(', ');
-    return tableIds.map(id => {
-      const t = tables.find(tb => tb.id === id);
-      return t ? t.name.replace('M', '') : id.replace('m', '');
-    }).join(', ');
+    return tableIds.map(n => String(n).replace(/^m/i, '')).join(', ');
   };
 
   if (editingTables) {
@@ -97,41 +119,65 @@ export default function StaffModal({ staff, tables, onClose }) {
           </h3>
         </div>
 
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.muted, fontWeight: 600, marginBottom: '6px' }}>
-            Números de mesa (separados por coma)
-          </label>
-          <input
-            value={tableInput}
-            onChange={e => setTableInput(e.target.value)}
-            placeholder="Ej: 1, 2, 3, 4, 5"
-            style={inp}
-            autoFocus
-          />
-        </div>
+        <p style={{ fontSize: '12px', color: C.muted, margin: '0 0 14px', lineHeight: 1.5 }}>
+          Elegí libremente los números de mesa de {editingTables.name}. El plano se adapta:
+          las mesas físicas de su sector adoptan estos números por posición.
+        </p>
 
-        {Array.isArray(tables) && tables.length > 0 && (
-          <div style={{ fontSize: '11px', color: C.muted, marginBottom: '16px', background: C.creamDeep, borderRadius: '10px', padding: '12px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '6px', color: C.espresso }}>Mesas disponibles:</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-              {tables.map(t => (
-                <span key={t.id} style={{
-                  background: C.white, border: `1px solid ${C.creamDeep}`,
-                  borderRadius: '6px', padding: '2px 6px', fontSize: '10px',
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+          <input
+            value={numInput}
+            onChange={e => setNumInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addNumbers(); }}
+            placeholder="ej: 1,2,3,4,5 o 1-8"
+            inputMode="text"
+            style={{ ...inp, flex: 1 }}
+          />
+          <button onClick={addNumbers} style={{
+            padding: '12px 16px', background: C.forest, border: 'none', borderRadius: '12px',
+            cursor: 'pointer', color: C.cream, fontSize: '13px', fontWeight: 600,
+            display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap',
+          }}>
+            <Plus size={14} /> Agregar
+          </button>
+        </div>
+        <p style={{ fontSize: '11px', color: C.muted, margin: '-6px 0 14px', lineHeight: 1.5 }}>
+          Escribí varios a la vez: <strong>1,2,3,4,5</strong> · rangos: <strong>1-8</strong> · o mezcla: <strong>1,3-5,7</strong>
+        </p>
+
+        {editingNumbers.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+            {editingNumbers.map((num, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                background: C.forest, color: C.cream, borderRadius: '10px',
+                padding: '8px 10px', fontSize: '14px', fontWeight: 700,
+              }}>
+                <span>Mesa {String(num).replace(/^m/i, '')}</span>
+                <button onClick={() => removeNumber(i)} style={{
+                  background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '6px',
+                  cursor: 'pointer', color: C.cream, padding: '2px 5px', fontSize: '11px',
                 }}>
-                  {t.name.replace('M', '')}
-                </span>
-              ))}
-            </div>
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            padding: '20px', textAlign: 'center', color: C.muted, fontSize: '12px',
+            background: C.creamDeep, borderRadius: '12px', marginBottom: '16px',
+          }}>
+            Sin números asignados
           </div>
         )}
 
-        <button onClick={saveTables} style={{
+        <button onClick={saveNumbers} style={{
           width: '100%', padding: '14px', background: C.forest, border: 'none',
           borderRadius: '12px', cursor: 'pointer', color: C.cream,
           fontSize: '14px', fontWeight: 600,
         }}>
-          Guardar mesas
+          Guardar números
         </button>
       </Overlay>
     );

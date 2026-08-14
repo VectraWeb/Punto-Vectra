@@ -1,23 +1,6 @@
 import { C, LIVE_STATES } from '../utils';
 import { useCleaningCountdown } from '../hooks/useCleaningTimers';
-
-export function Overlay({ children, onClose, maxWidth = '480px' }) {
-  return (
-    <div className="modal-overlay" onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
-      backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', zIndex: 200, padding: '16px',
-    }}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{
-        background: C.cream, borderRadius: '24px',
-        padding: '28px 20px 40px', width: '100%', maxWidth,
-        maxHeight: '92vh', overflowY: 'auto',
-      }}>
-        {children}
-      </div>
-    </div>
-  );
-}
+import { Overlay } from './ui';
 
 function formatCountdown(sec) {
   const m = Math.floor(sec / 60);
@@ -40,7 +23,7 @@ export default function LiveStateModal({
           {res.customerName}
         </h3>
         <p style={{ fontSize: '12px', color: C.muted, margin: '4px 0 0' }}>
-          {table?.name} · {res.partySize} comensales · {res.time}
+          {res.mesa || table?.name || 'Mesa'} · {res.partySize} comensales · {res.time}
         </p>
       </div>
 

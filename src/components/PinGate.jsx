@@ -1,10 +1,9 @@
 // PinGate.jsx — Barrera de acceso con PIN numérico
 import { useState, useRef, useEffect } from 'react';
 import { Lock } from 'lucide-react';
-import { C, isStaffAuthenticated } from '../utils';
+import { C, isStaffAuthenticated, markStaffAuthenticated } from '../utils';
 
 const STAFF_PIN = import.meta.env.VITE_STAFF_PIN || '2024';
-const STORAGE_KEY = 'isStaff';
 
 export default function PinGate({ onAuthenticated, onBack, children }) {
   const [authenticated, setAuthenticated] = useState(() => isStaffAuthenticated());
@@ -24,7 +23,7 @@ export default function PinGate({ onAuthenticated, onBack, children }) {
 
   const handleSubmit = () => {
     if (pin === STAFF_PIN) {
-      localStorage.setItem(STORAGE_KEY, 'true');
+      markStaffAuthenticated();
       setAuthenticated(true);
       if (onAuthenticated) onAuthenticated();
     } else {
@@ -45,9 +44,6 @@ export default function PinGate({ onAuthenticated, onBack, children }) {
       fontFamily: '"Manrope", system-ui, sans-serif',
       padding: '24px',
     }}>
-      <style>{`
-        * { box-sizing: border-box; }
-      `}</style>
 
       <div style={{
         width: '100%', maxWidth: '340px', textAlign: 'center',

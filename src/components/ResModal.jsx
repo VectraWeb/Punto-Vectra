@@ -1,25 +1,24 @@
 import { useState } from 'react';
 import { X, Trash2 } from 'lucide-react';
-import { C, inp, getAssignedTables, SERVICES, serviceFromTime } from '../utils';
-import { Overlay } from './LiveStateModal';
+import { C, inp, SERVICES, serviceFromTime } from '../utils';
+import { Overlay, Field } from './ui';
 
-export function Field({ label, children }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: '10px', letterSpacing: '0.15em', textTransform: 'uppercase', color: C.muted, fontWeight: 600, marginBottom: '6px' }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-export default function ResModal({ editing, preTable, tables, service, tableStatus, staff, onSave, onDelete, onClose }) {
+export default function ResModal({ editing, preTable, tables, service, tableStatus, staff, tableNums, ownerByTable, mozoTableIds, onSave, onDelete, onClose }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [form, setForm] = useState(() => editing ? { ...editing } : {
-    customerName: '', phone: '', partySize: 2,
-    tableId: preTable?.id || '',
-    time: new Date().toTimeString().slice(0, 5),
-    notes: '',
-    staffId: '',
+  const [form, setForm] = useState(() => {
+    const base = editing ? { ...editing } : {
+      customerName: '', phone: '', partySize: 2,
+      tableId: preTable?.id || '',
+      time: new Date().toTimeString().slice(0, 5),
+      notes: '',
+      staffId: '',
+    };
+    // Al abrir desde una mesa del plano, auto-asignar el mozo dueño de esa mesa.
+    if (base.tableId && !base.staffId && !editing) {
+      const ownerId = ownerByTable[base.tableId];
+      if (ownerId) base.staffId = ownerId;
+    }
+    return base;
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -28,15 +27,14 @@ export default function ResModal({ editing, preTable, tables, service, tableStat
   const svcForTime = serviceFromTime(form.time, service);
   const timeInOtherService = form.time && svcForTime !== service;
 
-  // Al asignar un mozo, auto-seleccionar su primera mesa libre (en el evento,
-  // sin efecto: evita re-renders en cascada al abrir el modal)
+  // Al asignar un mozo, auto-seleccionar su primera mesa libre SOLO si el
+  // usuario aún no eligió mesa, o si la mesa elegida no pertenece al mozo.
+  // Nunca pisar una mesa que el usuario ya seleccionó de forma explícita.
   const handleStaffChange = (v) => {
     set('staffId', v);
     if (!v) return;
-    const mozo = staff.find(s => s.id === v);
-    if (!mozo) return;
-    const assigned = getAssignedTables(mozo);
-    for (const id of assigned) {
+    if (form.tableId && ownerByTable[form.tableId] === v) return;
+    for (const id of mozoTableIds[v] || []) {
       const t = tables.find(tbl => tbl.id === id);
       if (!t || t.capacity < form.partySize) continue;
       const st = tableStatus(id);
@@ -81,11 +79,16 @@ export default function ResModal({ editing, preTable, tables, service, tableStat
                {tables.filter(t => {
                   const s = tableStatus(t.id);
                   const isCurrentRes = editing && editing.tableId === t.id;
-                  const matchesMozo = !form.staffId || getAssignedTables(staff.find(st => st.id === form.staffId)).includes(t.id);
+                  const matchesMozo = !form.staffId || ownerByTable[t.id] === form.staffId;
                   return (s.status === 'free' || s.status === 'soon' || isCurrentRes) && t.capacity >= form.partySize && matchesMozo;
-                }).map(t => (
-                <option key={t.id} value={t.id}>{t.name} ({t.capacity}p)</option>
-              ))}
+                }).map(t => {
+                  const num = tableNums[t.id];
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {num ? `Mesa ${num}` : t.name} ({t.capacity}p)
+                    </option>
+                  );
+                })}
             </select>
           </Field>
         </div>

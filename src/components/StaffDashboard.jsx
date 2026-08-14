@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Plus, X } from 'lucide-react';
 import {
-  collection, doc, setDoc, updateDoc, deleteDoc, getDocs,
-  serverTimestamp, runTransaction, arrayUnion, writeBatch, deleteField,
+  doc, setDoc, updateDoc, deleteDoc,
+  serverTimestamp, runTransaction, arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { syncMesasWithConfig } from '../services/mesasHelpers';
@@ -11,11 +11,14 @@ import { useReservations, useAnalyticsReservations } from '../hooks/useReservati
 import { useConfig } from '../hooks/useConfig';
 import { useMesas } from '../hooks/useMesas';
 import { useStaff } from '../hooks/useStaff';
+import { useMozoTableNumbers } from '../hooks/useMozoTableNumbers';
+import { useSalonLayout } from '../hooks/useSalonLayout';
 import SalonFloor from './SalonFloor';
 import LiveStateModal from './LiveStateModal';
 import ResModal from './ResModal';
 import SettingsModal from './SettingsModal';
-import { AnalyticsPanel, Stat } from './AnalyticsPanel';
+import { AnalyticsPanel } from './AnalyticsPanel';
+import { Stat } from './ui';
 import { DashboardHeader } from './DashboardHeader';
 import ReservationList from './ReservationList';
 import StaffModal from './StaffModal';
@@ -33,8 +36,6 @@ const resDocRef = (id) => doc(db, 'reservations', id);
 const mesaReservadaRef = (tableId, date, service) =>
   doc(db, 'mesasReservadas', `${tableId}_${date}_${service}`);
 const cfgRef = () => doc(db, 'config', 'restaurant');
-const staffDoc = (id) => doc(db, 'staff', id);
-const layoutDocRef = () => doc(db, 'config', 'salon-layout');
 
 const FREE_TABLE_STATUS = { status: 'free' };
 
@@ -89,6 +90,12 @@ export default function StaffDashboard({ onLogout }) {
   }, [mesas, config]);
   const slots = useMemo(() => genSlots(service), [service]);
 
+  // Posiciones del salón: suscripción única compartida con SalonFloor
+  const { positions, setPositions, saveLayout } = useSalonLayout();
+
+  // Números elegidos por cada mozo mapeados a las mesas físicas de su sector.
+  const { tableNumByTable, ownerByTable, mozoTableIds } = useMozoTableNumbers(tables, staff, sectors, positions);
+
   // ── Loading state ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!configLoaded.current && config !== DEFAULT_CONFIG) {
@@ -128,14 +135,6 @@ export default function StaffDashboard({ onLogout }) {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  const lastDateRef = useRef(date);
-  useEffect(() => {
-    if (lastDateRef.current !== date && sectors.length > 0) {
-      saveSectors([]);
-    }
-    lastDateRef.current = date;
-  }, [date, sectors, saveSectors]);
-
   // ── Persistir configuración ────────────────────────────────────────────────────────
   const saveConfig = useCallback(async (c) => {
     try {
@@ -144,135 +143,10 @@ export default function StaffDashboard({ onLogout }) {
     } catch (e) { console.error(e); }
   }, [sectors]);
 
-  // ── Sincronizar sectores ⇄ mozos ─────────────────────────────────────────────
-  // Las mesas dentro de un sector CAMBIAN su número al número fijo del mozo
-  // (nunca al revés). Se aplica a mesas, posiciones, reservas y mesasReservadas.
-  const renumberSectors = useCallback(async (assigns, positions) => {
-    if (!Array.isArray(assigns) || assigns.length === 0) return;
-    try {
-      // 1) Calcular mapeo physicalId -> número fijo del mozo
-      const renum = {};       // physicalId -> mesaId del mozo
-      const claimed = new Set();
-      for (const a of assigns) {
-        if (!a || !a.name) continue;
-        const mozo = staff.find(x => x.name === a.name);
-        if (!mozo) continue;
-        const fixed = getAssignedTables(mozo);
-        if (fixed.length === 0) continue;
-        const phys = (a.tableIds || [])
-          .map(id => tables.find(t => t.id === id))
-          .filter(Boolean)
-          .sort((x, y) => {
-            const px = positions?.[x.id] || { x: 0, y: 0 };
-            const py = positions?.[y.id] || { x: 0, y: 0 };
-            return px.x !== py.x ? px.x - py.x : px.y - py.y;
-          })
-          .map(t => t.id);
-        for (let i = 0; i < phys.length && i < fixed.length; i++) {
-          const p = phys[i], n = fixed[i];
-          if (p === n || claimed.has(n) || renum[p]) continue;
-          claimed.add(n);
-          renum[p] = n;
-        }
-      }
-      // 2) Evitar colisiones: si el número objetivo es una mesa existente que NO
-      //    será renombrada, se saltea esa asignación
-      for (const [p, n] of Object.entries(renum)) {
-        if (renum[n] === undefined && tables.some(t => t.id === n)) {
-          delete renum[p];
-        }
-      }
-      if (Object.keys(renum).length === 0) return;
-
-      const num = (id) => Number(String(id).replace('m', ''));
-      const dataByPhys = {};
-      for (const p of Object.keys(renum)) {
-        const m = tables.find(t => t.id === p);
-        if (m) dataByPhys[p] = m;
-      }
-
-      // 3) Colección mesas: estado final por documento (soporta renumeraciones encadenadas)
-      const batch = writeBatch(db);
-      const finalMesas = {};
-      const affected = new Set();
-      for (const [p, n] of Object.entries(renum)) {
-        const src = dataByPhys[p];
-        if (!src) continue;
-        finalMesas[n] = { capacity: src.capacity, name: `M${num(n)}`, number: num(n), shape: src.shape };
-        affected.add(p);
-        affected.add(n);
-      }
-      for (const id of affected) {
-        if (finalMesas[id]) batch.set(doc(db, 'mesas', id), finalMesas[id]);
-        else batch.delete(doc(db, 'mesas', id));
-      }
-      await batch.commit();
-
-      // 4) Posiciones del plano: renombrar las claves
-      if (positions && typeof positions === 'object') {
-        const newPositions = {};
-        for (const [key, val] of Object.entries(positions)) {
-          newPositions[renum[key] || key] = val;
-        }
-        await setDoc(layoutDocRef(), { positions: newPositions }, { merge: true });
-      }
-
-      // 5) Reservas existentes: actualizar tableId
-      const resSnap = await getDocs(collection(db, 'reservations'));
-      const resBatch = writeBatch(db);
-      let resCount = 0;
-      for (const d of resSnap.docs) {
-        const r = d.data();
-        if (renum[r.tableId]) {
-          resBatch.update(doc(db, 'reservations', d.id), { tableId: renum[r.tableId] });
-          resCount++;
-        }
-      }
-      if (resCount > 0) await resBatch.commit();
-
-      // 6) mesasReservadas: renombrar los ids `${mesa}_${date}_${service}`
-      const mrSnap = await getDocs(collection(db, 'mesasReservadas'));
-      const mrBatch = writeBatch(db);
-      let mrCount = 0;
-      for (const d of mrSnap.docs) {
-        const parts = d.id.split('_');
-        const mesaId = parts[0];
-        if (renum[mesaId]) {
-          const newId = [renum[mesaId], ...parts.slice(1)].join('_');
-          mrBatch.set(doc(db, 'mesasReservadas', newId), d.data());
-          mrBatch.delete(doc(db, 'mesasReservadas', d.id));
-          mrCount++;
-        }
-      }
-      if (mrCount > 0) await mrBatch.commit();
-
-      // 7) Limpiar asignaciones viejas (genéricas m1-m31) de los mozos: los
-      //    números fijos vuelven a ser la fuente de verdad. Las listas con
-      //    números altos (m60, m130...) se conservan porque son personalizadas.
-      for (const s of staff) {
-        const stale = (s.assignedTables || []).some(id => /^m([1-9]|[12]\d|3[01])$/.test(String(id)));
-        if (stale) {
-          await updateDoc(staffDoc(s.id), { assignedTables: deleteField() });
-        }
-      }
-
-      showToast('Mesas sincronizadas con los sectores', 'success');
-    } catch (e) {
-      console.error(e);
-      showToast('Error al sincronizar las mesas con los sectores');
-    }
-  }, [staff, tables, showToast]);
-
   const saveSectorsFromPlano = useCallback(async (updatedSectors) => {
     setSectors(updatedSectors);
     await setDoc(cfgRef(), { sectors: updatedSectors }, { merge: true });
   }, [setSectors]);
-
-  const syncSectors = useCallback(async (updatedSectors, assigns, positions) => {
-    setSectors(updatedSectors);
-    await setDoc(cfgRef(), { sectors: updatedSectors }, { merge: true });
-    await renumberSectors(assigns, positions);
-  }, [setSectors, renumberSectors]);
 
   const saveSectorsFromModal = useCallback(async (updatedSectors) => {
     setSectors(updatedSectors);
@@ -283,11 +157,15 @@ export default function StaffDashboard({ onLogout }) {
   const saveRes = useCallback(async (data) => {
     const id = data.id || `r${Date.now()}`;
     const { _oldMesaRef, _prevResId, _prevMesaRef, ...cleanData } = data;
+    // La mesa toma el número que el mozo eligió para ella: el plano se adapta
+    // al mozo, y la reserva queda vinculada a ese número, no al físico.
+    const mesaNum = cleanData.tableId ? tableNumByTable[cleanData.tableId] : null;
 
     if (!cleanData.tableId) {
       await setDoc(resDocRef(id), {
         ...cleanData, id, date,
         mesa_id: null,
+        mesa: null,
         estado: 'pendiente',
         updatedAt: serverTimestamp(),
         createdAt: cleanData.createdAt || serverTimestamp(),
@@ -318,13 +196,14 @@ export default function StaffDashboard({ onLogout }) {
         transaction.set(resDocRef(id), {
           ...cleanData, id, date,
           mesa_id: cleanData.tableId,
+          mesa: mesaNum ? `Mesa ${mesaNum}` : null,
           estado: cleanData.tableId ? (cleanData.estado || 'confirmada') : 'pendiente',
           liveState: cleanData.liveState || null,
           updatedAt: serverTimestamp(),
           createdAt: cleanData.createdAt || serverTimestamp(),
         });
       });
-  }, [date]);
+  }, [date, tableNumByTable]);
 
   const deleteRes = useCallback(async (resData) => {
     try {
@@ -340,23 +219,21 @@ export default function StaffDashboard({ onLogout }) {
   const updateLiveState = useCallback(async (res, liveState) => {
     setShowLiveMenu(null);
     setOptimisticStates(prev => ({ ...prev, [res.id]: liveState }));
+    const patch = {
+      liveState,
+      stateLog: arrayUnion({ state: liveState, at: new Date().toISOString() }),
+      updatedAt: serverTimestamp(),
+    };
+    if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
+    if (liveState === 'para_limpiar') {
+      patch.leftAt = serverTimestamp();
+      patch.cleaningStartedAt = new Date().toISOString();
+    }
     try {
-      const patch = {
-        liveState,
-        updatedAt: serverTimestamp(),
-      };
-      if (liveState === 'esperando_cliente' && !res.startedAt) patch.startedAt = serverTimestamp();
-      if (liveState === 'para_limpiar') {
-        patch.leftAt = serverTimestamp();
-        patch.cleaningStartedAt = new Date().toISOString();
-      }
       await updateDoc(resDocRef(res.id), patch);
-      updateDoc(resDocRef(res.id), {
-        stateLog: arrayUnion({ state: liveState, at: new Date().toISOString() }),
-      }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
-      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     } catch (e) {
       console.warn('[Andi] Fallo en la actualización optimista, revirtiendo estado...', e);
+    } finally {
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     }
   }, []);
@@ -376,7 +253,7 @@ export default function StaffDashboard({ onLogout }) {
 
     const startTs = toMs(res.startedAt || res.createdAt);
     const duracionMinutos = Math.round((Date.now() - startTs) / 60000);
-    const tableName = tables.find(t => t.id === res.tableId)?.name || res.tableId;
+    const tableName = res.mesa || tables.find(t => t.id === res.tableId)?.name || res.tableId;
 
     notificarN8N({
       evento: 'reserva_finalizada',
@@ -695,8 +572,8 @@ export default function StaffDashboard({ onLogout }) {
         <Stat color={C.soon} label="A limpiar" value={stats.soon} />
       </div>
 
-      {/* ── TABS: RESERVAS / PLANO ── */}
-      <div style={{ padding: '0 16px', display: 'flex', gap: '4px', marginBottom: '12px' }}>
+      {/* ── TABS: RESERVAS / PLANO (desktop: inline, móvil: bottom nav) ── */}
+      <div className="desktop-tabs" style={{ padding: '0 16px', display: 'flex', gap: '4px', marginBottom: '12px' }}>
         {[
           ['reservas', 'Mozos', `${sortedRes.length} items`],
           ['plano', 'Plano', 'Arrastrable'],
@@ -795,31 +672,35 @@ export default function StaffDashboard({ onLogout }) {
                         </div>
                         {assigned.length > 0 ? (
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(52px, 1fr))', gap: '6px' }}>
-                            {assigned.map(id => {
-                              const t = tables.find(tb => tb.id === id);
-                              const tNum = id.replace('m', '');
-                              const resOnTable = mozoRes.find(r => r.tableId === id);
-                              const status = resOnTable ? tableStatus(id) : { status: 'free' };
+                            {assigned.map((num, i) => {
+                              const phId = mozoTableIds[s.id]?.[i];
+                              const t = phId ? tables.find(tb => tb.id === phId) : null;
+                              const tableNum = String(num).replace(/^m/i, '');
+                              const hasRes = phId && svcRes.some(r => r.tableId === phId);
+                              const st = phId ? tableStatus(phId) : null;
                               let bg = C.white;
                               let border = C.creamDeep;
                               let textColor = C.espresso;
                               let label = '';
-                              if (status.status === 'busy') { bg = C.terra; border = C.terra; textColor = C.cream; label = 'O'; }
-                              else if (status.status === 'reserved') { bg = C.forestSoft; border = C.forestSoft; textColor = C.cream; label = 'R'; }
-                              else if (status.status === 'soon') { bg = C.soon; border = C.soon; textColor = C.cream; label = 'L'; }
+                              if (st?.status === 'busy') { bg = C.terra; border = C.terra; textColor = C.cream; label = 'O'; }
+                              else if (st?.status === 'reserved') { bg = C.forestSoft; border = C.forestSoft; textColor = C.cream; label = 'R'; }
+                              else if (st?.status === 'soon') { bg = C.soon; border = C.soon; textColor = C.cream; label = 'L'; }
                               return (
-                                <button key={id} onClick={() => {
-                                  if (resOnTable) {
-                                    if (status.status === 'free') { setPreTable(t); setEditing(null); setShowModal(true); }
-                                    else { setShowLiveMenu(resOnTable); }
-                                  } else { setPreTable(t); setEditing(null); setShowModal(true); }
+                                <button key={`${s.id}-${i}`} disabled={!t} onClick={() => {
+                                  if (t) {
+                                    if (hasRes) {
+                                      if (st.status === 'free') { setPreTable(t); setEditing(null); setShowModal(true); }
+                                      else { setShowLiveMenu(st.res); }
+                                    } else { setPreTable(t); setEditing(null); setShowModal(true); }
+                                  }
                                 }} style={{
                                   aspectRatio: '1', borderRadius: '10px', border: `1.5px solid ${border}`,
-                                  background: bg, color: textColor, cursor: 'pointer',
+                                  background: bg, color: textColor, cursor: t ? 'pointer' : 'not-allowed',
+                                  opacity: t ? 1 : 0.4,
                                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                   gap: '2px', fontSize: '11px', fontWeight: 600, fontFamily: 'inherit',
                                 }}>
-                                  <span style={{ fontSize: '14px', fontWeight: 700 }}>{t ? t.name.replace('M', '') : tNum}</span>
+                                  <span style={{ fontSize: '14px', fontWeight: 700 }}>{tableNum}</span>
                                   {label && <span style={{ fontSize: '8px', opacity: 0.8 }}>{label}</span>}
                                 </button>
                               );
@@ -878,13 +759,16 @@ export default function StaffDashboard({ onLogout }) {
           tables={tables}
           tableStatus={tableStatus}
           cleaningTimers={cleaningTimers}
+          tableNums={tableNumByTable}
+          positions={positions}
+          setPositions={setPositions}
+          saveLayout={saveLayout}
           isEditing={editingLayout}
           onToggleEdit={toggleEditingLayout}
           sectors={sectors}
           isEditingSectors={editingSectors}
           onToggleEditSectors={toggleEditingSectors}
           onSaveSectors={saveSectorsFromPlano}
-          onSyncSectors={syncSectors}
           onTableClick={handleTableClick}
         />
       )}
@@ -896,7 +780,7 @@ export default function StaffDashboard({ onLogout }) {
 
       {/* ── FAB: Nueva reserva ── */}
       <button onClick={() => { setEditing(null); setPreTable(null); setShowModal(true); }} style={{
-        position: 'fixed', bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))', right: '24px',
+        position: 'fixed', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', right: '24px',
         width: '60px', height: '60px', borderRadius: '30px',
         background: C.terra, color: '#fff', border: 'none',
         boxShadow: '0 8px 24px rgba(196,96,47,0.4)', cursor: 'pointer',
@@ -904,6 +788,32 @@ export default function StaffDashboard({ onLogout }) {
       }}>
         <Plus size={26} />
       </button>
+
+      {/* ── BOTTOM NAV (móvil) ── */}
+      <div className="mobile-bottom-nav" style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        background: C.cream, borderTop: `1px solid ${C.creamDeep}`,
+        padding: '8px 16px calc(8px + env(safe-area-inset-bottom, 0px))',
+        display: 'flex', gap: '8px', zIndex: 200,
+        boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
+      }}>
+        {[
+          ['reservas', 'Mozos', ''],
+          ['plano', 'Plano', ''],
+          ['pedidos', 'Pedidos', ''],
+        ].map(([key, label, count]) => (
+          <button key={key} onClick={() => setMainTab(key)} style={{
+            flex: 1, padding: '10px 8px', borderRadius: '12px', border: 'none', cursor: 'pointer',
+            background: mainTab === key ? C.forest : 'transparent',
+            color: mainTab === key ? C.cream : C.muted,
+            fontFamily: 'inherit', textAlign: 'center',
+            transition: 'all 0.2s ease',
+          }}>
+            <div style={{ fontSize: '13px', fontWeight: 600 }}>{label}</div>
+            {count && <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '2px' }}>{count}</div>}
+          </button>
+        ))}
+      </div>
 
       {/* ── MODAL: Estado en vivo ── */}
       {showLiveMenu && (
@@ -931,6 +841,9 @@ export default function StaffDashboard({ onLogout }) {
           service={service}
           tableStatus={tableStatus}
           staff={staff}
+          tableNums={tableNumByTable}
+          ownerByTable={ownerByTable}
+          mozoTableIds={mozoTableIds}
           onSave={handleSave}
           onDelete={handleDelete}
           onClose={() => { setShowModal(false); setEditing(null); setPreTable(null); }}
@@ -950,7 +863,8 @@ export default function StaffDashboard({ onLogout }) {
       {showStaff && (
         <StaffModal
           staff={staff}
-          tables={tables}
+          sectors={sectors}
+          saveSectors={saveSectors}
           onClose={() => setShowStaff(false)}
         />
       )}

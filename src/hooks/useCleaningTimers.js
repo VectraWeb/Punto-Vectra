@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { doc, updateDoc, arrayUnion, serverTimestamp, deleteDoc, setDoc } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { db } from '../firebase';
 import { notificarN8N, computeStateDurations } from '../utils';
 
 export const CLEANING_DURATION_MS = 5 * 60 * 1000;
@@ -114,9 +114,9 @@ export function useCleaningTimers(reservations, date, tables) {
       await saveMetrics(res, tables);
     } catch (e) {
       console.warn('[CleaningTimer] Error al finalizar:', e);
+    } finally {
+      finalizingRef.current = false;
     }
-
-    finalizingRef.current = false;
   }, [date, tables]);
 
   useEffect(() => {
