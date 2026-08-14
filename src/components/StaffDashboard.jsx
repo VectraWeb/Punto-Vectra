@@ -20,6 +20,7 @@ import { DashboardHeader } from './DashboardHeader';
 import ReservationList from './ReservationList';
 import StaffModal from './StaffModal';
 import SectoresModal from './SectoresModal';
+import PedidosPanel from './PedidosPanel';
 import {
   C, LIVE_STATES, SERVICES, DEFAULT_CONFIG,
   t2m, genSlots, buildTables, todayISO,
@@ -84,7 +85,7 @@ export default function StaffDashboard({ onLogout }) {
 
   const tables = useMemo(() => {
     const base = mesas.length > 0 ? mesas : buildTables(config);
-    return base.map(t => t.capacity === 2 ? { ...t, shape: 'square-sm' } : t);
+    return base;
   }, [mesas, config]);
   const slots = useMemo(() => genSlots(service), [service]);
 
@@ -699,6 +700,7 @@ export default function StaffDashboard({ onLogout }) {
         {[
           ['reservas', 'Mozos', `${sortedRes.length} items`],
           ['plano', 'Plano', 'Arrastrable'],
+          ['pedidos', 'Pedidos', 'Bot'],
         ].map(([key, label, sub]) => (
           <button key={key} onClick={() => setMainTab(key)} style={{
             flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
@@ -728,25 +730,13 @@ export default function StaffDashboard({ onLogout }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '4px' }}>
               {/* Todas (sin mozo) */}
               <button onClick={() => setSelectedMozoTab('__todas__')} style={{
-                width: '100%', padding: '12px 14px', borderRadius: '14px', border: 'none',
+                width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
                 cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                display: 'flex', alignItems: 'center', gap: '12px',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 background: !selected ? C.forest : C.creamDeep,
                 color: !selected ? C.cream : C.espresso,
               }}>
-                <div style={{
-                  width: '36px', height: '36px', borderRadius: '50%',
-                  background: !selected ? C.cream : C.forestSoft,
-                  color: !selected ? C.forest : C.cream,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '14px', fontWeight: 700, flexShrink: 0,
-                }}>✕</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600 }}>Todas</div>
-                  <div style={{ fontSize: '11px', opacity: 0.75 }}>
-                    Todas las reservas
-                  </div>
-                </div>
+                <div style={{ fontSize: '16px', fontWeight: 700 }}>Todas las reservas</div>
                 <div style={{
                   background: !selected ? C.cream : C.forestSoft,
                   color: !selected ? C.forest : C.cream,
@@ -897,6 +887,11 @@ export default function StaffDashboard({ onLogout }) {
           onSyncSectors={syncSectors}
           onTableClick={handleTableClick}
         />
+      )}
+
+      {/* ── PEDIDOS DEL BOT ── */}
+      {mainTab === 'pedidos' && (
+        <PedidosPanel date={date} service={service} />
       )}
 
       {/* ── FAB: Nueva reserva ── */}

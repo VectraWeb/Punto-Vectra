@@ -4,7 +4,7 @@ import { db } from './firebase';
 export const mesasCol = () => collection(db, 'mesas');
 export const mesaDoc = (id) => doc(db, 'mesas', id);
 
-const SHAPE_MAP_LOCAL = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
+const SHAPE_MAP_LOCAL = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square', 'cuadrada chica': 'square-sm' };
 
 function normalizeConfig(config) {
   if (!config) return [];

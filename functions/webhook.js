@@ -316,7 +316,7 @@ async function sendWhatsAppMessage(to, text) {
 function buildTables(cfg) {
   const tables = [];
   let n = 1;
-  const SHAPE_MAP = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
+  const SHAPE_MAP = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square', 'cuadrada chica': 'square-sm' };
   const items = Array.isArray(cfg) ? cfg : (cfg && cfg.mesaTipos ? cfg.mesaTipos : [
     { capacidad: 2, forma: 'rectangular', cantidad: cfg.cap2 || 0 },
     { capacidad: 4, forma: 'rectangular', cantidad: cfg.cap4 || 0 },

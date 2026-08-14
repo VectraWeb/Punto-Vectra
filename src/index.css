@@ -106,8 +106,15 @@ input[type="range"]::-moz-range-thumb {
   .stat-grid { gap: 4px !important; }
   .tab-grid { font-size: 12px !important; }
   .modal-content { padding: 20px 14px 32px !important; border-radius: 20px !important; }
+  .pedidos-filtros { gap: 4px !important; }
+  .pedidos-filtros button { padding: 6px 4px !important; font-size: 10px !important; }
+  .online-badge { display: none !important; }
 }
 @media (min-width: 481px) {
   .header-menu-btn { display: none !important; }
   .mobile-dropdown { display: none !important; }
+  .pedidos-filtros { gap: 8px !important; }
+  .pedidos-filtros button { padding: 10px 16px !important; font-size: 13px !important; border-radius: 10px !important; }
+  body { font-size: 16px; }
+  h1, h2, h3 { font-size: 120%; }
 }

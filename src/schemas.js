@@ -26,7 +26,7 @@
  * @typedef {Object} MesaTipo
  * @property {number} id - Identificador único del tipo.
  * @property {number} capacidad - Capacidad de comensales.
- * @property {'redonda'|'rectangular'|'cuadrada'} forma - Forma de la mesa.
+ * @property {'redonda'|'rectangular'|'cuadrada'|'cuadrada chica'} forma - Forma de la mesa.
  * @property {number} cantidad - Cuántas mesas de este tipo.
  */
 

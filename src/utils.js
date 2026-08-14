@@ -33,8 +33,8 @@ export const SERVICES = {
 };
 
 // ─── Formas de mesas ─────────────────────────────────────────────────────────
-export const SHAPE_MAP = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square' };
-export const SHAPE_LABELS = { redonda: 'Redonda', rectangular: 'Rectangular', cuadrada: 'Cuadrada' };
+export const SHAPE_MAP = { redonda: 'round', rectangular: 'rectangular', cuadrada: 'square', 'cuadrada chica': 'square-sm' };
+export const SHAPE_LABELS = { redonda: 'Redonda', rectangular: 'Rectangular', cuadrada: 'Cuadrada', 'cuadrada chica': 'Cuadrada chica' };
 export const SHAPE_KEYS = Object.keys(SHAPE_MAP);
 
 export const DEFAULT_CONFIG = [
@@ -94,7 +94,7 @@ export const buildTables = (cfg) => {
         id: `m${n}`,
         name: `M${n}`,
         capacity: cap,
-        shape: cap === 2 ? 'square' : (SHAPE_MAP[item.forma] || item.shape || item.forma || 'rectangular'),
+        shape: SHAPE_MAP[item.forma] || item.shape || item.forma || 'rectangular',
         number: n,
       });
       n++;

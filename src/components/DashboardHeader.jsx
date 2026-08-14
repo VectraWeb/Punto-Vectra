@@ -20,7 +20,7 @@ export function DashboardHeader({
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {/* Indicador online/offline */}
-            <div title={online ? 'Conectado' : 'Sin conexión — cambios en cola'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '10px', fontSize: '11px' }}>
+            <div className="online-badge" title={online ? 'Conectado' : 'Sin conexión — cambios en cola'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '10px', fontSize: '11px' }}>
               {online
                 ? <><Wifi size={13} color="#6fd98d" /><span style={{ color: '#6fd98d' }}>Online</span></>
                 : <><WifiOff size={13} color={C.soon} /><span style={{ color: C.soon }}>Offline</span></>

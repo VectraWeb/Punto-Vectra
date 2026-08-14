@@ -414,25 +414,17 @@ const SalonFloor = React.memo(function SalonFloor({
   const handleTouchStart = useCallback((e) => {
     if (isEditing) return;
     if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      pinchRef.current = {
-        dist: Math.sqrt(dx * dx + dy * dy),
-        zoom,
-        mid: {
-          x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-          y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-        },
-      };
+      e.preventDefault();
+      return;
     } else if (e.touches.length === 1) {
       // Doble tap → toggle zoom (funciona siempre)
       const now = Date.now();
-      if (now - lastTapRef.current < 280) {
+      if (now - lastTapRef.current < 300) {
         lastTapRef.current = 0;
         const rect = containerRef.current?.getBoundingClientRect();
         const cx = e.touches[0].clientX - (rect?.left || 0);
         const cy = e.touches[0].clientY - (rect?.top || 0);
-        zoomAt(zoom > 1.4 ? 1 / zoom : 2, cx, cy);
+        zoomAt(zoom > 1 ? 1 / zoom : 2, cx, cy);
       } else {
         lastTapRef.current = now;
         // Pan solo con zoom activo: en vista completa el toque se deja pasar
@@ -444,28 +436,9 @@ const SalonFloor = React.memo(function SalonFloor({
 
   const handleTouchMove = useCallback((e) => {
     if (isEditing) return;
-    if (e.touches.length === 2 && pinchRef.current) {
+    if (e.touches.length === 2) {
       e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const ratio = dist / pinchRef.current.dist;
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-
-      const startZoom = pinchRef.current.zoom;
-      const newZ = Math.min(3, Math.max(1, startZoom * ratio));
-      const k = newZ / startZoom;
-      const startMid = pinchRef.current.mid;
-      // Mover el offset para acompanar el centro del pellizco
-      const driftX = midX - startMid.x;
-      const driftY = midY - startMid.y;
-      setOffset(prev => clampOffset({
-        x: midX + k * (prev.x - startMid.x) + driftX,
-        y: midY + k * (prev.y - startMid.y) + driftY,
-      }));
-      panRef.current = { x: midX - offset.x, y: midY - offset.y };
-      setZoom(newZ);
+      return;
     } else if (e.touches.length === 1 && panRef.current) {
       e.preventDefault();
       setOffset(clampOffset({
@@ -725,8 +698,8 @@ const SalonFloor = React.memo(function SalonFloor({
           cursor: (!isEditing && !isEditingSectors && zoom > 1) ? 'grab' : 'default',
         }}
       >
-        {/* Botones de zoom flotantes */}
-        {!isEditing && !isEditingSectors && (
+        {/* Botones de zoom flotantes (solo PC) */}
+        {!isEditing && !isEditingSectors && !isMobile && (
           <div style={{
             position: 'absolute', right: '10px', top: '10px', zIndex: 30,
             display: 'flex', flexDirection: 'column', gap: '4px',
