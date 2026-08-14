@@ -23,8 +23,8 @@ const firebaseConfig = {
 // Inicializar Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Autenticación (sesión anónima para clientes)
-export const auth = getAuth(app);
+// Autenticación (sesión anónima — ver abajo)
+const auth = getAuth(app);
 
 // Inicializar Firestore usando la sintaxis moderna de Vite para PWA (Soporta múltiples pestañas offline)
 export const db = initializeFirestore(app, {

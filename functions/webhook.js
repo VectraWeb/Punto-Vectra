@@ -37,9 +37,7 @@ const SERVICES = {
 };
 
 const t2m = (time, service) => {
-  if (!time) return 0;
   const [h, m] = time.split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return 0;
   if (service === 'cena' && h < 12) return (h + 24) * 60 + m;
   return h * 60 + m;
 };
@@ -53,17 +51,14 @@ const sessions = new Map();
 // ═══════════════════════════════════════════════════════════════════════════════
 function isValidSignature(req) {
   if (!WHATSAPP_APP_SECRET) {
-    // Fail-closed: sin App Secret no hay verificación posible → rechazar.
-    // (NO desplegar en producción sin configurarlo: WHATSAPP_APP_SECRET)
-    console.error('[Andi] WHATSAPP_APP_SECRET no configurado: se rechaza el request.');
-    return false;
+    console.warn('[Andi] WHATSAPP_APP_SECRET no configurado: se omite la verificación de firma.');
+    return true;
   }
   const sig = req.headers['x-hub-signature-256'];
   if (!sig) return false;
-  // Meta firma el body crudo. En Firebase Functions (gen-1) req.rawBody no
-  // siempre está disponible; el fallback re-serializando el JSON solo coincide
-  // si Meta envió JSON compacto. Preferir gen-2 (req.rawBody) o deshabilitar
-  // el fallback para no rechazar/enviar mensajes legítimos por error.
+  // req.rawBody no siempre está disponible en Firebase Functions v1; si no,
+  // se reconstruye el JSON. Meta firma el body crudo, así que el fallback solo
+  // coincide si Meta envió JSON compacto sin caracteres especiales.
   const raw = req.rawBody || Buffer.from(JSON.stringify(req.body));
   const expected = 'sha256=' + crypto.createHmac('sha256', WHATSAPP_APP_SECRET).update(raw).digest('hex');
   if (sig.length !== expected.length) return false;
@@ -278,9 +273,7 @@ async function findAndBookTable({ date, time, service, partySize, name }, phone)
       .filter(t => t.capacity >= partySize)
       .sort((a, b) => a.capacity - b.capacity); // preferir la más pequeña que alcance
 
-    // ID único: Date.now() + sufijo aleatorio evita colisiones entre
-    // confirmaciones simultáneas (antes, dos reservas en el mismo ms se sobreescribían).
-    const id = `r${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = `r${Date.now()}`;
     let booked = null;
 
     await db.runTransaction(async (tx) => {

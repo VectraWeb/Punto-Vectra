@@ -68,10 +68,7 @@ export default function CalendarPicker({ date, onSelect, onClose, colors: C }) {
       </div>
       <button onClick={() => {
         const d = new Date();
-        // ISO local: toISOString() usaría UTC y en zonas GMT-x (ej. Argentina)
-        // entre las 21:00 y las 00:00 seleccionaría el día siguiente.
-        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        onSelect(iso);
+        onSelect(d.toISOString().slice(0, 10));
       }} style={{
         width: '100%', marginTop: '10px', padding: '8px', borderRadius: '10px',
         background: C.creamDeep, border: 'none', cursor: 'pointer',

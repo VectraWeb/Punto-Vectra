@@ -237,12 +237,14 @@ export const SECTOR_COLORS = [
 
 const STAFF_AUTH_KEY = 'isStaff';
 
+const staffPin = () => import.meta.env.VITE_STAFF_PIN || '2024';
+
 export function isStaffAuthenticated() {
-  return sessionStorage.getItem(STAFF_AUTH_KEY) === btoa('andi:' + (import.meta.env.VITE_STAFF_PIN || '2024'));
+  return sessionStorage.getItem(STAFF_AUTH_KEY) === btoa('andi:' + staffPin());
 }
 
 export function markStaffAuthenticated() {
-  sessionStorage.setItem(STAFF_AUTH_KEY, btoa('andi:' + (import.meta.env.VITE_STAFF_PIN || '2024')));
+  sessionStorage.setItem(STAFF_AUTH_KEY, btoa('andi:' + staffPin()));
 }
 
 export function logoutStaff() {

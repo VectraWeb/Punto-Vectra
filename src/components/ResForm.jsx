@@ -103,9 +103,7 @@ export default function ResForm({ onStaffAccess }) {
     setSubmitting(true);
     setError('');
 
-    // ID único: sufijo aleatorio evita colisiones (dos submits en el mismo ms
-    // antes sobreescribían la misma reserva).
-    const id = `r${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = `r${Date.now()}`;
 
     try {
       // GUARDADO SIMPLE: Sin búsqueda de mesas, sin transacciones.
@@ -218,7 +216,7 @@ export default function ResForm({ onStaffAccess }) {
         </Field>
 
         {service && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', padding: '10px 14px', background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px', color: '#6b5a00', lineHeight: '1.4' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: C.forest, padding: '10px 14px', background: C.forestSoft, borderRadius: '12px' }}>
             {service === 'mediodia' ? <Calendar size={15} /> : <Clock size={15} />}
             <span><strong>{service === 'mediodia' ? 'Mediodía' : 'Cena'}</strong> · de {SERVICES[service].start} a {SERVICES[service].end}</span>
           </div>
