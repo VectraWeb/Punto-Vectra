@@ -216,7 +216,7 @@ export default function ResForm({ onStaffAccess }) {
         </Field>
 
         {service && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: C.forest, padding: '10px 14px', background: C.forestSoft, borderRadius: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', padding: '10px 14px', background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px', color: '#6b5a00', lineHeight: '1.4' }}>
             {service === 'mediodia' ? <Calendar size={15} /> : <Clock size={15} />}
             <span><strong>{service === 'mediodia' ? 'Mediodía' : 'Cena'}</strong> · de {SERVICES[service].start} a {SERVICES[service].end}</span>
           </div>
