@@ -2,12 +2,11 @@
 // PWA de gestión de mesas con sincronización en tiempo real vía Firebase Firestore
 // Incluye máquina de estados en vivo para mozos
 
-import React, { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import VistaCliente from './components/VistaCliente';
 import PinGate from './components/PinGate';
+import StaffDashboard from './components/StaffDashboard';
 import { C, logoutStaff } from './utils';
-
-const StaffDashboard = React.lazy(() => import('./components/StaffDashboard'));
 
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
 
@@ -98,9 +97,7 @@ export default function App() {
 
       {staffMode ? (
         <PinGate onBack={handleStaffExit}>
-          <React.Suspense fallback={<LoadingSpinner />}>
-            <StaffDashboard onLogout={handleStaffExit} />
-          </React.Suspense>
+          <StaffDashboard onLogout={handleStaffExit} />
         </PinGate>
       ) : (
         <VistaCliente onStaffAccess={handleStaffAccess} />
@@ -166,17 +163,5 @@ export default function App() {
         </div>
       )}
     </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// LoadingSpinner
-// ═══════════════════════════════════════════════════════════════════════════════
-function LoadingSpinner() {
-  return (
-    <div style={{ minHeight: '100vh', background: C.cream, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-      <div style={{ width: '48px', height: '48px', border: `4px solid ${C.creamDeep}`, borderTopColor: C.terra, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <p style={{ fontFamily: '"Fraunces", serif', fontSize: '20px', fontStyle: 'italic', fontWeight: 600, color: C.forest }}>Cargando Andi...</p>
-    </div>
   );
 }

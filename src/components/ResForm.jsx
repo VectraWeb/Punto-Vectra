@@ -1,16 +1,14 @@
 // ResForm.jsx — Formulario de reserva independiente para clientes
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Check, AlertCircle } from 'lucide-react';
+import { Check, AlertCircle, Calendar, Clock } from 'lucide-react';
 import {
-  collection, doc, onSnapshot, setDoc, serverTimestamp,
-  query, where,
+  doc, onSnapshot, setDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { C, SERVICES, DEFAULT_CONFIG, configToArray, t2m, todayISO, detectService } from '../utils';
+import { C, SERVICES, DEFAULT_CONFIG, configToArray, t2m, todayISO } from '../utils';
 import { Field } from './ui';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
-const resCol = () => collection(db, 'reservations');
 const resDocRef = (id) => doc(db, 'reservations', id);
 const cfgRef = () => doc(db, 'config', 'restaurant');
 
@@ -22,14 +20,26 @@ const inp = {
   fontFamily: 'inherit',
 };
 
+// Detección del servicio (turno) según la hora elegida: Mediodía (AM) o Cena (PM)
+const serviceFromTime = (time) => {
+  if (!time) return null;
+  const mins = t2m(time, 'mediodia');
+  const mStart = t2m(SERVICES.mediodia.start, 'mediodia');
+  const mEnd = t2m(SERVICES.mediodia.end, 'mediodia');
+  if (mins >= mStart && mins <= mEnd) return 'mediodia';
+  const cMins = t2m(time, 'cena');
+  const cStart = t2m(SERVICES.cena.start, 'cena');
+  const cEnd = t2m(SERVICES.cena.end, 'cena');
+  if (cMins >= cStart && cMins <= cEnd) return 'cena';
+  return null;
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResForm — Formulario de reserva para clientes
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ResForm({ onStaffAccess }) {
   const [, setConfig] = useState(DEFAULT_CONFIG);
-  const [service, setService] = useState(detectService);
-  const [date] = useState(todayISO());
-  const [reservations, setReservations] = useState([]);
+  const [date, setDate] = useState(todayISO());
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -54,13 +64,9 @@ export default function ResForm({ onStaffAccess }) {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
-  const [staff, setStaff] = useState([]);
-
   const [form, setForm] = useState({
     customerName: '',
-    phone: '',
     partySize: 2,
-    staffId: '',
     time: nowHHMM(),
     notes: '',
   });
@@ -75,39 +81,20 @@ export default function ResForm({ onStaffAccess }) {
     return unsub;
   }, []);
 
-  // ── Suscripción a staff (mozos) ──────────────────────────────────────────
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'staff'), (snap) => {
-      setStaff(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return unsub;
-  }, []);
+  // Servicio (Mediodía/Cena) derivado de la hora elegida
+  const service = serviceFromTime(form.time);
+  const timeOutOfRange = form.time && !service;
 
-  // ── Suscripción a reservas del día ───────────────────────────────────────
-  useEffect(() => {
-    const q = query(resCol(), where('date', '==', date));
-    const unsub = onSnapshot(q, (snap) => {
-      setReservations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return unsub;
-  }, [date]);
-
-  // ── Corregir time si cambia de servicio ──────────────────────────────────
-  const tInRange = (time, svc) => {
-    if (!time) return false;
-    const mins = t2m(time, svc);
-    const start = t2m(SERVICES[svc].start, svc);
-    const end = t2m(SERVICES[svc].end, svc);
-    return mins >= start && mins <= end;
-  };
-
-  const timeOutOfRange = form.time && !tInRange(form.time, service);
+  // Cierre semanal: los martes no se atiende
+  const closedTuesday = new Date(date + 'T12:00:00').getDay() === 2;
 
   // ── Validación ───────────────────────────────────────────────────────────
   const valid = form.customerName.trim().length >= 2
     && form.time
-    && tInRange(form.time, service)
+    && service
     && form.partySize > 0
+    && date
+    && !closedTuesday
     && !submitting;
 
   // ── Submit ───────────────────────────────────────────────────────────────
@@ -117,19 +104,6 @@ export default function ResForm({ onStaffAccess }) {
     setError('');
 
     const id = `r${Date.now()}`;
-    const date = todayISO();
-
-    const validEstados = ['pendiente', 'confirmada', 'esperando_cliente'];
-    const duplicate = form.phone && reservations.some(r =>
-      (r.customerPhone === form.phone || r.phone === form.phone) &&
-      r.service === service &&
-      validEstados.includes(r.estado || '')
-    );
-    if (duplicate) {
-      setError('Ya tenés una reserva activa para este turno. No podés reservar dos veces.');
-      setSubmitting(false);
-      return;
-    }
 
     try {
       // GUARDADO SIMPLE: Sin búsqueda de mesas, sin transacciones.
@@ -137,10 +111,9 @@ export default function ResForm({ onStaffAccess }) {
       await setDoc(resDocRef(id), {
         id,
         customerName: form.customerName.trim(),
-        phone: form.phone,
         partySize: form.partySize,
-        staffId: form.staffId || null,
-        staffName: staff.find(s => s.id === form.staffId)?.name || '',
+        staffId: null,
+        staffName: '',
         time: form.time,
         duration: SERVICES[service].defaultDuration,
         service,
@@ -155,7 +128,7 @@ export default function ResForm({ onStaffAccess }) {
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
-        setForm({ customerName: '', phone: '', partySize: 2, staffId: '', time: nowHHMM(), notes: '' });
+        setForm({ customerName: '', partySize: 2, time: nowHHMM(), notes: '' });
       }, 3000);
     } catch (e) {
       console.error('Error al crear la reserva:', e);
@@ -176,6 +149,9 @@ export default function ResForm({ onStaffAccess }) {
           Reserva confirmada
         </h2>
         <p style={{ fontSize: '14px', color: C.muted, margin: 0 }}>
+          {date} · {form.time} · {service === 'mediodia' ? 'Mediodía' : 'Cena'}
+        </p>
+        <p style={{ fontSize: '14px', color: C.muted, margin: '4px 0 0' }}>
           Te esperamos en <strong>Andi</strong>
         </p>
       </div>
@@ -194,30 +170,6 @@ export default function ResForm({ onStaffAccess }) {
         </p>
       </div>
 
-      {/* Selector de servicio */}
-      <div style={{ padding: '0 20px 16px', display: 'flex', gap: '8px' }}>
-        {Object.entries(SERVICES).map(([k, s]) => {
-          const Icon = s.icon;
-          const active = service === k;
-          return (
-            <button key={k} onClick={() => setService(k)} style={{
-              flex: 1, padding: '14px 8px',
-              background: active ? C.forest : 'transparent',
-              color: active ? C.cream : C.forest,
-              border: `1.5px solid ${C.forest}`,
-              borderRadius: '14px', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px',
-              fontFamily: 'inherit', transition: 'all 0.2s ease',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600 }}>
-                <Icon size={14} />{s.name}
-              </div>
-              <span style={{ fontSize: '10px', opacity: 0.7 }}>{s.start} — {s.end}</span>
-            </button>
-          );
-        })}
-      </div>
-
       {/* Formulario */}
       <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         <Field label="Nombre">
@@ -230,14 +182,23 @@ export default function ResForm({ onStaffAccess }) {
           />
         </Field>
 
-        <Field label="Teléfono (opcional)">
+        <Field label="Fecha">
           <input
-            value={form.phone}
-            onChange={e => set('phone', e.target.value)}
-            placeholder="+54 9 11 ..."
-            type="tel"
+            type="date"
+            value={date}
+            min={todayISO()}
+            onChange={e => setDate(e.target.value)}
             style={inp}
           />
+          {closedTuesday && (
+            <div style={{
+              marginTop: '8px', fontSize: '13px', padding: '10px 14px',
+              background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px',
+              color: '#6b5a00', lineHeight: '1.4',
+            }}>
+              Cerrado los martes. Elegí otro día para reservar.
+            </div>
+          )}
         </Field>
 
         <Field label="Comensales">
@@ -248,30 +209,22 @@ export default function ResForm({ onStaffAccess }) {
           </select>
         </Field>
 
-        {staff.filter(s => s.active !== false).length > 0 && (
-          <Field label="Mozo (opcional)">
-            <select value={form.staffId} onChange={e => set('staffId', e.target.value)} style={inp}>
-              <option value="">Sin preferencia</option>
-              {staff.filter(s => s.active !== false).map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </Field>
-        )}
-
-        {staff.length === 0 && (
-          <p style={{ fontSize: '13px', color: C.muted, margin: '-4px 0 4px' }}>No hay mozos cargados</p>
-        )}
-
         <Field label="Horario">
           <input type="time" value={form.time}
             onChange={e => set('time', e.target.value)}
             style={inp} />
         </Field>
 
+        {service && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: C.forest, padding: '10px 14px', background: C.forestSoft, borderRadius: '12px' }}>
+            {service === 'mediodia' ? <Calendar size={15} /> : <Clock size={15} />}
+            <span><strong>{service === 'mediodia' ? 'Mediodía' : 'Cena'}</strong> · de {SERVICES[service].start} a {SERVICES[service].end}</span>
+          </div>
+        )}
+
         {timeOutOfRange && (
           <div style={{ padding: '10px 14px', background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px', fontSize: '13px', color: '#6b5a00', lineHeight: '1.4' }}>
-            El horario de <strong>{SERVICES[service].name}</strong> es de {SERVICES[service].start} a {SERVICES[service].end}. Probá con otro horario o cambiá a <strong>{service === 'mediodia' ? 'Cena' : 'Mediodía'}</strong>.
+            Ese horario está fuera de nuestra atención: Mediodía de {SERVICES.mediodia.start} a {SERVICES.mediodia.end} y Cena de {SERVICES.cena.start} a {SERVICES.cena.end}.
           </div>
         )}
 

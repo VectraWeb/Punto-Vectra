@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Settings, Users, LogOut, Wifi, WifiOff, BarChart3 } from 'lucide-react';
+import { Settings, Users, LogOut, BarChart3 } from 'lucide-react';
 import CalendarPicker from './CalendarPicker';
 import { C, formatDate } from '../utils';
 
 export function DashboardHeader({
-  online, handleInstall, date, setDate,
+  handleInstall, date, setDate,
   setShowAnalytics, setShowSettings, setShowStaff, setShowSectors, onLogout
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -18,13 +18,6 @@ export function DashboardHeader({
             <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: '34px', fontStyle: 'italic', fontWeight: 600, margin: '2px 0 0', lineHeight: 1, letterSpacing: '-0.02em' }}>Andi</h1>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {/* Indicador online/offline */}
-            <div className="online-badge" title={online ? 'Conectado' : 'Sin conexión — cambios en cola'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '10px', fontSize: '11px' }}>
-              {online
-                ? <><Wifi size={13} color="#6fd98d" /><span style={{ color: '#6fd98d' }}>Online</span></>
-                : <><WifiOff size={13} color={C.soon} /><span style={{ color: C.soon }}>Offline</span></>
-              }
-            </div>
             {/* Desktop: botones individuales */}
             <div className="header-btns" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <button onClick={() => setShowAnalytics(true)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: C.cream, padding: '10px', borderRadius: '12px', cursor: 'pointer' }}>

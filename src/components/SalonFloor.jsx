@@ -116,7 +116,7 @@ const formatCountdown = (sec) => {
 const TableShape = React.memo(function TableShape({
   t, pos, dim, s, timer, sectorColor, tableNum,
   isEditing, isEditingSectors, isMobile,
-  onTableClick, onDragStart,
+  onClick, onDragStart,
 }) {
   const ct = useCleaningCountdown(timer?.expiresAt);
   const bg = tableColor(s.status, s.res?.liveState, ct);
@@ -132,7 +132,7 @@ const TableShape = React.memo(function TableShape({
       onPointerDown={(e) => onDragStart(t.id, e)}
       onTouchStart={(e) => { if (isEditing) onDragStart(t.id, e); }}
       onClick={() => {
-        if (!isEditing && onTableClick) onTableClick(t, s);
+        if (!isEditing && onClick) onClick();
       }}
       style={{
         position: 'absolute',
@@ -211,7 +211,7 @@ const TableShape = React.memo(function TableShape({
 
 const SalonFloor = React.memo(function SalonFloor({
   tables, tableStatus, cleaningTimers, onTableClick, tableNums,
-  positions, setPositions, saveLayout,
+  positions, setPositions, groups, setGroups, saveLayout,
   isEditing, onToggleEdit,
   sectors, isEditingSectors, onToggleEditSectors, onSaveSectors,
 }) {
@@ -330,6 +330,35 @@ const SalonFloor = React.memo(function SalonFloor({
     return () => window.removeEventListener('resize', calcFit);
   }, [isMobile]);
 
+  // Rect de cada mesa del lienzo (dimensiones conocidas)
+  const tableRect = useCallback((t, pos) => {
+    const d = TABLE_DIMS[t.shape] || TABLE_DIMS.round;
+    return { x: pos.x, y: pos.y, w: d.w, h: d.h };
+  }, []);
+
+  // Snap: solo si el rect arrastrado está SUPERPUESTO con otro (se tocan),
+  // devuelve el desplazamiento mínimo para pegarlo al borde más cercano.
+  // La cercanía sin contacto NO une mesas.
+  const closestSnap = useCallback((draggedRect, otherRect) => {
+    const overlapX = Math.min(draggedRect.x + draggedRect.w, otherRect.x + otherRect.w) - Math.max(draggedRect.x, otherRect.x);
+    const overlapY = Math.min(draggedRect.y + draggedRect.h, otherRect.y + otherRect.h) - Math.max(draggedRect.y, otherRect.y);
+    if (!(overlapX > 0 && overlapY > 0)) return null;
+
+    const dRight = otherRect.x - (draggedRect.x + draggedRect.w);
+    const dLeft  = draggedRect.x - (otherRect.x + otherRect.w);
+    const dDown  = otherRect.y - (draggedRect.y + draggedRect.h);
+    const dUp    = draggedRect.y - (otherRect.y + otherRect.h);
+
+    // Superpuesto: empujar al borde más cercano (dist = módulo de la distancia)
+    const options = [
+      { dist: Math.abs(dRight), dx: dRight, dy: 0 },
+      { dist: Math.abs(dLeft),  dx: -dLeft,  dy: 0 },
+      { dist: Math.abs(dDown),  dx: 0, dy: dDown },
+      { dist: Math.abs(dUp),    dx: 0, dy: -dUp },
+    ];
+    return options.sort((a, b) => a.dist - b.dist)[0] || null;
+  }, []);
+
   const handleDragStart = useCallback((tableId, e) => {
     if (!isEditing) return;
     e.preventDefault();
@@ -338,9 +367,11 @@ const SalonFloor = React.memo(function SalonFloor({
     const el = e.currentTarget.closest('[data-table-id]');
     if (!el) return;
 
-    const t = tables.find(tb => tb.id === tableId);
-    const dim = TABLE_DIMS[t?.shape] || TABLE_DIMS.round;
-    const startPos = positions[tableId] || { x: 0, y: 0 };
+    // Bloque: la mesa sola o el grupo completo (se mueve rígido)
+    const block = (groups || []).find(g => g.includes(tableId)) || [tableId];
+    const startPositions = {};
+    for (const id of block) startPositions[id] = positions[id] || { x: 0, y: 0 };
+
     const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
     const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
 
@@ -359,14 +390,27 @@ const SalonFloor = React.memo(function SalonFloor({
       const rawDy = (cy - startY) / effectiveScale;
       const dx = isMobile ? -rawDy : rawDx;
       const dy = isMobile ? rawDx : rawDy;
-      const newX = startPos.x + dx;
-      const newY = startPos.y + dy;
+
+      // Arrastre libre: las mesas pueden superponerse (solo se limitan al lienzo)
+      const resolved = {};
+      for (const id of block) {
+        const t = tables.find(tb => tb.id === id);
+        const dim = TABLE_DIMS[t?.shape] || TABLE_DIMS.round;
+        const sp = startPositions[id];
+        resolved[id] = {
+          x: Math.max(0, Math.min(CANVAS_W - dim.w, sp.x + dx)),
+          y: Math.max(0, Math.min(CANVAS_H - dim.h, sp.y + dy)),
+        };
+      }
 
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        el.style.transform = `translate3d(${newX}px, ${newY}px, 0)`;
+        for (const id of block) {
+          const memberEl = document.querySelector(`[data-table-id="${id}"]`);
+          if (memberEl) memberEl.style.transform = `translate3d(${resolved[id].x}px, ${resolved[id].y}px, 0)`;
+        }
       });
-      dragRef.current = { tableId, x: newX, y: newY };
+      dragRef.current = { block, positions: resolved };
     };
 
     const onUp = () => {
@@ -379,10 +423,41 @@ const SalonFloor = React.memo(function SalonFloor({
       el.style.zIndex = '';
       el.style.willChange = '';
 
-      if (dragRef.current && dragRef.current.tableId === tableId) {
-        const finalX = Math.max(0, Math.min(CANVAS_W - dim.w, dragRef.current.x));
-        const finalY = Math.max(0, Math.min(CANVAS_H - dim.h, dragRef.current.y));
-        setPositions(prev => ({ ...prev, [tableId]: { x: finalX, y: finalY } }));
+      const drag = dragRef.current;
+      if (drag && drag.block.includes(tableId)) {
+        let final = { ...drag.positions };
+
+        // ── DETECCIÓN DE UNIÓN: si el bloque quedó pegado a otra mesa, se juntan
+        let best = null;
+        for (const id of block) {
+          const tMe = tables.find(t => t.id === id);
+          const rMe = tableRect(tMe, final[id]);
+          for (const t of tables) {
+            if (block.includes(t.id)) continue;
+            const r = tableRect(t, positions[t.id] || { x: 0, y: 0 });
+            const snap = closestSnap(rMe, r);
+            if (snap && (!best || snap.dist < best.dist)) best = { targetId: t.id, snap, anchorId: id };
+          }
+        }
+
+        if (best) {
+          const snap = best.snap;
+          const anchorPos = final[best.anchorId];
+          const snapX = anchorPos.x + snap.dx;
+          const snapY = anchorPos.y + snap.dy;
+          const snapDeltaX = snapX - anchorPos.x;
+          const snapDeltaY = snapY - anchorPos.y;
+          for (const id of block) {
+            final[id] = { x: final[id].x + snapDeltaX, y: final[id].y + snapDeltaY };
+          }
+          const otherBlock = (groups || []).find(g => g.includes(best.targetId)) || [best.targetId];
+          setGroups(prev => [
+            ...prev.filter(g => !block.some(id => g.includes(id)) && !otherBlock.some(id => g.includes(id))),
+            [...block, ...otherBlock],
+          ]);
+        }
+
+        setPositions(prev => ({ ...prev, ...final }));
         setDirty(true);
       }
       dragRef.current = null;
@@ -392,7 +467,7 @@ const SalonFloor = React.memo(function SalonFloor({
     window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('touchend', onUp);
-  }, [isEditing, positions, tables, effectiveScale, isMobile, setPositions]);
+  }, [isEditing, positions, tables, groups, effectiveScale, isMobile, setPositions, setGroups, tableRect, closestSnap]);
 
   const handleTouchStart = useCallback((e) => {
     if (isEditing) return;
@@ -487,14 +562,64 @@ const SalonFloor = React.memo(function SalonFloor({
     };
   }, [isMobile, handleMouseDown, handleMouseMove, handleMouseUp]);
 
+  // ── Guardar: escanea mesas tocadas y las une automáticamente ──
   const handleSave = useCallback(async () => {
+    const pos = positions;
+    const parent = {};
+    const find = (id) => { parent[id] = parent[id] || id; while (parent[id] !== id) { parent[id] = parent[parent[id]]; id = parent[id]; } return id; };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+
+    for (let i = 0; i < tables.length; i++) {
+      const a = tables[i];
+      const pa = pos[a.id];
+      if (!pa) continue;
+      const da = TABLE_DIMS[a.shape] || TABLE_DIMS.round;
+      const ra = { x: pa.x, y: pa.y, w: da.w, h: da.h };
+      for (let j = i + 1; j < tables.length; j++) {
+        const b = tables[j];
+        const pb = pos[b.id];
+        if (!pb) continue;
+        const db = TABLE_DIMS[b.shape] || TABLE_DIMS.round;
+        const rb = { x: pb.x, y: pb.y, w: db.w, h: db.h };
+        const snap = closestSnap(ra, rb);
+        if (snap) union(a.id, b.id);
+      }
+    }
+
+    const groupMap = {};
+    for (const t of tables) {
+      const root = find(t.id);
+      (groupMap[root] = groupMap[root] || []).push(t.id);
+    }
+    const newGroups = Object.values(groupMap).filter(g => g.length >= 2);
     try {
-      await saveLayout(positions);
+      await saveLayout(pos, newGroups);
+      setGroups(newGroups);
       setDirty(false);
     } catch (err) {
       console.error('[SalonFloor] Error guardando layout:', err);
     }
-  }, [positions, saveLayout]);
+  }, [positions, tables, saveLayout, setGroups, closestSnap]);
+
+  // ── Separar un grupo unido: se quita del layout y se separan visualmente ──
+  const unjoinGroup = useCallback((group) => {
+    setGroups(prev => prev.filter(g => g !== group));
+    const nudge = 18;
+    const upd = {};
+    group.forEach((id, i) => {
+      const t = tables.find(tb => tb.id === id);
+      const dim = TABLE_DIMS[t?.shape] || TABLE_DIMS.round;
+      const p = positions[id];
+      if (p) {
+        upd[id] = {
+          x: Math.max(0, Math.min(CANVAS_W - dim.w, p.x + (i % 2 === 0 ? -nudge : nudge))),
+          y: p.y,
+        };
+      }
+    });
+    setPositions(prev => ({ ...prev, ...upd }));
+    setDirty(true);
+  }, [tables, positions, setGroups, setPositions]);
 
   const handleSectorDragStart = useCallback((sectorId, e) => {
     if (!isEditingSectors) return;
@@ -613,13 +738,15 @@ const SalonFloor = React.memo(function SalonFloor({
 
   const handleReset = useCallback(() => {
     setPositions(defaultPositions(tables));
+    setGroups([]);
     setDirty(true);
-  }, [tables, setPositions, setDirty]);
+  }, [tables, setPositions, setGroups, setDirty]);
 
   // Aristas de proximidad entre mesas: precomputadas para evitar O(n²) en cada render
   const edges = useMemo(() => {
     const out = [];
     const dims = TABLE_DIMS;
+    const inSameGroup = (aId, bId) => (groups || []).some(g => g.includes(aId) && g.includes(bId));
     for (let i = 0; i < tables.length; i++) {
       const a = tables[i];
       const pa = positions[a.id];
@@ -629,6 +756,7 @@ const SalonFloor = React.memo(function SalonFloor({
         const b = tables[j];
         const pb = positions[b.id];
         if (!pb) continue;
+        if (inSameGroup(a.id, b.id)) continue;
         const db = dims[b.shape] || dims.round;
         const dx = (pa.x + da.w / 2) - (pb.x + db.w / 2);
         const dy = (pa.y + da.h / 2) - (pb.y + db.h / 2);
@@ -642,7 +770,7 @@ const SalonFloor = React.memo(function SalonFloor({
       }
     }
     return out;
-  }, [tables, positions]);
+  }, [tables, positions, groups]);
 
   return (
     <div style={{ padding: '0 4px 12px' }}>
@@ -800,7 +928,7 @@ const SalonFloor = React.memo(function SalonFloor({
             <line x1={CANVAS_W - 30} y1="740" x2={CANVAS_W - 120} y2="740" stroke={PALETTE.espresso} strokeWidth="3" opacity="0.6" />
             <text x={CANVAS_W - 80} y="720" fontSize="11" fill={PALETTE.muted} fontFamily="inherit" fontWeight="600" opacity="0.7" textAnchor="middle">Entrada</text>
 
-            {edges.map(edge => (
+            {!isEditing && !isEditingSectors && edges.map(edge => (
               <line key={edge.key}
                 x1={edge.x1} y1={edge.y1} x2={edge.x2} y2={edge.y2}
                 stroke={PALETTE.cream} strokeWidth="1" strokeDasharray="4" opacity="0.5"
@@ -876,15 +1004,82 @@ const SalonFloor = React.memo(function SalonFloor({
             );
           })}
 
+          {/* Overlay de grupos unidos: contorno + capacidad + botón separar */}
+          {(groups || []).map((g, gi) => {
+            const members = g.map(id => tables.find(t => t.id === id)).filter(Boolean);
+            if (members.length < 2) return null;
+            const rects = members.map(t => {
+              const d = TABLE_DIMS[t.shape] || TABLE_DIMS.round;
+              const p = positions[t.id] || { x: 0, y: 0 };
+              return { x: p.x, y: p.y, w: d.w, h: d.h };
+            });
+            const minX = Math.min(...rects.map(r => r.x));
+            const minY = Math.min(...rects.map(r => r.y));
+            const maxX = Math.max(...rects.map(r => r.x + r.w));
+            const maxY = Math.max(...rects.map(r => r.y + r.h));
+            const cap = members.reduce((a, t) => a + (t.capacity || 0), 0);
+            const groupRect = {
+              left: minX - 6, top: minY - 6,
+              width: maxX - minX + 12, height: maxY - minY + 12,
+            };
+            return (
+              <div key={gi} style={{
+                position: 'absolute',
+                left: groupRect.left, top: groupRect.top,
+                width: groupRect.width, height: groupRect.height,
+                border: '2px dashed rgba(31,58,46,0.3)',
+                borderRadius: '16px', pointerEvents: 'none', zIndex: isEditingSectors ? 1 : 5,
+              }}>
+                {/* Capacidad total del grupo */}
+                <span style={{
+                  position: 'absolute', top: '-9px', left: '10px',
+                  background: PALETTE.forest, color: PALETTE.cream,
+                  fontSize: '10px', fontWeight: 700, padding: '2px 8px',
+                  borderRadius: '8px', lineHeight: 1.4,
+                }}>
+                  {cap}p
+                </span>
+                {isEditing && (
+                  <button
+                    title="Separar mesas"
+                    onClick={(ev) => { ev.stopPropagation(); unjoinGroup(g); }}
+                    style={{
+                      position: 'absolute', top: '-10px', right: '-10px',
+                      width: '22px', height: '22px', borderRadius: '50%',
+                      background: PALETTE.terra, color: '#fff', border: '2px solid #fff',
+                      cursor: 'pointer', fontSize: '12px', fontWeight: 700, lineHeight: 1,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.25)', pointerEvents: 'auto',
+                    }}
+                  >×</button>
+                )}
+              </div>
+            );
+          })}
+
           {tables.map((t) => {
             const pos = positions[t.id] || { x: 0, y: 0 };
-            const s = tableStatus(t.id) || { status: 'free' };
+            const group = (groups || []).find(g => g.includes(t.id)) || null;
+            let s = tableStatus(t.id) || { status: 'free' };
+            // Si el grupo tiene reserva (mesa primaria ocupada), todas las
+            // mesas unidas comparten ese estado visualmente.
+            if (group && s.status === 'free') {
+              const p = tableStatus(group[0]) || s;
+              if (p.status !== 'free') s = p;
+            }
             const timer = cleaningTimers?.[t.id] || null;
             const dim = TABLE_DIMS[t.shape] || TABLE_DIMS.round;
             const secFor = (sectors || []).find(sec => {
               const p = positions[t.id];
               return p && rectsOverlap(sec, { x: p.x, y: p.y, w: dim.w, h: dim.h });
             }) || null;
+
+            const handleClick = group
+              ? () => {
+                  const cap = group.reduce((a, id) => a + ((tables.find(x => x.id === id)?.capacity) || 0), 0);
+                  onTableClick({ ...t, capacity: cap, joinedIds: group }, s);
+                }
+              : () => onTableClick(t, s);
 
             return (
               <TableShape
@@ -899,7 +1094,7 @@ const SalonFloor = React.memo(function SalonFloor({
                 isEditing={isEditing}
                 isEditingSectors={isEditingSectors}
                 isMobile={isMobile}
-                onTableClick={onTableClick}
+                onClick={handleClick}
                 onDragStart={handleDragStart}
               />
             );

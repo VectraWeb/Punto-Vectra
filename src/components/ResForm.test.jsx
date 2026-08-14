@@ -28,16 +28,16 @@ describe('ResForm', () => {
     expect(screen.getByText('Reservar mesa')).toBeTruthy();
   });
 
-  it('renders service selector', () => {
+  it('renders a date calendar', () => {
     render(<ResForm />);
-    expect(screen.getAllByText('Mediodía').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Cena').length).toBeGreaterThan(0);
+    const dateInput = screen.getByDisplayValue(/\d{4}-\d{2}-\d{2}/);
+    expect(dateInput).toBeTruthy();
+    expect(dateInput.type).toBe('date');
   });
 
   it('renders all form fields', () => {
     render(<ResForm />);
     expect(screen.getByPlaceholderText('Tu nombre')).toBeTruthy();
-    expect(screen.getByPlaceholderText('+54 9 11 ...')).toBeTruthy();
     expect(screen.getByPlaceholderText('Alergias, pedidos especiales...')).toBeTruthy();
   });
 

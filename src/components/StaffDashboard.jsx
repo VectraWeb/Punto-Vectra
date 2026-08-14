@@ -46,7 +46,6 @@ export default function StaffDashboard({ onLogout }) {
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(todayISO);
   const [service, setService] = useState(detectService);
-  const [online, setOnline] = useState(navigator.onLine);
 
   // Modales
   const [showModal, setShowModal] = useState(false);
@@ -63,6 +62,7 @@ export default function StaffDashboard({ onLogout }) {
   const [showStaff, setShowStaff] = useState(false);
   const [showSectors, setShowSectors] = useState(false);
   const [selectedMozoTab, setSelectedMozoTab] = useState(null);
+  const [showReservas, setShowReservas] = useState(true);
   const [editingSectors, setEditingSectors] = useState(false);
   const deferredPrompt = useRef(null);
   const [canInstall, setCanInstall] = useState(false);
@@ -91,7 +91,7 @@ export default function StaffDashboard({ onLogout }) {
   const slots = useMemo(() => genSlots(service), [service]);
 
   // Posiciones del salón: suscripción única compartida con SalonFloor
-  const { positions, setPositions, saveLayout } = useSalonLayout();
+  const { positions, setPositions, groups, setGroups, saveLayout } = useSalonLayout();
 
   // Números elegidos por cada mozo mapeados a las mesas físicas de su sector.
   const { tableNumByTable, ownerByTable, mozoTableIds } = useMozoTableNumbers(tables, staff, sectors, positions);
@@ -124,15 +124,6 @@ export default function StaffDashboard({ onLogout }) {
     } else {
       setShowInstallGuide(true);
     }
-  }, []);
-
-  // ── Online/Offline indicator ───────────────────────────────────────────────
-  useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
   // ── Persistir configuración ────────────────────────────────────────────────────────
@@ -412,7 +403,12 @@ export default function StaffDashboard({ onLogout }) {
   }, [reservations, analyticsRes, analyticsPeriod]);
 
   const sortedRes = useMemo(() =>
-    [...svcRes].sort((a, b) => t2m(a.time, a.service) - t2m(b.time, b.service)),
+    [...svcRes].sort((a, b) => {
+      // Sin mesa primero
+      if (!a.mesa_id && b.mesa_id) return -1;
+      if (a.mesa_id && !b.mesa_id) return 1;
+      return t2m(a.time, a.service) - t2m(b.time, b.service);
+    }),
     [svcRes]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
@@ -528,7 +524,6 @@ export default function StaffDashboard({ onLogout }) {
 
       {/* ── HEADER ── */}
       <DashboardHeader
-        online={online}
         canInstall={canInstall}
         handleInstall={handleInstall}
         date={date}
@@ -605,24 +600,50 @@ export default function StaffDashboard({ onLogout }) {
           <div style={{ padding: '0 16px 24px' }}>
             {/* Lista de mozos: un toque abre sus mesas, otro toque las cierra */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '4px' }}>
-              {/* Todas (sin mozo) */}
-              <button onClick={() => setSelectedMozoTab('__todas__')} style={{
-                width: '100%', padding: '14px', borderRadius: '14px', border: 'none',
+              {/* Acordeón de reservas */}
+              <button onClick={() => setShowReservas(!showReservas)} style={{
+                width: '100%', padding: '12px 14px', borderRadius: '14px', border: 'none',
                 cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: !selected ? C.forest : C.creamDeep,
-                color: !selected ? C.cream : C.espresso,
+                background: showReservas ? C.forest : C.creamDeep,
+                color: showReservas ? C.cream : C.espresso,
               }}>
-                <div style={{ fontSize: '16px', fontWeight: 700 }}>Todas las reservas</div>
-                <div style={{
-                  background: !selected ? C.cream : C.forestSoft,
-                  color: !selected ? C.forest : C.cream,
-                  padding: '4px 10px', borderRadius: '8px',
-                  fontSize: '12px', fontWeight: 700, flexShrink: 0,
-                }}>
-                  {sortedRes.length}
+                <div style={{ fontSize: '15px', fontWeight: 700 }}>Reservas</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    background: showReservas ? C.cream : C.forestSoft,
+                    color: showReservas ? C.forest : C.cream,
+                    padding: '4px 10px', borderRadius: '8px',
+                    fontSize: '12px', fontWeight: 700,
+                  }}>
+                    {sortedRes.length}
+                  </div>
+                  <div style={{
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    background: showReservas ? C.cream : C.forestSoft,
+                    color: showReservas ? C.forest : C.cream,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '10px', fontWeight: 700,
+                    transform: showReservas ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 0.2s',
+                  }}>▼</div>
                 </div>
               </button>
+
+              {showReservas && (
+                sortedRes.length > 0 ? (
+                  <ReservationList
+                    sortedRes={sortedRes}
+                    tables={tables}
+                    onEdit={(r) => { setEditing(r); setShowModal(true); }}
+                    onAction={(r) => setShowLiveMenu(r)}
+                  />
+                ) : (
+                  <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
+                    No hay reservas para este servicio
+                  </div>
+                )
+              )}
 
               {/* Mozos */}
               {activeStaff.map(s => {
@@ -733,22 +754,6 @@ export default function StaffDashboard({ onLogout }) {
                 </div>
               )
             )}
-
-            {/* Todas las reservas */}
-            {!selected && (
-              sortedRes.length > 0 ? (
-                <ReservationList
-                  sortedRes={sortedRes}
-                  tables={tables}
-                  onEdit={(r) => { setEditing(r); setShowModal(true); }}
-                  onAction={(r) => setShowLiveMenu(r)}
-                />
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
-                  No hay reservas para este servicio
-                </div>
-              )
-            )}
           </div>
         );
       })()}
@@ -762,6 +767,8 @@ export default function StaffDashboard({ onLogout }) {
           tableNums={tableNumByTable}
           positions={positions}
           setPositions={setPositions}
+          groups={groups}
+          setGroups={setGroups}
           saveLayout={saveLayout}
           isEditing={editingLayout}
           onToggleEdit={toggleEditingLayout}
