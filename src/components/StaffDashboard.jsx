@@ -401,7 +401,16 @@ export default function StaffDashboard({ onLogout }) {
       }
     }
 
-    return { totalCustomers, avgStay, stateBreakdown };
+    // ── Tendencia mensual: clientes por mes (últimos 12 meses) ──
+    const monthlyTrend = {};
+    for (const r of src) {
+      if (!r.date) continue;
+      const month = r.date.slice(0, 7); // "YYYY-MM"
+      if (!monthlyTrend[month]) monthlyTrend[month] = 0;
+      monthlyTrend[month] += (r.partySize || 0);
+    }
+
+    return { totalCustomers, avgStay, stateBreakdown, monthlyTrend };
   }, [reservations, analyticsRes, analyticsPeriod]);
 
   const sortedRes = useMemo(() =>

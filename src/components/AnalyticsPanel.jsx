@@ -1,11 +1,13 @@
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import { C, LIVE_STATES } from '../utils';
 import { Overlay } from './ui';
 
 export function AnalyticsPanel({ data, period, onPeriodChange, analyticsMonth, onMonthChange, onClose }) {
-  const { totalCustomers, avgStay, stateBreakdown } = data;
+  const { totalCustomers, avgStay, stateBreakdown, monthlyTrend } = data;
   const fmtMin = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m}min`;
-  const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']];
+  const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes'], ['trend', 'Gráfico']];
+
 
   return (
     <Overlay onClose={onClose}>
@@ -50,11 +52,69 @@ export function AnalyticsPanel({ data, period, onPeriodChange, analyticsMonth, o
         </div>
       )}
 
-      {totalCustomers === 0 ? (
+      {/* ── VISTA TENDENCIA: Gráfico de barras + línea de tendencia ── */}
+      {period === 'trend' && (() => {
+        const months = Object.entries(monthlyTrend || {})
+          .map(([key, customers]) => ({ key, customers }))
+          .sort((a, b) => a.key.localeCompare(b.key));
+
+        const maxCustomers = Math.max(...months.map(m => m.customers), 1);
+        const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+        const chartH = 50;
+        const n = months.length;
+        const barW = n > 0 ? Math.min(10, Math.floor(160 / n)) : 10;
+
+        return (
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: C.espresso }}>Clientes por mes</div>
+            </div>
+
+            {months.length === 0 ? (
+              <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
+                Sin datos de tendencia
+              </div>
+            ) : (
+              <div style={{ background: C.white, borderRadius: '12px', padding: '20px 16px 12px', border: `1px solid ${C.creamDeep}`, overflowX: 'auto' }}>
+                <svg width="100%" viewBox={`0 0 ${Math.max(months.length * (barW + 4) + 16, 200)} ${chartH + 120}`} style={{ display: 'block' }}>
+                  {/* Barras */}
+                  {months.map((m, i) => {
+                    const x = 8 + i * (barW + 4);
+                    const h = Math.max((m.customers / maxCustomers) * chartH, 3);
+                    const y = (chartH + 120) - 30 - h;
+                    const [yr, mo] = m.key.split('-').map(Number);
+                    return (
+                      <g key={m.key}>
+                        <rect x={x} y={y} width={barW} height={h} rx="3" fill={C.terra} opacity="0.85" />
+                        <text x={x + barW / 2} y={y - 4} textAnchor="middle" fontSize="8" fontWeight="700" fill={C.espresso}>{m.customers}</text>
+                        <text x={x + barW / 2} y={(chartH + 120) - 14} textAnchor="middle" fontSize="7" fill={C.muted}>{monthNames[mo - 1]}</text>
+                        <text x={x + barW / 2} y={(chartH + 120) - 4} textAnchor="middle" fontSize="6" fill={C.muted} opacity="0.6">{String(yr).slice(2)}</text>
+                      </g>
+                    );
+                  })}
+
+                </svg>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: '4px', fontSize: '10px', color: C.muted }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ display: 'inline-block', width: '12px', height: '8px', borderRadius: '2px', background: C.terra, opacity: 0.85 }} />
+                    Clientes
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {totalCustomers === 0 && period !== 'trend' && (
         <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
           Sin datos para este período
         </div>
-      ) : (
+      )}
+
+      {period !== 'trend' && totalCustomers > 0 && (
         <>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
             <div style={{ flex: 1, background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '14px', padding: '20px', textAlign: 'center' }}>

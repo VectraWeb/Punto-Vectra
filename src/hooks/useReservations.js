@@ -35,7 +35,19 @@ export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod, a
 
     let dates = [];
 
-    if (analyticsPeriod === 'month' && analyticsMonth) {
+    if (analyticsPeriod === 'trend') {
+      // Tendencia: últimos 12 meses
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        const daysInMonth = new Date(y, m, 0).getDate();
+        for (let day = 1; day <= daysInMonth; day++) {
+          dates.push(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+        }
+      }
+    } else if (analyticsPeriod === 'month' && analyticsMonth) {
       const [y, m] = analyticsMonth.split('-').map(Number);
       const daysInMonth = new Date(y, m, 0).getDate();
       for (let d = 1; d <= daysInMonth; d++) {
