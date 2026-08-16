@@ -1,7 +1,11 @@
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
 body {
-  font-family: 'Manrope', system-ui, sans-serif;
+  font-family: "Manrope", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -13,10 +17,16 @@ body {
   flex-direction: column;
 }
 
-input, select, textarea { font-family: inherit; }
+input,
+select,
+textarea {
+  font-family: inherit;
+}
 
 /* ── Focus rings (accesibilidad) ── */
-input:focus-visible, select:focus-visible, textarea:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   outline: 2px solid #c4602f;
   outline-offset: 2px;
 }
@@ -27,15 +37,34 @@ button:focus-visible {
 }
 
 /* ── Hover en botones ── */
-button { transition: transform 0.1s, filter 0.15s; }
-button:hover { filter: brightness(1.05); }
-button:active { transform: scale(0.97); }
+button {
+  transition:
+    transform 0.1s,
+    filter 0.15s;
+}
+button:hover {
+  filter: brightness(1.05);
+}
+button:active {
+  transform: scale(0.97);
+}
 
-.header-btns button:hover { background: rgba(255,255,255,0.2) !important; }
+.header-btns button:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
 
 /* ── Modal animations ── */
-@keyframes overlayIn { from { opacity: 0; } }
-@keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } }
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+}
 
 .modal-overlay {
   animation: overlayIn 0.2s ease-out;
@@ -46,13 +75,29 @@ button:active { transform: scale(0.97); }
 }
 
 /* ── Scrollbar styling ── */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #ebe3d5; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #d0c8b8; }
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #ebe3d5;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d0c8b8;
+}
 
 /* ── Skeleton shimmer ── */
-@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
 .skeleton {
   background: linear-gradient(90deg, #ebe3d5 25%, #f5efe6 50%, #ebe3d5 75%);
   background-size: 800px 100%;
@@ -61,11 +106,30 @@ button:active { transform: scale(0.97); }
 }
 
 /* ── Pin shake ── */
-@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
-.pin-shake { animation: shake 0.4s ease-in-out; }
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+.pin-shake {
+  animation: shake 0.4s ease-in-out;
+}
 
 /* ── Spinner ── */
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* ── Range inputs ── */
 input[type="range"] {
@@ -86,7 +150,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: #c4602f;
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(196,96,47,0.4);
+  box-shadow: 0 2px 6px rgba(196, 96, 47, 0.4);
   touch-action: none;
 }
 input[type="range"]::-moz-range-thumb {
@@ -101,26 +165,72 @@ input[type="range"]::-moz-range-thumb {
 
 /* ── Responsive ── */
 @media (max-width: 480px) {
-  .header-btns { display: none !important; }
-  .header-menu-btn { display: flex !important; }
-  .stat-grid { gap: 4px !important; }
-  .tab-grid { font-size: 12px !important; }
-  .modal-content { padding: 20px 14px 32px !important; border-radius: 20px !important; }
-  .pedidos-filtros { gap: 4px !important; }
-  .pedidos-filtros button { padding: 6px 4px !important; font-size: 10px !important; }
-  .online-badge { display: none !important; }
-  .desktop-tabs { display: none !important; }
-  .mobile-bottom-nav { display: flex !important; }
-  .main-container { padding-bottom: calc(190px + env(safe-area-inset-bottom, 0px)) !important; }
+  .header-btns {
+    display: none !important;
+  }
+  .header-menu-btn {
+    display: flex !important;
+  }
+  .stat-grid {
+    gap: 4px !important;
+  }
+  .tab-grid {
+    font-size: 12px !important;
+  }
+  .modal-content {
+    padding: 20px 14px 32px !important;
+    border-radius: 20px !important;
+  }
+  .pedidos-filtros {
+    gap: 4px !important;
+  }
+  .pedidos-filtros button {
+    padding: 6px 4px !important;
+    font-size: 10px !important;
+  }
+  .online-badge {
+    display: none !important;
+  }
+  .desktop-tabs {
+    display: none !important;
+  }
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+  .main-container {
+    padding-bottom: calc(210px + env(safe-area-inset-bottom, 0px)) !important;
+  }
 }
 @media (min-width: 481px) {
-  .header-menu-btn { display: none !important; }
-  .mobile-dropdown { display: none !important; }
-  .pedidos-filtros { gap: 8px !important; }
-  .pedidos-filtros button { padding: 10px 16px !important; font-size: 13px !important; border-radius: 10px !important; }
-  body { font-size: 16px; }
-  h1, h2, h3 { font-size: 120%; }
-  .desktop-tabs { display: flex !important; }
-  .mobile-bottom-nav { display: none !important; }
-  .main-container { padding-bottom: 24px !important; }
+  .header-menu-btn {
+    display: none !important;
+  }
+  .mobile-dropdown {
+    display: none !important;
+  }
+  .pedidos-filtros {
+    gap: 8px !important;
+  }
+  .pedidos-filtros button {
+    padding: 10px 16px !important;
+    font-size: 13px !important;
+    border-radius: 10px !important;
+  }
+  body {
+    font-size: 16px;
+  }
+  h1,
+  h2,
+  h3 {
+    font-size: 120%;
+  }
+  .desktop-tabs {
+    display: flex !important;
+  }
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+  .main-container {
+    padding-bottom: 24px !important;
+  }
 }
