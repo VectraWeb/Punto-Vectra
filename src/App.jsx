@@ -8,7 +8,7 @@ import PinGate from './components/PinGate';
 import StaffDashboard from './components/StaffDashboard';
 import { C, logoutStaff } from './utils';
 
-const VERSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
+const VERSION_CHECK_INTERVAL = 60 * 1000; // 1 minuto
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // App Principal
@@ -53,12 +53,17 @@ export default function App() {
 
     const interval = setInterval(checkForUpdates, VERSION_CHECK_INTERVAL);
 
-    // Verificar al inicio después de 30s
-    const initialTimer = setTimeout(checkForUpdates, 30000);
+    // Verificar al inicio después de 10s
+    const initialTimer = setTimeout(checkForUpdates, 10000);
+
+    // Re-verificar cuando el usuario vuelve a la pestaña (crítico para iOS PWA)
+    const onVisible = () => { if (document.visibilityState === 'visible') checkForUpdates(); };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       clearInterval(interval);
       clearTimeout(initialTimer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 
