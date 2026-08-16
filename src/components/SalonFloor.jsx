@@ -182,7 +182,7 @@ const TableShape = React.memo(function TableShape({
           <>
             <span style={{
               fontFamily: '"Fraunces", serif',
-              fontSize: '16px',
+              fontSize: isMobile ? '22px' : '19px',
               fontWeight: 700,
               color: fg,
               lineHeight: 1,
@@ -190,7 +190,7 @@ const TableShape = React.memo(function TableShape({
               {hasReservation ? tableNum : ''}
             </span>
             <span style={{
-              fontSize: '8px',
+              fontSize: isMobile ? '13px' : '11px',
               color: fg,
               opacity: 0.8,
               marginTop: '3px',
