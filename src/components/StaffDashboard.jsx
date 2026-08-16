@@ -55,6 +55,8 @@ export default function StaffDashboard({ onLogout }) {
   const [showLiveMenu, setShowLiveMenu] = useState(null); // reserva seleccionada para cambiar estado
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [analyticsPeriod, setAnalyticsPeriod] = useState('day');
+  const nowMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const [analyticsMonth, setAnalyticsMonth] = useState(nowMonth);
   const [mainTab, setMainTab] = useState('reservas');
   const [editingLayout, setEditingLayout] = useState(false);
   const [optimisticStates, setOptimisticStates] = useState({});
@@ -82,7 +84,7 @@ export default function StaffDashboard({ onLogout }) {
   const mesas = useMesas(config);
   const staff = useStaff();
   const reservations = useReservations(date);
-  const analyticsRes = useAnalyticsReservations(date, showAnalytics, analyticsPeriod);
+  const analyticsRes = useAnalyticsReservations(date, showAnalytics, analyticsPeriod, analyticsMonth);
 
   const tables = useMemo(() => {
     const base = mesas.length > 0 ? mesas : buildTables(config);
@@ -892,6 +894,8 @@ export default function StaffDashboard({ onLogout }) {
           data={analyticsData}
           period={analyticsPeriod}
           onPeriodChange={setAnalyticsPeriod}
+          analyticsMonth={analyticsMonth}
+          onMonthChange={setAnalyticsMonth}
           onClose={() => setShowAnalytics(false)}
         />
       )}

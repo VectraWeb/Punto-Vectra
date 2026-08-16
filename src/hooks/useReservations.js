@@ -25,20 +25,31 @@ export function useReservations(date) {
   return reservations;
 }
 
-export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod) {
+export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod, analyticsMonth) {
   const [analyticsRes, setAnalyticsRes] = useState([]);
 
   useEffect(() => {
     if (!showAnalytics || analyticsPeriod === 'day') {
       return;
     }
-    const days = analyticsPeriod === 'week' ? 7 : 30;
-    const dates = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(date + 'T12:00:00');
-      d.setDate(d.getDate() - i);
-      dates.push(toLocalISO(d));
+
+    let dates = [];
+
+    if (analyticsPeriod === 'month' && analyticsMonth) {
+      const [y, m] = analyticsMonth.split('-').map(Number);
+      const daysInMonth = new Date(y, m, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        dates.push(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+      }
+    } else {
+      const days = analyticsPeriod === 'week' ? 7 : 30;
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(date + 'T12:00:00');
+        d.setDate(d.getDate() - i);
+        dates.push(toLocalISO(d));
+      }
     }
+
     (async () => {
       try {
         const chunks = [];
@@ -54,7 +65,7 @@ export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod) {
         console.error('[Andi] Analytics fetch error:', err);
       }
     })();
-  }, [showAnalytics, analyticsPeriod, date]);
+  }, [showAnalytics, analyticsPeriod, date, analyticsMonth]);
 
   // Derivado: cuando el panel está cerrado o en modo día no se exponen datos
   // viejos (evita limpiar estado dentro del efecto)

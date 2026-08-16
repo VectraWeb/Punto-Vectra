@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { C, LIVE_STATES } from '../utils';
 import { Overlay } from './ui';
 
-export function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
+export function AnalyticsPanel({ data, period, onPeriodChange, analyticsMonth, onMonthChange, onClose }) {
   const { totalCustomers, avgStay, stateBreakdown } = data;
   const fmtMin = (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}min` : `${m}min`;
   const periods = [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']];
@@ -27,6 +27,28 @@ export function AnalyticsPanel({ data, period, onPeriodChange, onClose }) {
           }}>{label}</button>
         ))}
       </div>
+
+      {/* Selector de mes (solo visible en modo Mes) */}
+      {period === 'month' && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
+          <button onClick={() => {
+            const [y, m] = analyticsMonth.split('-').map(Number);
+            const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+            onMonthChange(prev);
+          }} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px 12px', cursor: 'pointer', color: C.muted, fontSize: '14px', fontWeight: 600 }}>◀</button>
+          <input type="month" value={analyticsMonth} onChange={e => onMonthChange(e.target.value)} style={{
+            background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '10px',
+            padding: '8px 12px', fontSize: '14px', fontWeight: 600, color: C.espresso,
+            fontFamily: 'inherit', cursor: 'pointer', textAlign: 'center',
+          }} />
+          <button onClick={() => {
+            const [y, m] = analyticsMonth.split('-').map(Number);
+            const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+            const nowMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+            if (next <= nowMonth) onMonthChange(next);
+          }} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px 12px', cursor: 'pointer', color: C.muted, fontSize: '14px', fontWeight: 600 }}>▶</button>
+        </div>
+      )}
 
       {totalCustomers === 0 ? (
         <div style={{ padding: '32px 16px', textAlign: 'center', color: C.muted, background: C.creamDeep, borderRadius: '14px', fontSize: '13px' }}>
