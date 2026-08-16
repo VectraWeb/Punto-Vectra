@@ -502,7 +502,7 @@ export default function StaffDashboard({ onLogout }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: C.cream, color: C.espresso, fontFamily: '"Manrope", system-ui, sans-serif', paddingBottom: 'calc(140px + env(safe-area-inset-bottom, 0px))' }}>
+    <div className="main-container" style={{ minHeight: '100vh', background: C.cream, color: C.espresso, fontFamily: '"Manrope", system-ui, sans-serif' }}>
       {/* ── TOAST ── */}
       {toast && (
         <div style={{

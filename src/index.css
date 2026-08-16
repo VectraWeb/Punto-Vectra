@@ -111,6 +111,7 @@ input[type="range"]::-moz-range-thumb {
   .online-badge { display: none !important; }
   .desktop-tabs { display: none !important; }
   .mobile-bottom-nav { display: flex !important; }
+  .main-container { padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px)) !important; }
 }
 @media (min-width: 481px) {
   .header-menu-btn { display: none !important; }
@@ -121,4 +122,5 @@ input[type="range"]::-moz-range-thumb {
   h1, h2, h3 { font-size: 120%; }
   .desktop-tabs { display: flex !important; }
   .mobile-bottom-nav { display: none !important; }
+  .main-container { padding-bottom: 24px !important; }
 }
