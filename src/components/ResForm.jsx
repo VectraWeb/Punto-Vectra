@@ -18,6 +18,7 @@ const inp = {
   background: C.white, border: `1.5px solid ${C.creamDeep}`,
   borderRadius: '12px', color: C.espresso, outline: 'none',
   fontFamily: 'inherit',
+  WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none',
 };
 
 // Detección del servicio (turno) según la hora elegida: Mediodía (AM) o Cena (PM)

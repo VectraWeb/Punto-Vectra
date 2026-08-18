@@ -372,7 +372,7 @@ export default function StaffDashboard({ onLogout }) {
     }).filter(Boolean);
 
     const withDuration = stays.filter(r => r.stayMin != null && r.stayMin >= 0 && r.stayMin <= 600);
-    const totalCustomers = active.reduce((s, r) => s + (r.partySize || 0), 0);
+    const totalCustomers = src.reduce((s, r) => s + (r.partySize || 0), 0);
     const avgStay = withDuration.length > 0
       ? Math.round(withDuration.reduce((s, r) => s + r.stayMin, 0) / withDuration.length)
       : 0;

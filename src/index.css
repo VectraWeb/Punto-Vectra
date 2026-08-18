@@ -23,6 +23,22 @@ textarea {
   font-family: inherit;
 }
 
+input[type="date"],
+input[type="time"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: #fffdf8;
+  border: 1.5px solid #ebe3d5;
+  border-radius: 12px;
+  color: #2a1f1a;
+  width: 100%;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
+}
+
 /* ── Focus rings (accesibilidad) ── */
 input:focus-visible,
 select:focus-visible,

@@ -26,12 +26,15 @@ export function useReservations(date) {
 }
 
 export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod, analyticsMonth) {
-  const [analyticsRes, setAnalyticsRes] = useState([]);
+  const [analyticsState, setAnalyticsState] = useState({ period: null, month: null, data: [] });
 
   useEffect(() => {
     if (!showAnalytics || analyticsPeriod === 'day') {
       return;
     }
+
+    let cancelled = false;
+    const key = analyticsPeriod === 'month' ? `month:${analyticsMonth}` : analyticsPeriod;
 
     let dates = [];
 
@@ -72,14 +75,21 @@ export function useAnalyticsReservations(date, showAnalytics, analyticsPeriod, a
           chunks.map(c => getDocs(query(resCol(), where('date', 'in', c))))
         );
         const all = results.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setAnalyticsRes(all);
+        if (!cancelled) setAnalyticsState({ period: key, month: analyticsMonth, data: all });
       } catch (err) {
         console.error('[Andi] Analytics fetch error:', err);
       }
     })();
+
+    return () => { cancelled = true; };
   }, [showAnalytics, analyticsPeriod, date, analyticsMonth]);
 
-  // Derivado: cuando el panel está cerrado o en modo día no se exponen datos
-  // viejos (evita limpiar estado dentro del efecto)
-  return (showAnalytics && analyticsPeriod !== 'day') ? analyticsRes : [];
+  const key = analyticsPeriod === 'month' ? `month:${analyticsMonth}` : analyticsPeriod;
+  const fresh = analyticsPeriod === 'month'
+    ? analyticsState.period === key && analyticsState.month === analyticsMonth
+    : analyticsState.period === key;
+
+  // Derivado: solo se exponen datos frescos del período/click actual.
+  // Evita mostrar datos viejos (de otra vista) durante la carga.
+  return (showAnalytics && analyticsPeriod !== 'day' && fresh) ? analyticsState.data : [];
 }
