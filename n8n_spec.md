@@ -492,9 +492,15 @@ usan la colección `resources`.
   "bookingFields": [
     { "name": "guests", "label": "Cantidad de personas", "type": "number", "required": true },
     { "name": "occasion", "label": "Ocasión", "type": "select", "required": false, "options": ["Cumpleaños", "Aniversario"] }
-  ]
+  ],
+  "closedDates": ["2026-09-15", "2026-12-25"]
 }
 ```
+
+`closedDates`: lista de fechas ISO (`YYYY-MM-DD`) en las que el negocio NO acepta
+reservas ni pedidos (calendario configurable desde Configuración → Días cerrados).
+La vista pública bloquea esos días; el bot debe tratarlos como cerrados (el
+systemMessage ya no asume "martes cerrado").
 
 Tipos de negocio (`businessType`): `restaurant` (Mesa/Mesas), `salon`
 (Profesional), `sports` (Cancha), `hotel` (Habitación), `coworking` (Espacio),

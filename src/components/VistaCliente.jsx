@@ -48,7 +48,7 @@ export default function VistaCliente({ onStaffAccess, organizationId }) {
         {mode === 'reserva' ? (
           <ResForm organization={organization} onBack={() => { window.scrollTo(0, 0); setMode(null); }} onStaffAccess={onStaffAccess} />
         ) : mode === 'pedido' ? (
-          <PedidoForm onBack={() => { window.scrollTo(0, 0); setMode(null); }} onStaffAccess={onStaffAccess} />
+          <PedidoForm organization={organization} onBack={() => { window.scrollTo(0, 0); setMode(null); }} onStaffAccess={onStaffAccess} />
         ) : (
           <div style={{ padding: '0 0 40px' }}>
             {/* Header branding */}

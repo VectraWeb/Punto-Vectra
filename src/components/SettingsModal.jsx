@@ -3,6 +3,7 @@ import { X, Plus, Trash2 } from 'lucide-react';
 import { C, SHAPE_LABELS, SHAPE_KEYS } from '../utils';
 import { Overlay } from './ui';
 import OrganizationSetup from './organization/OrganizationSetup';
+import ClosureCalendar from './organization/ClosureCalendar';
 
 const CAPACIDAD_OPTIONS = [2, 4, 6, 8, 10, 12];
 
@@ -107,6 +108,10 @@ export default function SettingsModal({ config, onSave, onClose, organization = 
 
       {onSaveOrg && (
         <OrganizationSetup organization={organization} onSave={onSaveOrg} />
+      )}
+
+      {onSaveOrg && (
+        <ClosureCalendar organization={organization} onSave={onSaveOrg} />
       )}
 
       {isRestaurant ? (

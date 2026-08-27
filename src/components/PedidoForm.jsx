@@ -7,6 +7,7 @@ import { C, todayISO } from '../utils';
 import { Field } from './ui';
 import PhoneField from './PhoneField';
 import CartaVirtual from './CartaVirtual';
+import { useOrganization } from '../hooks/useOrganization';
 
 // ─── Estilos ─────────────────────────────────────────────────────────────────
 const inp = {
@@ -21,7 +22,9 @@ const inp = {
 // PedidoForm — Formulario de pedido para clientes
 // El pedido es del día; el horario lo confirma el restaurante.
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function PedidoForm({ onBack, onStaffAccess }) {
+export default function PedidoForm({ onBack, onStaffAccess, organization: organizationProp }) {
+  const orgFromHook = useOrganization();
+  const organization = organizationProp || orgFromHook;
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -52,8 +55,9 @@ export default function PedidoForm({ onBack, onStaffAccess }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // Cierre semanal: los martes no se atiende (pedidos del día).
-  const closedTuesday = new Date(todayISO() + 'T12:00:00').getDay() === 2;
+  // Días cerrados: calendario configurable por el negocio (closedDates).
+  const closedDates = Array.isArray(organization.closedDates) ? organization.closedDates : [];
+  const closedToday = closedDates.includes(todayISO());
 
   // ── Agregar ítem desde la carta al detalle del pedido ──────────────────
   const handleAddItem = useCallback((item) => {
@@ -69,7 +73,7 @@ export default function PedidoForm({ onBack, onStaffAccess }) {
     && form.phone.trim().length >= 6
     && form.details.trim().length >= 3
     && (form.modalidad === 'retiro' || form.direccion.trim().length >= 4)
-    && !closedTuesday
+    && !closedToday
     && !submitting;
 
   // ── Submit ───────────────────────────────────────────────────────────────
@@ -251,9 +255,9 @@ export default function PedidoForm({ onBack, onStaffAccess }) {
           </Field>
         )}
 
-        {closedTuesday && (
+        {closedToday && (
           <div style={{ padding: '10px 14px', background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px', fontSize: '13px', color: '#6b5a00', lineHeight: '1.4' }}>
-            Hoy cerramos por descanso (martes). Te esperamos mañana a partir de las 11:30.
+            Hoy no tomamos pedidos. Volvé otro día.
           </div>
         )}
 

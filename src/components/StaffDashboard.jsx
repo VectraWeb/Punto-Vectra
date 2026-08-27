@@ -189,9 +189,16 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
     } catch (e) { console.error(e); }
   }, []);
 
-  // ── Guardar organización (tipo de negocio + labels) ────────────────────
+  // ── Guardar organización (tipo de negocio + labels + días cerrados) ────
   const saveOrg = useCallback(async (nextOrg) => {
+    const prevKey = `${organization.businessType}|${organization.configuration?.resourceLabel}|${organization.configuration?.resourcePlural}`;
+    const nextKey = `${nextOrg.businessType}|${nextOrg.configuration?.resourceLabel}|${nextOrg.configuration?.resourcePlural}`;
+    const rubroChanged = prevKey !== nextKey;
+
     await saveOrganization(nextOrg);
+
+    if (!rubroChanged) return; // solo se re-generan recursos si cambió el rubro/labels
+
     if (nextOrg.businessType === 'restaurant') {
       // Restaurante: las mesas se generan desde la config (mesaTipos).
       if (config) await syncMesasWithConfig(config).catch((e) => console.warn('[Andi] Error re-sincronizando mesas:', e));
@@ -201,7 +208,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
       await seedDefaultResourcesForOrg(nextOrg)
         .catch((e) => console.warn('[Andi] Error sembrando recursos:', e));
     }
-  }, [config]);
+  }, [config, organization]);
 
   const saveSectorsFromPlano = useCallback(async (updatedSectors) => {
     setSectors(updatedSectors);

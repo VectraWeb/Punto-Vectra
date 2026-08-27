@@ -149,6 +149,7 @@ export async function claimDefaultOrganization(uid, email) {
     businessType: existing?.businessType || 'restaurant',
     configuration: existing?.configuration || {},
     bookingFields: existing?.bookingFields || bookingFieldsOf(normalizeOrganization(existing)),
+    closedDates: existing?.closedDates || [],
     ownerUid: uid,
   });
 

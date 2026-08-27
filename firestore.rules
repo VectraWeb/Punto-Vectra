@@ -180,7 +180,7 @@ service cloud.firestore {
         && (request.resource.data.ownerUid == null || request.resource.data.ownerUid == request.auth.uid)
         && request.resource.data.keys().hasOnly([
           'id', 'name', 'businessType', 'logo', 'ownerUid',
-          'configuration', 'bookingFields', 'createdAt', 'updatedAt'
+          'configuration', 'bookingFields', 'closedDates', 'createdAt', 'updatedAt'
         ]);
 
       // El dueño no puede cambiar de manos: solo quien ya es dueño edita.
@@ -189,7 +189,7 @@ service cloud.firestore {
         && request.resource.data.ownerUid == (resource.data.ownerUid != null ? resource.data.ownerUid : request.auth.uid)
         && request.resource.data.keys().hasOnly([
           'id', 'name', 'businessType', 'logo', 'ownerUid',
-          'configuration', 'bookingFields', 'createdAt', 'updatedAt'
+          'configuration', 'bookingFields', 'closedDates', 'createdAt', 'updatedAt'
         ]);
 
       allow delete: if isAuthenticated()

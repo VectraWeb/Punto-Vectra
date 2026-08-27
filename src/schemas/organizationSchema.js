@@ -34,6 +34,11 @@ export function normalizeOrganization(raw, fallbackId = DEFAULT_ORG_ID) {
     bookingFields: Array.isArray(raw.bookingFields) && raw.bookingFields.length > 0
       ? raw.bookingFields
       : typeCfg.defaultBookingFields,
+    // Días cerrados: lista de fechas ISO (YYYY-MM-DD) en las que no se
+    // aceptan reservas ni pedidos desde la vista pública.
+    closedDates: Array.isArray(raw.closedDates)
+      ? raw.closedDates.filter(d => typeof d === 'string')
+      : (Array.isArray(raw.configuration?.closedDates) ? raw.configuration.closedDates : []),
     createdAt: raw.createdAt || null,
     raw,
   };
@@ -53,6 +58,7 @@ export function organizationDocData(org) {
     ownerUid: org.ownerUid || null,
     configuration: org.configuration || {},
     bookingFields: org.bookingFields || [],
+    closedDates: Array.isArray(org.closedDates) ? org.closedDates : [],
     updatedAt: new Date().toISOString(),
   };
 }

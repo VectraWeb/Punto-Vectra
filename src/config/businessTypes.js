@@ -149,6 +149,7 @@ export const DEFAULT_ORGANIZATION = {
   logo: '',
   configuration: {},
   bookingFields: BUSINESS_TYPES[DEFAULT_BUSINESS_TYPE].defaultBookingFields,
+  closedDates: [],
   createdAt: null,
 };
 

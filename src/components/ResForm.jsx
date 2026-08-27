@@ -77,8 +77,9 @@ export default function ResForm({ onStaffAccess, onBack, organization: organizat
   const timeOutOfRange = form.time && !service;
   const serviceLabel = serviceLabelOf(organization, service);
 
-  // Cierre semanal: los martes no se atiende (solo restaurante).
-  const closedTuesday = organization.businessType === 'restaurant' && new Date(date + 'T12:00:00').getDay() === 2;
+  // Días cerrados: calendario configurable por el negocio (closedDates).
+  const closedDates = Array.isArray(organization.closedDates) ? organization.closedDates : [];
+  const closedToday = closedDates.includes(date);
 
   // Campos personalizados requeridos (solo los que se renderizan).
   const requiredCustom = bookingFields.filter(f => f && f.required && !CORE_BOOKING_FIELD_NAMES.has(f.name));
@@ -95,7 +96,7 @@ export default function ResForm({ onStaffAccess, onBack, organization: organizat
     && (usesGuests ? form.partySize > 0 : true)
     && customOk
     && date
-    && !closedTuesday
+    && !closedToday
     && !submitting;
 
   // ── Submit ───────────────────────────────────────────────────────────────
@@ -222,13 +223,13 @@ export default function ResForm({ onStaffAccess, onBack, organization: organizat
             onChange={e => setDate(e.target.value)}
             style={inp}
           />
-          {closedTuesday && (
+          {closedToday && (
             <div style={{
               marginTop: '8px', fontSize: '13px', padding: '10px 14px',
               background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px',
               color: '#6b5a00', lineHeight: '1.4',
             }}>
-              Cerrado los martes. Elegí otro día para reservar.
+              Este día no tomamos reservas. Elegí otro día.
             </div>
           )}
         </Field>
