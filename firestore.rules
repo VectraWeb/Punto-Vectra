@@ -139,7 +139,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'capacity', 'name', 'number', 'shape',
           'organizationId', 'type', 'status', 'position',
-          'width', 'height', 'metadata', 'updatedAt'
+          'width', 'height', 'metadata', 'generated', 'updatedAt'
         ]);
 
       allow delete: if isAuthenticated();
@@ -170,7 +170,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'organizationId', 'name', 'type', 'capacity', 'status',
           'position', 'width', 'height', 'shape',
-          'metadata', 'number', 'updatedAt'
+          'metadata', 'number', 'generated', 'updatedAt'
         ]);
 
       allow delete: if isAuthenticated();

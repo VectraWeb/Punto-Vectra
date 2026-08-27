@@ -72,8 +72,11 @@ export function resourceToMesa(resource) {
 }
 
 // Datos para escribir en resources/{id} (o mesas/{id} en modo legacy).
+// `generated`: true = generado desde la config (mesaTipos); false = creado
+// manualmente por el editor de recursos. El sync nunca borra recursos manuales.
 export function resourceDocData(resource, opts = {}) {
   const legacy = opts.legacy === true;
+  const generated = opts.generated !== false;
   if (legacy) {
     // Colección "mesas": solo campos que permite firestore.rules actual.
     return {
@@ -81,6 +84,7 @@ export function resourceDocData(resource, opts = {}) {
       name: resource.name,
       number: resource.number ?? null,
       shape: resource.shape || RESOURCE_SHAPE_BY_TYPE[resource.type] || 'rectangular',
+      generated,
     };
   }
   return {
@@ -94,6 +98,7 @@ export function resourceDocData(resource, opts = {}) {
     height: resource.height || 0,
     shape: resource.shape || RESOURCE_SHAPE_BY_TYPE[resource.type] || 'rectangular',
     metadata: resource.metadata || {},
+    generated,
     updatedAt: new Date().toISOString(),
   };
 }

@@ -19,6 +19,7 @@ import { useOrganization } from '../hooks/useOrganization';
 import { useMozoTableNumbers } from '../hooks/useMozoTableNumbers';
 import { useSalonLayout } from '../hooks/useSalonLayout';
 import ResourceMap from './resources/ResourceMap';
+import ResourceEditor from './resources/ResourceEditor';
 import LiveStateModal from './LiveStateModal';
 import ResModal from './ResModal';
 import SettingsModal from './SettingsModal';
@@ -74,6 +75,7 @@ export default function StaffDashboard({ onLogout }) {
   const [modalMode, setModalMode] = useState('reserva');
   const [showStaff, setShowStaff] = useState(false);
   const [showSectors, setShowSectors] = useState(false);
+  const [showResources, setShowResources] = useState(false);
   const [selectedMozoTab, setSelectedMozoTab] = useState(null);
   const [showReservas, setShowReservas] = useState(true);
   const [editingSectors, setEditingSectors] = useState(false);
@@ -626,6 +628,8 @@ export default function StaffDashboard({ onLogout }) {
         setShowSettings={setShowSettings}
         setShowStaff={setShowStaff}
         setShowSectors={setShowSectors}
+        setShowResources={setShowResources}
+        orgName={organization.name || 'Andi'}
         onLogout={onLogout}
       />
 
@@ -1030,6 +1034,14 @@ export default function StaffDashboard({ onLogout }) {
           staff={staff}
           onSave={saveSectorsFromModal}
           onClose={() => setShowSectors(false)}
+        />
+      )}
+
+      {/* ── MODAL: Recursos (editor CRUD) ── */}
+      {showResources && (
+        <ResourceEditor
+          organization={organization}
+          onClose={() => setShowResources(false)}
         />
       )}
 

@@ -4,7 +4,7 @@
 // Para otros tipos de negocio se usa "resources". Ambos se normalizan al
 // mismo modelo { id, organizationId, name, type, capacity, status, position, metadata }.
 
-import { collection, doc, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, writeBatch, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { buildResources } from '../utils';
 import { DEFAULT_ORG_ID, resourceTypeOf } from '../config/businessTypes';
@@ -91,6 +91,7 @@ const legacyDocData = (r) => ({
   name: r.name,
   number: r.number ?? null,
   shape: r.shape,
+  generated: true,
 });
 
 /**
@@ -127,15 +128,17 @@ export async function seedResourcesIfNeeded(config, opts = {}) {
 }
 
 /**
- * Sincroniza recursos con la config: borra los que dejaron de existir y
- * crea/actualiza los deseados. Misma semántica que syncMesasWithConfig.
+ * Sincroniza recursos con la config: borra los GENERADOS que dejaron de
+ * existir y crea/actualiza los deseados. Los recursos creados manualmente
+ * (generated: false) se conservan siempre. Misma semántica que
+ * syncMesasWithConfig, con protección para el editor de recursos.
  */
 export async function syncResourcesWithConfig(config, opts = {}) {
   const { organization, resourceType } = opts;
   const useLegacy = isLegacyOrganization(organization);
   const col = useLegacy ? mesasCol() : resourcesCol();
   const snap = await getDocs(col);
-  const existing = snap.docs.map(d => d.id);
+  const existingDocs = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
 
   const desired = buildResources(config, {
     type: resourceType || resourceTypeOf(organization),
@@ -144,9 +147,10 @@ export async function syncResourcesWithConfig(config, opts = {}) {
   const desiredIds = new Set(desired.map(r => r.id));
 
   const batch = writeBatch(db);
-  for (const docId of existing) {
-    if (!desiredIds.has(docId)) {
-      batch.delete(useLegacy ? mesaDoc(docId) : resourceDoc(docId));
+  for (const doc of existingDocs) {
+    if (!desiredIds.has(doc.id) && doc.generated !== false) {
+      // Solo se borran recursos generados desde la config (legacy default).
+      batch.delete(useLegacy ? mesaDoc(doc.id) : resourceDoc(doc.id));
     }
   }
   for (const r of desired) {
@@ -163,6 +167,56 @@ export async function syncResourcesWithConfig(config, opts = {}) {
     }
   }
   await batch.commit();
+}
+
+// ─── CRUD individual (editor de recursos) ───────────────────────────────────
+
+/**
+ * Crea un recurso manual (generated: false). El sync de config nunca lo borra.
+ */
+export async function addResource(resource, opts = {}) {
+  const { organization } = opts;
+  const useLegacy = isLegacyOrganization(organization) || opts.legacy === true;
+  const id = resource.id || (useLegacy ? `m${Date.now()}` : `res${Date.now()}`);
+  const normalized = {
+    ...resource,
+    id,
+    organizationId: opts.organizationId || organization?.id || DEFAULT_ORG_ID,
+    status: 'active',
+    position: resource.position || null,
+    metadata: resource.metadata || {},
+  };
+  if (useLegacy) {
+    await setDoc(mesaDoc(id), resourceDocData(normalized, { legacy: true, generated: false }));
+  } else {
+    await setDoc(resourceDoc(id), resourceDocData(normalized, { generated: false }));
+  }
+  return id;
+}
+
+/** Actualiza campos básicos de un recurso existente. */
+export async function updateResource(id, patch, opts = {}) {
+  const { organization } = opts;
+  const useLegacy = isLegacyOrganization(organization) || opts.legacy === true;
+  const data = patch && typeof patch === 'object' ? patch : {};
+  if (useLegacy) {
+    await setDoc(mesaDoc(id), {
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.capacity !== undefined ? { capacity: Number(data.capacity) || 0 } : {}),
+      ...(data.shape !== undefined ? { shape: data.shape } : {}),
+      ...(data.number !== undefined ? { number: data.number } : {}),
+      ...(data.metadata !== undefined ? { metadata: data.metadata } : {}),
+    }, { merge: true });
+  } else {
+    await setDoc(resourceDoc(id), data, { merge: true });
+  }
+}
+
+/** Elimina un recurso. No toca locks ni reservas históricas. */
+export async function deleteResource(id, opts = {}) {
+  const { organization } = opts;
+  const useLegacy = isLegacyOrganization(organization) || opts.legacy === true;
+  await deleteDoc(useLegacy ? mesaDoc(id) : resourceDoc(id));
 }
 
 // ─── Compat helpers (adaptadores para mesasHelpers/useMesas) ────────────────
