@@ -302,3 +302,20 @@ export const SECTOR_COLORS = [
   '#d4a04a', '#e67e22', '#2a1f1a', '#e09368', '#6b8e7b',
   '#7b1f2e', '#c49a35', '#455a64', '#00897b', '#5c6bc0',
 ];
+
+// ─── Acceso staff por PIN (modo compatibilidad sin Firebase Auth) ───────────
+const STAFF_AUTH_KEY = 'isStaff';
+
+const staffPin = () => import.meta.env.VITE_STAFF_PIN || '';
+
+export function isStaffAuthenticated() {
+  return sessionStorage.getItem(STAFF_AUTH_KEY) === btoa('andi:' + staffPin());
+}
+
+export function markStaffAuthenticated() {
+  sessionStorage.setItem(STAFF_AUTH_KEY, btoa('andi:' + staffPin()));
+}
+
+export function logoutStaff() {
+  sessionStorage.removeItem(STAFF_AUTH_KEY);
+}

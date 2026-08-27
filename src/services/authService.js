@@ -21,6 +21,29 @@ import { ensureDefaultBranch } from './branchService';
 export const userDocRef = (uid) => doc(db, 'users', uid);
 export const orgDocRef = (id = DEFAULT_ORG_ID) => doc(db, 'organizations', id);
 
+// Errores que indican que Firebase Auth no está disponible en este proyecto
+// (p. ej. sin facturación habilitada: BILLING_NOT_ENABLED / configuration-not-found).
+export const AUTH_UNAVAILABLE_CODES = [
+  'auth/configuration-not-found',
+  'auth/operation-not-allowed',
+  'auth/api-key-not-valid',
+  'auth/network-request-failed',
+];
+
+let authAvailableCache = null;
+
+/** Detecta si Firebase Auth funciona en este proyecto (con caché). */
+export async function isAuthAvailable() {
+  if (authAvailableCache !== null) return authAvailableCache;
+  try {
+    await signInAnonymous();
+    authAvailableCache = true;
+  } catch (e) {
+    authAvailableCache = !AUTH_UNAVAILABLE_CODES.includes(e?.code);
+  }
+  return authAvailableCache;
+}
+
 // ─── Sesión anónima (vista pública de clientes) ─────────────────────────────
 // Permite que el formulario público pueda escribir (las reglas exigen auth).
 export async function signInAnonymous() {

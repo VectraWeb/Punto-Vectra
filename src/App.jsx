@@ -7,13 +7,15 @@ import VistaCliente from './components/VistaCliente';
 import StaffDashboard from './components/StaffDashboard';
 import LoginScreen from './components/auth/LoginScreen';
 import OnboardingScreen from './components/auth/OnboardingScreen';
-import { C } from './utils';
+import PinGate from './components/PinGate';
+import { C, logoutStaff } from './utils';
 import { useAuth } from './hooks/useAuth';
 import {
   fetchUserOrganization,
   claimDefaultOrganization,
   signOutUser,
-  signInAnonymous,
+  isAuthAvailable,
+  AUTH_UNAVAILABLE_CODES,
 } from './services/authService';
 import { DEFAULT_ORG_ID } from './config/businessTypes';
 
@@ -157,6 +159,7 @@ function StaffRoot({ onExit }) {
 export default function App() {
   const [staffMode, setStaffMode] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [authAvailable, setAuthAvailable] = useState(true);
   const { user, initializing } = useAuth();
 
   // Organización pública: ?org=<id> en la URL; sin parámetro = negocio default.
@@ -165,10 +168,17 @@ export default function App() {
     : DEFAULT_ORG_ID;
 
   // Sesión anónima para la vista pública (las reglas exigen auth para escribir).
+  // Si Firebase Auth no está disponible (proyecto sin facturación), se activa
+  // el modo compatibilidad: reglas permisivas + acceso staff por PIN.
   useEffect(() => {
-    if (!initializing && !user) {
-      signInAnonymous().catch((e) => console.warn('[Andi] No se pudo iniciar sesión anónima:', e));
-    }
+    if (initializing || user) return undefined;
+    let cancelled = false;
+    isAuthAvailable()
+      .then((ok) => { if (!cancelled) setAuthAvailable(ok); })
+      .catch((e) => {
+        if (!cancelled && AUTH_UNAVAILABLE_CODES.includes(e?.code)) setAuthAvailable(false);
+      });
+    return () => { cancelled = true; };
   }, [initializing, user]);
 
   // ── Detectar nueva versión de PWA ────────────────────────────────────────
@@ -246,7 +256,17 @@ export default function App() {
       )}
 
       {staffMode ? (
-        <StaffRoot key={user ? user.uid : 'anon'} onExit={handleStaffExit} />
+        authAvailable ? (
+          <StaffRoot key={user ? user.uid : 'anon'} onExit={handleStaffExit} />
+        ) : (
+          /* MODO COMPATIBILIDAD: sin Firebase Auth se usa PIN de staff. */
+          <PinGate onBack={handleStaffExit}>
+            <StaffDashboard
+              organizationId={publicOrgId === DEFAULT_ORG_ID ? DEFAULT_ORG_ID : publicOrgId}
+              onLogout={() => { logoutStaff(); handleStaffExit(); }}
+            />
+          </PinGate>
+        )
       ) : (
         <VistaCliente onStaffAccess={handleStaffAccess} organizationId={publicOrgId} />
       )}

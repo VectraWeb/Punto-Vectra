@@ -1,303 +1,194 @@
 rules_version = '2';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// MODO COMPATIBILIDAD SIN FIREBASE AUTH (TEMPORAL)
+//
+// Este proyecto no tiene facturación habilitada, por lo que Firebase
+// Authentication (Identity Platform) no está disponible (BILLING_NOT_ENABLED).
+// Hasta habilitar el plan Blaze + Auth, las reglas NO exigen request.auth.
+//
+// Al habilitar Auth, restaurar las reglas previas (usuarios/ownerUid/
+// userOrganizationId). Este archivo mantiene las restricciones hasOnly de
+// campos para limitar escrituras arbitrarias.
+// ═══════════════════════════════════════════════════════════════════════════
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: Verifica si el usuario está autenticado.
-    // La app firma una sesión anónima al arrancar (src/firebase.js), por lo que
-    // las escrituras exigen request.auth != null sin pedir login al usuario.
-    // Esto bloquea requests externos sin sesión (scrapers, scripts con curl).
-    // NOTA: la sesión anónima NO es autorización real (cualquiera puede crear
-    // una). Antes de producción: custom claims de staff + App Check + n8n vía
-    // Cloud Function con Admin SDK.
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Organización del usuario autenticado (null si no tiene users/{uid}).
-    function userOrganizationId() {
-      let user = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return user.data.organizationId;
-    }
-
-    // ─── USERS ────────────────────────────────────────────────────────────
-    // Structure: users/{uid} → { organizationId, email, role, permissions }
-    // Cada usuario administra solo su propio vínculo. El dueño de la
-    // organización puede gestionar a los miembros.
-    function isOwnerOfUsersOrg(uid) {
-      let user = get(/databases/$(database)/documents/users/$(uid));
-      let org = get(/databases/$(database)/documents/organizations/$(user.data.organizationId));
-      return org.data.ownerUid == request.auth.uid;
-    }
-
-    match /users/{uid} {
-      allow read: if isAuthenticated()
-        && (request.auth.uid == uid || isOwnerOfUsersOrg(uid));
-
-      allow create: if isAuthenticated()
-        && request.auth.uid == uid
-        && request.resource.data.organizationId is string;
-
-      allow update: if isAuthenticated()
-        && (request.auth.uid == uid || isOwnerOfUsersOrg(uid))
-        && request.resource.data.keys().hasOnly([
-          'organizationId', 'email', 'role', 'permissions', 'name', 'createdAt'
-        ]);
-
-      allow delete: if isAuthenticated() && request.auth.uid == uid;
-    }
-
     // --- RESERVATIONS (FLAT) ---
-    // Structure: reservations/{reservationId}  (date is a field, not a path segment)
-    // Used by: client form (create), staff dashboard (read/update/delete), n8n
     match /reservations/{reservationId} {
-      allow create: if isAuthenticated()
-        && request.resource.data.keys().hasAll(['customerName', 'date', 'service']);
+      allow create: if request.resource.data.keys().hasAll(['customerName', 'date', 'service']);
 
-      // Datos personales (nombres, teléfonos, notas): solo con sesión.
-      allow read: if isAuthenticated();
+      allow read: if true;
 
-      // hasOnly: la escritura NO puede agregar claves arbitrarias.
-      // La lista es la unión de todos los campos que el código escribe hoy
-      // (updateLiveState, finalizar, editar reserva completa, timers de limpieza)
-      // + campos genéricos del modelo multi-negocio (organizationId, resourceId, metadata).
-      allow update: if isAuthenticated()
-        && request.resource.data.keys().hasOnly([
-          'id', 'customerName', 'phone', 'customerPhone',
-          'partySize', 'tableId', 'mesa_id', 'mesa',
-          'resourceId', 'organizationId', 'metadata',
-          'branchId', 'customerId', 'serviceIds', 'status',
-          'time', 'duration', 'service', 'notes',
-          'estado', 'liveState', 'stateLog',
-          'startedAt', 'leftAt', 'cleaningStartedAt', 'cleaningCompletedAt',
-          'staffId', 'staffName', 'source',
-          'date', 'createdAt', 'updatedAt',
-          'rechazoMotivo', 'canceladoMotivo',
-          'notificacion_enviada', 'rechazo_notificado', 'recordatorio15_enviado'
-        ]);
+      allow update: if request.resource.data.keys().hasOnly([
+        'id', 'customerName', 'phone', 'customerPhone',
+        'partySize', 'tableId', 'mesa_id', 'mesa',
+        'resourceId', 'organizationId', 'metadata',
+        'branchId', 'customerId', 'serviceIds', 'status',
+        'time', 'duration', 'service', 'notes',
+        'estado', 'liveState', 'stateLog',
+        'startedAt', 'leftAt', 'cleaningStartedAt', 'cleaningCompletedAt',
+        'staffId', 'staffName', 'source',
+        'date', 'createdAt', 'updatedAt',
+        'rechazoMotivo', 'canceladoMotivo',
+        'notificacion_enviada', 'rechazo_notificado', 'recordatorio15_enviado'
+      ]);
 
-      allow delete: if isAuthenticated();
+      allow delete: if true;
     }
 
-    // --- PEDIDOS DEL BOT ---
-    // Structure: pedidos/{pedidoId}
-    // Kept separate from reservations so an order never occupies a reservation slot.
+    // --- PEDIDOS ---
     match /pedidos/{pedidoId} {
-      allow create: if isAuthenticated()
-        && request.resource.data.keys().hasAll(['customerName', 'date', 'service', 'pedidoEstado']);
+      allow create: if request.resource.data.keys().hasAll(['customerName', 'date', 'service', 'pedidoEstado']);
 
-      // Datos personales (teléfonos, direcciones de delivery): solo con sesión.
-      allow read: if isAuthenticated();
-
-      allow update: if isAuthenticated()
-        && request.resource.data.keys().hasOnly([
-          'pedidoEstado', 'pedidoRechazoMotivo', 'status',
-          'tiempoPreparacionMin', 'tiempoEnvioMin', 'tiempoTotalMin', 'confirmadoAt',
-          'items', 'totals', 'customerId', 'reservationId', 'resourceId',
-          'organizationId', 'branchId', 'metadata', 'estado'
-        ]);
-
-      allow delete: if isAuthenticated();
-    }
-
-    // --- BRANCHES (SUCURSALES) ---
-    // Structure: organizations/{organizationId}/branches/{branchId}
-    // Lectura pública (vista cliente). Escritura: dueño de la organización.
-    match /organizations/{organizationId}/branches/{branchId} {
       allow read: if true;
 
-      allow create, update: if isAuthenticated()
-        && request.resource.data.organizationId == userOrganizationId()
-        && request.resource.data.keys().hasOnly([
-          'organizationId', 'name', 'address', 'timezone',
-          'businessHours', 'settings', 'updatedAt'
-        ]);
+      allow update: if request.resource.data.keys().hasOnly([
+        'pedidoEstado', 'pedidoRechazoMotivo', 'status',
+        'tiempoPreparacionMin', 'tiempoEnvioMin', 'tiempoTotalMin', 'confirmadoAt',
+        'items', 'totals', 'customerId', 'reservationId', 'resourceId',
+        'organizationId', 'branchId', 'metadata', 'estado'
+      ]);
 
-      allow delete: if isAuthenticated()
-        && resource.data.organizationId == userOrganizationId()
-        && branchId != 'main';
+      allow delete: if true;
     }
 
-    // --- CATALOG ---
-    // Structure: catalog/{itemId} (productos, servicios, extras, combos)
-    // Lectura pública (carta/servicios). Escritura: dueño de la organización.
-    match /catalog/{itemId} {
-      allow read: if true;
-
-      allow create, update: if isAuthenticated()
-        && request.resource.data.organizationId == userOrganizationId()
-        && request.resource.data.keys().hasOnly([
-          'organizationId', 'branchId', 'type', 'name', 'description',
-          'categoryId', 'price', 'duration', 'active', 'metadata', 'updatedAt'
-        ]);
-
-      allow delete: if isAuthenticated()
-        && resource.data.organizationId == userOrganizationId();
-    }
-
-    // --- CUSTOMERS ---
-    // Structure: customers/{organizationId}_{phone}
-    // Contiene datos personales: lectura solo autenticados de la organización.
-    // Create: cualquier sesión (la vista pública vincula clientes por teléfono).
-    match /customers/{docId} {
-      allow read: if isAuthenticated()
-        && resource.data.organizationId == userOrganizationId();
-
-      allow create: if isAuthenticated()
-        && request.resource.data.organizationId is string
-        && request.resource.data.keys().hasOnly([
-          'organizationId', 'branchId', 'name', 'phone', 'email',
-          'contact', 'tags', 'notes', 'preferences', 'stats', 'createdAt', 'updatedAt'
-        ]);
-
-      allow update, delete: if isAuthenticated()
-        && resource.data.organizationId == userOrganizationId()
-        && request.resource.data.keys().hasOnly([
-          'organizationId', 'branchId', 'name', 'phone', 'email',
-          'contact', 'tags', 'notes', 'preferences', 'stats', 'createdAt', 'updatedAt'
-        ]);
-    }
-
-    // --- AUDIT LOGS ---
-    // Structure: auditLogs/{autoId}
-    // Solo el dueño de la organización puede leer; cualquier sesión escribe.
-    match /auditLogs/{logId} {
-      allow read: if isAuthenticated()
-        && resource.data.organizationId == userOrganizationId();
-
-      allow create: if isAuthenticated()
-        && request.resource.data.keys().hasOnly([
-          'organizationId', 'actorId', 'action', 'entityType', 'entityId',
-          'previousData', 'newData', 'metadata', 'createdAt'
-        ]);
-    }
-
-    // --- RESERVATIONS (LEGACY NESTED) — kept for backward compat, prefer flat ---
-    // Contiene datos personales históricos: lectura solo con sesión.
+    // --- RESERVATIONS (LEGACY NESTED) — lectura, sin escritura ---
     match /reservations/{date}/items/{itemId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if false;
     }
 
-    // --- MÉTRICAS DE RESERVAS ---
-    // Structure: metricas_reservas/{reservationId}
-    // Used by: useCleaningTimers (saveMetrics) — sin regla explícita Firestore
-    // deniega por defecto, por eso se declara aquí.
+    // --- MÉTRICAS ---
     match /metricas_reservas/{reservationId} {
-      // Métricas internas del negocio: no públicas.
-      allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
+      allow read, create, update: if true;
     }
 
     // --- CONFIG ---
-    // Structure: config/{configId}
-    // Used by: salon-layout (positions), restaurant settings
-    // Sin datos personales: lectura pública (la vista cliente lo necesita).
     match /config/{configId} {
       allow read: if true;
 
-      // Solo los campos que escribe la app (settings, sectores y layout).
-      // groupOwners: mozo elegido cuando un grupo de mesas cruza sectores.
-      allow create, update: if isAuthenticated()
-        && request.resource.data.keys().hasOnly([
-          'mesaTipos', 'sectors', 'positions', 'groups', 'groupOwners', 'updatedAt'
-        ]);
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'mesaTipos', 'sectors', 'positions', 'groups', 'groupOwners', 'updatedAt',
+        'businessType', 'organizationName', 'resourceLabel', 'resourcePlural'
+      ]);
 
-      allow delete: if isAuthenticated();
+      allow delete: if true;
     }
 
-    // --- MESAS RESERVADAS ---
-    // Structure: mesasReservadas/{mesaId}_{date}_{service}
-    // Used by: n8n creates/reads (con service account, que saltea las reglas), staff manages
+    // --- MESAS RESERVADAS (locks atómicos anti doble-booking) ---
     match /mesasReservadas/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
 
-      allow create, update: if isAuthenticated()
-        && request.resource.data.keys().hasOnly([
-          'occupied', 'reservationId', 'time', 'partySize'
-        ]);
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'occupied', 'reservationId', 'time', 'partySize'
+      ]);
 
-      allow delete: if isAuthenticated();
+      allow delete: if true;
     }
 
-    // --- STAFF ---
-    // Structure: staff/{staffId}
-    // Used by: staff authentication, role management
+    // --- STAFF (mozos, restaurante) ---
     match /staff/{staffId} {
-      // Nombres del staff: solo con sesión.
-      allow read: if isAuthenticated();
+      allow read: if true;
 
-      allow create, update: if isAuthenticated()
-        && request.resource.data.keys().hasOnly([
-          'name', 'active', 'assignedTables', 'createdAt'
-        ]);
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'name', 'active', 'assignedTables', 'createdAt'
+      ]);
 
-      allow delete: if isAuthenticated();
+      allow delete: if true;
     }
 
     // --- MESAS (LEGACY: restaurante) ---
-    // Structure: mesas/{mesaId}
-    // Used by: salon floor display, table management, bot de n8n
     match /mesas/{mesaId} {
-      // Sin datos personales: lectura pública.
       allow read: if true;
 
-      // Campos legacy + campos genéricos (migración progresiva).
-      allow create, update: if isAuthenticated()
-        && request.resource.data.keys().hasOnly([
-          'capacity', 'name', 'number', 'shape',
-          'organizationId', 'type', 'status', 'position',
-          'width', 'height', 'metadata', 'generated', 'updatedAt'
-        ]);
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'capacity', 'name', 'number', 'shape',
+        'organizationId', 'type', 'status', 'position',
+        'width', 'height', 'metadata', 'generated', 'updatedAt'
+      ]);
 
-      allow delete: if isAuthenticated();
+      allow delete: if true;
     }
 
     // --- ORGANIZATIONS ---
-    // Structure: organizations/{organizationId} (id "default" = negocio principal)
-    // Configuración de negocio: sin datos personales, lectura pública.
-    // Escritura: solo el dueño (ownerUid). Si ownerUid es null (nueva), el
-    // primer usuario autenticado puede reclamarla (la fija a su uid).
     match /organizations/{organizationId} {
       allow read: if true;
 
-      allow create: if isAuthenticated()
-        && (request.resource.data.ownerUid == null || request.resource.data.ownerUid == request.auth.uid)
-        && request.resource.data.keys().hasOnly([
-          'id', 'name', 'businessType', 'logo', 'ownerUid',
-          'configuration', 'bookingFields', 'closedDates', 'createdAt', 'updatedAt'
-        ]);
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'id', 'name', 'businessType', 'logo', 'ownerUid',
+        'configuration', 'bookingFields', 'closedDates', 'createdAt', 'updatedAt'
+      ]);
 
-      // El dueño no puede cambiar de manos: solo quien ya es dueño edita.
-      allow update: if isAuthenticated()
-        && (resource.data.ownerUid == null || resource.data.ownerUid == request.auth.uid)
-        && request.resource.data.ownerUid == (resource.data.ownerUid != null ? resource.data.ownerUid : request.auth.uid)
-        && request.resource.data.keys().hasOnly([
-          'id', 'name', 'businessType', 'logo', 'ownerUid',
-          'configuration', 'bookingFields', 'closedDates', 'createdAt', 'updatedAt'
-        ]);
+      allow delete: if true;
+    }
 
-      allow delete: if isAuthenticated()
-        && resource.data.ownerUid == request.auth.uid;
+    // --- BRANCHES (sucursales) ---
+    match /organizations/{organizationId}/branches/{branchId} {
+      allow read: if true;
+
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'organizationId', 'name', 'address', 'timezone',
+        'businessHours', 'settings', 'updatedAt'
+      ]);
+
+      allow delete: if branchId != 'main';
     }
 
     // --- RESOURCES ---
-    // Structure: resources/{resourceId} (negocios no-restaurante)
-    // Lectura pública (vista cliente y bot). Escritura: solo el dueño de la
-    // organización indicada en organizationId.
     match /resources/{resourceId} {
       allow read: if true;
 
-      allow create, update: if isAuthenticated()
-        && request.resource.data.organizationId == userOrganizationId()
-        && request.resource.data.keys().hasOnly([
-          'organizationId', 'name', 'type', 'capacity', 'status',
-          'position', 'width', 'height', 'shape',
-          'metadata', 'number', 'generated', 'updatedAt'
-        ]);
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'organizationId', 'name', 'type', 'capacity', 'status',
+        'position', 'width', 'height', 'shape',
+        'metadata', 'number', 'generated', 'updatedAt'
+      ]);
 
-      allow delete: if isAuthenticated()
-        && resource.data.organizationId == userOrganizationId();
+      allow delete: if true;
+    }
+
+    // --- CATALOG ---
+    match /catalog/{itemId} {
+      allow read: if true;
+
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'organizationId', 'branchId', 'type', 'name', 'description',
+        'categoryId', 'price', 'duration', 'active', 'metadata', 'updatedAt'
+      ]);
+
+      allow delete: if true;
+    }
+
+    // --- CUSTOMERS ---
+    match /customers/{docId} {
+      allow read: if true;
+
+      allow create, update: if request.resource.data.keys().hasOnly([
+        'organizationId', 'branchId', 'name', 'phone', 'email',
+        'contact', 'tags', 'notes', 'preferences', 'stats', 'createdAt', 'updatedAt'
+      ]);
+
+      allow delete: if true;
+    }
+
+    // --- USERS (sin uso en modo compatibilidad) ---
+    match /users/{uid} {
+      allow read, create, update: if request.resource.data.keys().hasOnly([
+        'organizationId', 'email', 'role', 'permissions', 'name', 'createdAt'
+      ]);
+      allow delete: if true;
+    }
+
+    // --- AUDIT LOGS ---
+    match /auditLogs/{logId} {
+      allow read: if true;
+
+      allow create: if request.resource.data.keys().hasOnly([
+        'organizationId', 'actorId', 'action', 'entityType', 'entityId',
+        'previousData', 'newData', 'metadata', 'createdAt'
+      ]);
     }
   }
 }
