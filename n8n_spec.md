@@ -467,3 +467,91 @@ return {
 Luego usás dos nodos **Firestore** secuenciales:
 1. **Create flat doc** — operación `create`, colección `allReservations`, document ID = `{{ $json.reservation_id }}`, data = `{{ $json.flat_doc }}`
 2. **Create guard** — operación `create`, colección `{{ $json.guard_collection }}`, document ID = `{{ $json.guard_id }}`, data = `{{ $json.guard_doc }}`
+
+---
+
+## 12. Modelo genérico de reservas (organizaciones y recursos)
+
+La app evolucionó de "mesas" a un modelo genérico multi-negocio. n8n puede seguir
+leyendo `mesas` (colección legacy para restaurantes); los negocios de otros tipos
+usan la colección `resources`.
+
+### 12.1 Organizaciones
+
+| Ruta | Propósito |
+| :--- | :--- |
+| `organizations/{organizationId}` | Configuración del negocio (id `default` para el negocio principal) |
+
+```json
+{
+  "id": "default",
+  "name": "Mi Restaurante",
+  "businessType": "restaurant",
+  "logo": "",
+  "configuration": { "resourceLabel": "Mesa", "resourcePlural": "Mesas" },
+  "bookingFields": [
+    { "name": "guests", "label": "Cantidad de personas", "type": "number", "required": true },
+    { "name": "occasion", "label": "Ocasión", "type": "select", "required": false, "options": ["Cumpleaños", "Aniversario"] }
+  ]
+}
+```
+
+Tipos de negocio (`businessType`): `restaurant` (Mesa/Mesas), `salon`
+(Profesional), `sports` (Cancha), `hotel` (Habitación), `coworking` (Espacio),
+`healthcare` (Profesional), `custom` (Recurso). Los labels también pueden
+sobrescribirse por organización vía `configuration.resourceLabel/Plural`.
+
+### 12.2 Recursos
+
+- Restaurante (o sin organización): colección **`mesas/{id}`** (compat, sin cambios).
+- Otros tipos de negocio: colección **`resources/{id}`**.
+
+```json
+{
+  "organizationId": "default",
+  "name": "Cancha 1",
+  "type": "court",
+  "capacity": 10,
+  "status": "active",
+  "position": { "x": 100, "y": 200 },
+  "width": 120,
+  "height": 80,
+  "metadata": { "sport": "padel", "surface": "synthetic" }
+}
+```
+
+### 12.3 Reservas: campos genéricos
+
+Las reservas mantienen TODOS los campos legacy (`tableId`, `mesa_id`, `mesa`,
+`partySize`, `time`, `duration`, `service`, `date`, `estado`, `liveState`) y
+agregan:
+
+| Campo | Tipo | Descripción |
+| :--- | :--- | :--- |
+| `organizationId` | String | Organización dueña (default: `"default"`) |
+| `resourceId` | String | Espejo de `tableId` (o el único campo en negocios no-restaurante) |
+| `metadata` | Object | Campos personalizados según `bookingFields` de la organización |
+
+El lock anti doble-booking **no cambia**: `mesasReservadas/{resourceId}_{date}_{service}`
+(sigue siendo la fuente de verdad atómica; la primera escritura gana).
+
+### 12.4 Superposición de horarios
+
+La app detecta conflicto cuando, para el mismo recurso + fecha + servicio:
+
+```
+newStart < existingEnd && newEnd > existingStart
+```
+
+donde `start = t2m(time, service)` y `end = start + duration`. El lock por turno
+sigue vigente (más estricto que el overlap): un recurso solo acepta una reserva
+por servicio y fecha, igual que antes.
+
+### 12.5 Agente de IA
+
+El systemMessage del workflow (`REcepcionista.json`) ya no asume "mesas": el
+agente trata "recursos reservables" y está obligado a (1) nunca inventar
+recursos, (2) nunca asumir disponibilidad, (3) validar vía
+`consultar_disponibilidad`, (4) no confirmar visualmente reservas no
+registradas. Las reservas creadas por el bot incluyen `organizationId`,
+`resourceId` y `metadata`.

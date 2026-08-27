@@ -4,9 +4,14 @@ import { Calendar, ShoppingBag } from 'lucide-react';
 import ResForm from './ResForm';
 import PedidoForm from './PedidoForm';
 import { C } from '../utils';
+import { useOrganization } from '../hooks/useOrganization';
+import { reserveActionOf, getBusinessType } from '../config/businessTypes';
 
 export default function VistaCliente({ onStaffAccess }) {
   const [mode, setMode] = useState(null); // null = selector inicial
+  const organization = useOrganization();
+  const reserveAction = reserveActionOf(organization);
+  const reserveHint = getBusinessType(organization.businessType).reserveHint;
 
   // ── Triple clic en logo → acceso staff ──────────────────────────────────
   const clickCount = useRef(0);
@@ -70,8 +75,8 @@ export default function VistaCliente({ onStaffAccess }) {
                   <Calendar size={22} color={C.terra} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, color: C.espresso }}>Reservar mesa</div>
-                  <div style={{ fontSize: '12px', color: C.muted, marginTop: '2px' }}>Elegí fecha, horario y comensales</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: C.espresso }}>{reserveAction}</div>
+                  <div style={{ fontSize: '12px', color: C.muted, marginTop: '2px' }}>{reserveHint}</div>
                 </div>
               </button>
 

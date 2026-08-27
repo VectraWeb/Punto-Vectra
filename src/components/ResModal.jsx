@@ -3,8 +3,14 @@ import { X, Trash2 } from 'lucide-react';
 import { C, inp, SERVICES, serviceFromTime } from '../utils';
 import { Overlay, Field } from './ui';
 import PhoneField from './PhoneField';
+import DynamicFields from './reservations/DynamicFields';
+import { CORE_BOOKING_FIELD_NAMES } from '../config/businessTypes';
 
-export default function ResModal({ editing, initialMode, preTable, tables, service, tableStatus, staff, tableNums, ownerByTable, mozoTableIds, onSave, onSavePedido, onDelete, onReject, onClose }) {
+export default function ResModal({
+  editing, initialMode, preTable, tables, service, tableStatus, staff, tableNums,
+  ownerByTable, mozoTableIds, onSave, onSavePedido, onDelete, onReject, onClose,
+  resourceLabel = 'Mesa', bookingFields = [],
+}) {
   const [mode, setMode] = useState(initialMode === 'pedido' ? 'pedido' : 'reserva');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -17,6 +23,7 @@ export default function ResModal({ editing, initialMode, preTable, tables, servi
       notes: '',
       staffId: '',
     };
+    if (!base.metadata || typeof base.metadata !== 'object') base.metadata = {};
     // Al abrir desde una mesa del plano, auto-asignar el mozo dueño de esa mesa.
     if (base.tableId && !base.staffId && !editing) {
       const ownerId = ownerByTable[base.tableId];
@@ -32,8 +39,16 @@ export default function ResModal({ editing, initialMode, preTable, tables, servi
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setPedido = (k, v) => setPedidoForm(f => ({ ...f, [k]: v }));
+  const setMeta = (k, v) => setForm(f => ({ ...f, metadata: { ...(f.metadata || {}), [k]: v } }));
 
-  const valid = form.customerName.trim() && form.time && form.partySize > 0;
+  // Campos personalizados requeridos por la organización (solo los renderizados).
+  const requiredCustom = (bookingFields || []).filter(f => f && f.required && !CORE_BOOKING_FIELD_NAMES.has(f.name));
+  const customOk = requiredCustom.every(f => {
+    const v = form.metadata?.[f.name];
+    return v !== undefined && v !== null && v !== '';
+  });
+
+  const valid = form.customerName.trim() && form.time && form.partySize > 0 && customOk;
   const validPedido = pedidoForm.customerName.trim().length >= 2
     && pedidoForm.phone.trim().length >= 6
     && pedidoForm.details.trim().length >= 3
@@ -126,7 +141,7 @@ export default function ResModal({ editing, initialMode, preTable, tables, servi
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <Field label="Mesa">
+          <Field label={resourceLabel}>
             <select value={form.tableId} onChange={e => set('tableId', e.target.value)} style={inp}>
               <option value="">— elegir —</option>
                {tables.filter(t => {
@@ -138,7 +153,7 @@ export default function ResModal({ editing, initialMode, preTable, tables, servi
                   const num = tableNums[t.id];
                   return (
                     <option key={t.id} value={t.id}>
-                      {num ? `Mesa ${num}` : t.name} ({t.capacity}p)
+                      {num ? `${resourceLabel} ${num}` : t.name} ({t.capacity}p)
                     </option>
                   );
                 })}
@@ -163,6 +178,12 @@ export default function ResModal({ editing, initialMode, preTable, tables, servi
             placeholder="Alergias, pedidos especiales..." rows={2}
             style={{ ...inp, resize: 'vertical' }} />
         </Field>
+
+        <DynamicFields
+          fields={bookingFields}
+          values={form.metadata || {}}
+          onChange={setMeta}
+        />
       </div>
         </>
       ) : (
@@ -287,7 +308,16 @@ export default function ResModal({ editing, initialMode, preTable, tables, servi
           <button onClick={() => {
             if (!valid) return;
             const staffMember = staff.find(s => s.id === form.staffId);
-            onSave({ ...form, service: svcForTime, staffName: staffMember?.name || '' });
+            const metadata = { ...(form.metadata || {}) };
+            // metadata puede enriquecer campos core (ej: duration del turno).
+            const customDuration = Number(metadata.duration) > 0 ? Number(metadata.duration) : undefined;
+            onSave({
+              ...form,
+              duration: customDuration,
+              metadata,
+              service: svcForTime,
+              staffName: staffMember?.name || '',
+            });
           }} style={{
             flex: 1, padding: '14px', background: valid ? C.terra : C.creamDeep,
             border: 'none', borderRadius: '12px', cursor: valid ? 'pointer' : 'not-allowed',

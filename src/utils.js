@@ -100,6 +100,22 @@ export const buildTables = (cfg) => {
   return tables;
 };
 
+// ─── Recursos genéricos ──────────────────────────────────────────────────────
+// Un recurso de tipo "table" mantiene el id legacy "m{n}" (compat con n8n y
+// mesasReservadas). Otros tipos usan "res{n}". Reutiliza buildTables.
+export const buildResources = (cfg, opts = {}) => {
+  const type = opts.type || 'table';
+  const tables = buildTables(cfg);
+  return tables.map(t => ({
+    id: type === 'table' ? t.id : `res${t.number}`,
+    name: type === 'table' ? t.name : `${opts.prefix || 'Recurso'} ${t.number}`,
+    capacity: t.capacity,
+    shape: t.shape,
+    number: t.number,
+    type,
+  }));
+};
+
 // ─── Utilidades de tiempo ────────────────────────────────────────────────────
 export const t2m = (time, service) => {
   if (!time) return 0;

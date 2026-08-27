@@ -1,17 +1,16 @@
-import { useState, useEffect } from 'react';
-import { subscribeMesas, seedMesasIfNeeded } from '../services/mesasHelpers';
+// useMesas.js — ADAPTADOR DE COMPATIBILIDAD.
+// Delega en useResources devolviendo la vista legacy (solo mesas/tables).
 
-export function useMesas(config) {
-  const [mesas, setMesas] = useState([]);
+import { useResources } from './useResources';
 
-  useEffect(() => {
-    if (config) seedMesasIfNeeded(config);
-  }, [config]);
-
-  useEffect(() => {
-    const unsub = subscribeMesas(setMesas);
-    return unsub;
-  }, []);
-
-  return mesas;
+export function useMesas(config, organization = null) {
+  const resources = useResources(config, organization);
+  return resources.map(r => ({
+    id: r.id,
+    name: r.name,
+    capacity: r.capacity,
+    shape: r.shape,
+    number: r.number ?? null,
+    type: r.type,
+  }));
 }

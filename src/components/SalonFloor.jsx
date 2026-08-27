@@ -231,6 +231,7 @@ const SalonFloor = React.memo(function SalonFloor({
   highlightTableId, focusRequest,
   ownerByTable, staff, groupOwners, onChooseGroupOwner,
   onSaveError,
+  resourceLabel = 'Mesa', resourcePlural = 'Mesas', article = null,
 }) {
   const [dirty, setDirty] = useState(false);
   const [pendingGroupChoice, setPendingGroupChoice] = useState(null);
@@ -940,13 +941,18 @@ const SalonFloor = React.memo(function SalonFloor({
     if (afterChoose) afterChoose(ownerId);
   };
 
+  const artPlural = article?.plural || 'las';
+  const artSingular = article?.singular || 'la';
+  const resourceLower = resourceLabel.toLowerCase();
+  const pluralLower = resourcePlural.toLowerCase();
+
   return (
     <div style={{ padding: '0 4px 12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', padding: '0 4px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <Move size={11} color={PALETTE.muted} />
           <span style={{ fontSize: '10px', color: PALETTE.muted, fontWeight: 600 }}>
-            {isEditing ? 'Arrastrá las mesas' : isEditingSectors ? 'Arrastrá los sectores' : 'Plano del salón'}
+            {isEditing ? `Arrastrá ${artPlural} ${pluralLower}` : isEditingSectors ? 'Arrastrá los sectores' : 'Plano del salón'}
           </span>
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
@@ -964,7 +970,7 @@ const SalonFloor = React.memo(function SalonFloor({
             border: 'none', borderRadius: '8px', padding: '5px 10px',
             cursor: 'pointer', fontSize: '10px', fontWeight: 600,
           }}>
-            {isEditing ? 'Listo' : 'Mesas'}
+            {isEditing ? 'Listo' : resourcePlural}
           </button>
           {isEditing && (
             <>
@@ -1209,7 +1215,7 @@ const SalonFloor = React.memo(function SalonFloor({
                 </span>
                 {!isEditingSectors && info && info.multiOwner && (
                   <button
-                    title="Elegir mozo para la mesa unida"
+                    title="Elegir mozo para este grupo"
                     onClick={(ev) => {
                       ev.stopPropagation();
                       setPendingGroupChoice({ key: info.key, owners: info.owners, afterChoose: null });
@@ -1306,10 +1312,10 @@ const SalonFloor = React.memo(function SalonFloor({
               margin: '0 0 6px', fontFamily: '"Fraunces", serif', fontStyle: 'italic',
               fontSize: '18px', fontWeight: 600, color: PALETTE.forest,
             }}>
-              Mesa en 2 sectores
+              {resourceLabel} en 2 sectores
             </h4>
             <p style={{ margin: '0 0 14px', fontSize: '12px', color: PALETTE.muted, lineHeight: 1.5 }}>
-              Elegí qué mozo conserva esta mesa unida:
+              Elegí qué mozo conserva {artSingular} {resourceLower} unid{article?.fem ? 'a' : 'o'}:
             </p>
             {(pendingGroupChoice.owners || []).map(o => (
               <button key={o.id} onClick={() => handleGroupOwnerChoose(o.id)} style={{
@@ -1320,7 +1326,7 @@ const SalonFloor = React.memo(function SalonFloor({
               }}>
                 <span style={{ fontSize: '14px', fontWeight: 600, color: PALETTE.espresso }}>{o.name}</span>
                 <span style={{ fontSize: '12px', fontWeight: 700, color: PALETTE.terra }}>
-                  {o.num ? `Mesa ${o.num}` : 'Sin número'}
+                  {o.num ? `${resourceLabel} ${o.num}` : 'Sin número'}
                 </span>
               </button>
             ))}
@@ -1353,7 +1359,7 @@ const SalonFloor = React.memo(function SalonFloor({
             boxShadow: '0 0 0 4px rgba(246,201,69,0.35)',
             animation: 'andi-pulse 1s ease-in-out infinite',
           }} />
-          Mesa destacada: la reserva está en la mesa marcada con anillo dorado
+          {resourceLabel} destacad{article?.fem ? 'a' : 'o'}: la reserva está en {artSingular} {resourceLower} marcad{article?.fem ? 'a' : 'o'} con anillo dorado
         </div>
       )}
 

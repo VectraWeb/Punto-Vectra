@@ -26,11 +26,13 @@ service cloud.firestore {
 
       // hasOnly: la escritura NO puede agregar claves arbitrarias.
       // La lista es la unión de todos los campos que el código escribe hoy
-      // (updateLiveState, finalizar, editar reserva completa, timers de limpieza).
+      // (updateLiveState, finalizar, editar reserva completa, timers de limpieza)
+      // + campos genéricos del modelo multi-negocio (organizationId, resourceId, metadata).
       allow update: if isAuthenticated()
         && request.resource.data.keys().hasOnly([
           'id', 'customerName', 'phone', 'customerPhone',
           'partySize', 'tableId', 'mesa_id', 'mesa',
+          'resourceId', 'organizationId', 'metadata',
           'time', 'duration', 'service', 'notes',
           'estado', 'liveState', 'stateLog',
           'startedAt', 'leftAt', 'cleaningStartedAt', 'cleaningCompletedAt',
@@ -125,17 +127,50 @@ service cloud.firestore {
       allow delete: if isAuthenticated();
     }
 
-    // --- MESAS ---
+    // --- MESAS (LEGACY: restaurante) ---
     // Structure: mesas/{mesaId}
-    // Used by: salon floor display, table management
+    // Used by: salon floor display, table management, bot de n8n
     match /mesas/{mesaId} {
       // Sin datos personales: lectura pública.
       allow read: if true;
 
-      // Solo los campos que escribe el seed/sync desde config.
+      // Campos legacy + campos genéricos (migración progresiva).
       allow create, update: if isAuthenticated()
         && request.resource.data.keys().hasOnly([
-          'capacity', 'name', 'number', 'shape'
+          'capacity', 'name', 'number', 'shape',
+          'organizationId', 'type', 'status', 'position',
+          'width', 'height', 'metadata', 'updatedAt'
+        ]);
+
+      allow delete: if isAuthenticated();
+    }
+
+    // --- ORGANIZATIONS ---
+    // Structure: organizations/{organizationId} (id "default" = negocio principal)
+    // Configuración de negocio: sin datos personales.
+    match /organizations/{organizationId} {
+      allow read: if true;
+
+      allow create, update: if isAuthenticated()
+        && request.resource.data.keys().hasOnly([
+          'id', 'name', 'businessType', 'logo',
+          'configuration', 'bookingFields', 'createdAt', 'updatedAt'
+        ]);
+
+      allow delete: if isAuthenticated();
+    }
+
+    // --- RESOURCES ---
+    // Structure: resources/{resourceId} (negocios no-restaurante)
+    // Sin datos personales: lectura pública (vista cliente y bot).
+    match /resources/{resourceId} {
+      allow read: if true;
+
+      allow create, update: if isAuthenticated()
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'name', 'type', 'capacity', 'status',
+          'position', 'width', 'height', 'shape',
+          'metadata', 'number', 'updatedAt'
         ]);
 
       allow delete: if isAuthenticated();

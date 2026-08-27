@@ -1,19 +1,24 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Plus, X } from 'lucide-react';
 import {
-  doc, setDoc, updateDoc, deleteDoc,
-  serverTimestamp, runTransaction, arrayUnion,
+  doc, setDoc, updateDoc,
+  serverTimestamp, arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { syncMesasWithConfig } from '../services/mesasHelpers';
+import { syncResourcesWithConfig } from '../services/resourceService';
+import { saveOrganization } from '../services/organizationService';
+import { createReservation, cancelReservation, rejectReservation } from '../services/reservationService';
+import { checkResourceAvailability } from '../services/availabilityService';
 import { useCleaningTimers } from '../hooks/useCleaningTimers';
 import { useReservations, useAnalyticsReservations } from '../hooks/useReservations';
 import { useConfig } from '../hooks/useConfig';
 import { useMesas } from '../hooks/useMesas';
 import { useStaff } from '../hooks/useStaff';
+import { useOrganization } from '../hooks/useOrganization';
 import { useMozoTableNumbers } from '../hooks/useMozoTableNumbers';
 import { useSalonLayout } from '../hooks/useSalonLayout';
-import SalonFloor from './SalonFloor';
+import ResourceMap from './resources/ResourceMap';
 import LiveStateModal from './LiveStateModal';
 import ResModal from './ResModal';
 import SettingsModal from './SettingsModal';
@@ -30,6 +35,7 @@ import {
   detectService, computeStateDurations,
   getAssignedTables, notificarN8N,
 } from '../utils';
+import { resourceLabelOf, resourcePluralOf, resourceTypeOf } from '../config/businessTypes';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resDocRef = (id) => doc(db, 'reservations', id);
@@ -86,7 +92,10 @@ export default function StaffDashboard({ onLogout }) {
 
   // ── Hooks de datos externos ────────────────────────────────────────────────
   const { config, sectors, setSectors, saveSectors } = useConfig();
-  const mesas = useMesas(config);
+  const organization = useOrganization(undefined, { ensure: true });
+  const resourceLabel = resourceLabelOf(organization);
+  const resourcePlural = resourcePluralOf(organization);
+  const mesas = useMesas(config, organization);
   const staff = useStaff();
   const reservations = useReservations(date);
   const analyticsRes = useAnalyticsReservations(date, showAnalytics, analyticsPeriod, analyticsMonth);
@@ -128,6 +137,12 @@ export default function StaffDashboard({ onLogout }) {
     }
     return { groupNumByTable: nums, groupOwnerByTable: owners };
   }, [groups, groupOwners, ownerByTable, tableNumByTable]);
+
+  // Números visibles por recurso: mozo + grupo (usado por ResModal y toasts).
+  const resourceNums = useMemo(
+    () => ({ ...tableNumByTable, ...groupNumByTable }),
+    [tableNumByTable, groupNumByTable]
+  );
 
   // ── Loading state ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -171,6 +186,19 @@ export default function StaffDashboard({ onLogout }) {
     } catch (e) { console.error(e); }
   }, []);
 
+  // ── Guardar organización (tipo de negocio + labels) ────────────────────
+  const saveOrg = useCallback(async (nextOrg) => {
+    await saveOrganization(nextOrg);
+    // Re-sincroniza recursos con el nuevo tipo de negocio (no destructivo:
+    // los docs legacy en "mesas" se conservan si el negocio sigue siéndolo).
+    if (config) {
+      await syncResourcesWithConfig(config, {
+        organization: nextOrg,
+        resourceType: resourceTypeOf(nextOrg),
+      }).catch((e) => console.warn('[Andi] Error re-sincronizando recursos:', e));
+    }
+  }, [config]);
+
   const saveSectorsFromPlano = useCallback(async (updatedSectors) => {
     setSectors(updatedSectors);
     await setDoc(cfgRef(), { sectors: updatedSectors }, { merge: true });
@@ -184,112 +212,42 @@ export default function StaffDashboard({ onLogout }) {
   // ── CRUD de reservas ───────────────────────────────────────────────────────
   const saveRes = useCallback(async (data) => {
     const id = data.id || `r${Date.now()}`;
-    const { _oldMesaRef, _prevResId, _prevMesaRef, ...cleanData } = data;
     // La mesa toma el número que el mozo eligió para ella: el plano se adapta
     // al mozo, y la reserva queda vinculada a ese número, no al físico.
     // Si la mesa está unida a otras, usa el número único del grupo.
-    const mesaNum = cleanData.tableId ? (groupNumByTable[cleanData.tableId] || tableNumByTable[cleanData.tableId]) : null;
+    const resourceId = data.tableId || data.resourceId || null;
+    const resourceNum = resourceId ? (groupNumByTable[resourceId] || tableNumByTable[resourceId]) : null;
 
-    if (!cleanData.tableId) {
-      // Si se está QUITANDO la mesa de una reserva existente, hay que
-      // liberar el doc de mesasReservadas viejo: si queda, bloquea la mesa
-      // para cualquier reserva futura ("acaba de ser reservada").
-      if (_oldMesaRef) await deleteDoc(_oldMesaRef).catch(() => {});
-      if (_prevMesaRef) await deleteDoc(_prevMesaRef).catch(() => {});
-      await setDoc(resDocRef(id), {
-        ...cleanData, id, date,
-        mesa_id: null,
-        mesa: null,
-        estado: 'pendiente',
-        updatedAt: serverTimestamp(),
-        createdAt: cleanData.createdAt || serverTimestamp(),
-      });
-      return;
-    }
+    // Pre-chequeo de superposición contra los datos en vivo (el lock atómico
+    // de mesasReservadas sigue siendo la fuente de verdad).
+    await createReservation({
+      data,
+      date,
+      resourceLabel,
+      resourceName: resourceNum,
+      organizationId: organization.id,
+      existingReservations: reservations,
+    });
 
-    const mesaRef = mesaReservadaRef(cleanData.tableId, date, cleanData.service);
-
-      await runTransaction(db, async (transaction) => {
-        const mesaSnap = await transaction.get(mesaRef);
-
-        if (_prevResId) {
-          transaction.delete(resDocRef(_prevResId));
-          if (_prevMesaRef) transaction.delete(_prevMesaRef);
-        }
-
-        if (mesaSnap.exists()) {
-          const mesaData = mesaSnap.data();
-          if (mesaData.reservationId !== id && mesaData.reservationId !== _prevResId) {
-            throw new Error('Lo sentimos, esa mesa acaba de ser reservada por otro usuario.');
-          }
-        }
-
-        if (_oldMesaRef) transaction.delete(_oldMesaRef);
-
-        transaction.set(mesaRef, { occupied: true, reservationId: id, time: cleanData.time, partySize: cleanData.partySize });
-        transaction.set(resDocRef(id), {
-          ...cleanData, id, date,
-          mesa_id: cleanData.tableId,
-          mesa: mesaNum ? `Mesa ${mesaNum}` : null,
-          estado: cleanData.tableId ? 'confirmada' : 'pendiente',
-          liveState: cleanData.liveState || null,
-          updatedAt: serverTimestamp(),
-          createdAt: cleanData.createdAt || serverTimestamp(),
-        });
-      });
-
-      notificarN8N({
-        evento: 'solicitud_confirmada',
-        document_id: id,
-        tipo: 'reserva',
-      });
-  }, [date, tableNumByTable, groupNumByTable]);
+    notificarN8N({
+      evento: 'solicitud_confirmada',
+      document_id: id,
+      tipo: 'reserva',
+    });
+  }, [date, tableNumByTable, groupNumByTable, reservations, organization, resourceLabel]);
 
   const deleteRes = useCallback(async (resData) => {
-    try {
-      await runTransaction(db, async (transaction) => {
-        // Solo liberamos la mesa si sigue perteneciendo a ESTA reserva:
-        // si otro dispositivo la reasignó, el mesaRef ahora apunta a la nueva
-        // y borrarlo dejaría una mesa ocupada sin protección.
-        if (resData.tableId && resData.service) {
-          const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
-          const mesaSnap = await transaction.get(mesaRef);
-          if (mesaSnap.exists && mesaSnap.data().reservationId === resData.id) {
-            transaction.delete(mesaRef);
-          }
-        }
-        transaction.delete(resDocRef(resData.id));
-      });
-    } catch (e) { console.error(e); throw e; }
+    await cancelReservation(resData, date);
   }, [date]);
 
   const rejectRes = useCallback(async (resData, motivo) => {
-    try {
-      await runTransaction(db, async (transaction) => {
-        // Si la reserva ya tenía mesa asignada, liberarla (rechazo tardío).
-        if (resData.tableId && resData.service) {
-          const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
-          const mesaSnap = await transaction.get(mesaRef);
-          if (mesaSnap.exists && mesaSnap.data().reservationId === resData.id) {
-            transaction.delete(mesaRef);
-          }
-        }
-        transaction.update(resDocRef(resData.id), {
-          estado: 'cancelado',
-          rechazoMotivo: motivo.trim(),
-          updatedAt: serverTimestamp(),
-        });
-      });
-      notificarN8N({
-        evento: 'solicitud_rechazada',
-        document_id: resData.id,
-        tipo: 'reserva',
-        motivo: motivo.trim(),
-      });
-    } catch (e) {
-      console.error('[Andi] Error rechazando reserva:', e);
-      throw e;
-    }
+    await rejectReservation(resData, motivo, date);
+    notificarN8N({
+      evento: 'solicitud_rechazada',
+      document_id: resData.id,
+      tipo: 'reserva',
+      motivo: motivo.trim(),
+    });
   }, [date]);
 
   // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
@@ -484,7 +442,7 @@ export default function StaffDashboard({ onLogout }) {
 
     if (!isAllowed) {
       const stateLabel = s.status === 'busy' ? 'Ocupada' : 'Reservada';
-      showToast(`La mesa no se puede reservar porque su estado actual es "${stateLabel}". Solo se pueden reservar mesas que estén libres o en estado "A limpiar".`);
+      showToast(`El ${resourceLabel.toLowerCase()} no se puede reservar porque su estado actual es "${stateLabel}". Solo se pueden reservar ${resourcePlural.toLowerCase()} que estén libres o en estado "A limpiar".`);
       return;
     }
 
@@ -493,7 +451,7 @@ export default function StaffDashboard({ onLogout }) {
       saveData._oldMesaRef = mesaReservadaRef(editing.tableId, date, editing.service);
     }
 
-    // Si la mesa está "A limpiar", pasar la reserva anterior para eliminarla en la misma transacción
+    // Si el recurso está "A limpiar", pasar la reserva anterior para eliminarla en la misma transacción
     if (!editing && s.status === 'soon' && s.res) {
       saveData._prevResId = s.res.id;
       saveData._prevMesaRef = mesaReservadaRef(s.res.tableId, date, s.res.service);
@@ -503,9 +461,29 @@ export default function StaffDashboard({ onLogout }) {
       await saveRes(saveData);
       setShowModal(false); setEditing(null); setPreTable(null);
     } catch (e) {
+      if (e.code === 'RESOURCE_UNAVAILABLE') {
+        showToast(`⚠️ Este ${resourceLabel.toLowerCase()} acaba de ser reservado por otro cliente. Por favor seleccioná otra opción disponible.`);
+        return;
+      }
+      if (e.code === 'TIME_CONFLICT') {
+        const alts = await checkResourceAvailability(data.tableId, {
+          resources: tables,
+          reservations,
+          date,
+          service: data.service || service,
+          time: data.time,
+          duration: data.duration || SERVICES[data.service || service].defaultDuration,
+          partySize: data.partySize,
+        }).catch(() => ({ alternatives: [] }));
+        const altNames = (alts.alternatives || []).slice(0, 3)
+          .map(r => resourceNums?.[r.id] ? `${resourceLabel} ${resourceNums[r.id]}` : r.name)
+          .join(', ');
+        showToast(`⚠️ Ya existe una reserva que se superpone con ese horario.${altNames ? ` Alternativas disponibles: ${altNames}.` : ' Probá otro horario.'}`);
+        return;
+      }
       showToast(e.message || 'Error al guardar la reserva. Intentá de nuevo.');
     }
-  }, [saveRes, service, date, editing, tableStatus, showToast]);
+  }, [saveRes, service, date, editing, tableStatus, showToast, resourceLabel, resourcePlural, tables, reservations, resourceNums]);
 
   const handleDelete = useCallback(async (resData) => {
     try {
@@ -907,7 +885,8 @@ export default function StaffDashboard({ onLogout }) {
 
       {/* ── PLANO DEL SALON ── */}
       {mainTab === 'plano' && (
-        <SalonFloor
+        <ResourceMap
+          organization={organization}
           tables={tables}
           tableStatus={tableStatus}
           cleaningTimers={cleaningTimers}
@@ -1010,9 +989,11 @@ export default function StaffDashboard({ onLogout }) {
           service={service}
           tableStatus={tableStatus}
           staff={staff}
-          tableNums={{ ...tableNumByTable, ...groupNumByTable }}
+          tableNums={resourceNums}
           ownerByTable={{ ...ownerByTable, ...groupOwnerByTable }}
           mozoTableIds={mozoTableIds}
+          resourceLabel={resourceLabel}
+          bookingFields={organization.bookingFields}
           onSave={handleSave}
           onSavePedido={savePedido}
           onDelete={handleDelete}
@@ -1025,7 +1006,9 @@ export default function StaffDashboard({ onLogout }) {
       {showSettings && (
         <SettingsModal
           config={config}
+          organization={organization}
           onSave={saveConfig}
+          onSaveOrg={saveOrg}
           onClose={() => setShowSettings(false)}
         />
       )}

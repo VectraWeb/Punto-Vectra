@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { C, SHAPE_LABELS, SHAPE_KEYS } from '../utils';
 import { Overlay } from './ui';
+import OrganizationSetup from './organization/OrganizationSetup';
 
 const CAPACIDAD_OPTIONS = [2, 4, 6, 8, 10, 12];
 
@@ -54,7 +55,7 @@ function TipoMesaCard({ item, onChange, onRemove }) {
   );
 }
 
-export default function SettingsModal({ config, onSave, onClose }) {
+export default function SettingsModal({ config, onSave, onClose, organization = null, onSaveOrg = null }) {
   const [local, setLocal] = useState(() => {
     if (Array.isArray(config) && config.length > 0) return config.map(c => ({ ...c }));
     return [
@@ -105,8 +106,12 @@ export default function SettingsModal({ config, onSave, onClose }) {
       </div>
 
       <p style={{ fontSize: '11px', color: C.muted, marginBottom: '12px', lineHeight: 1.4 }}>
-        Definí los tipos de mesa: capacidad (personas), forma y cantidad. Total: <strong>{totalMesas} mesas</strong>.
+        Definí los tipos de {organization?.configuration?.resourcePlural || 'mesa'}: capacidad (personas), forma y cantidad. Total: <strong>{totalMesas} {organization?.configuration?.resourcePlural ? organization.configuration.resourcePlural.toLowerCase() : 'mesas'}</strong>.
       </p>
+
+      {onSaveOrg && (
+        <OrganizationSetup organization={organization} onSave={onSaveOrg} />
+      )}
 
       <div className="settings-scroll" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px', maxHeight: '60vh', overflowY: 'auto' }}>
         {local.map((item, i) => (
@@ -119,7 +124,7 @@ export default function SettingsModal({ config, onSave, onClose }) {
         borderRadius: '12px', cursor: 'pointer', color: C.forest, fontSize: '12px', fontWeight: 600,
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '12px',
       }}>
-        <Plus size={14} /> Agregar nuevo tipo de mesa
+        <Plus size={14} /> Agregar nuevo tipo de {organization?.configuration?.resourceLabel?.toLowerCase() || 'mesa'}
       </button>
 
       {error && (

@@ -8,6 +8,8 @@ import { db } from '../firebase';
 import { C, SERVICES, serviceFromTime, defaultServiceTime, todayISO } from '../utils';
 import { Field } from './ui';
 import PhoneField from './PhoneField';
+import { useOrganization } from '../hooks/useOrganization';
+import { resourceLabelOf, reserveActionOf, bookingFieldsOf } from '../config/businessTypes';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resDocRef = (id) => doc(db, 'reservations', id);
@@ -25,6 +27,12 @@ const inp = {
 // ResForm — Formulario de reserva para clientes
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ResForm({ onStaffAccess, onBack }) {
+  const organization = useOrganization();
+  const resourceLabel = resourceLabelOf(organization);
+  const reserveAction = reserveActionOf(organization);
+  const guestsField = bookingFieldsOf(organization).find(f => f.name === 'guests');
+  const partyLabel = resourceLabel === 'Mesa' ? 'Comensales' : (guestsField?.label || 'Cantidad de personas');
+
   const [date, setDate] = useState(todayISO());
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -95,6 +103,9 @@ export default function ResForm({ onStaffAccess, onBack }) {
         service,
         notes: form.notes,
         mesa_id: null,
+        resourceId: null,
+        organizationId: organization.id,
+        metadata: {},
         estado: 'pendiente',
         date,
         updatedAt: serverTimestamp(),
@@ -163,7 +174,7 @@ export default function ResForm({ onStaffAccess, onBack }) {
           Andi
         </h1>
         <p style={{ fontSize: '12px', color: C.muted, margin: '6px 0 0', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
-          Reservá tu mesa
+          Reservá tu {resourceLabel.toLowerCase()}
         </p>
       </div>
 
@@ -204,7 +215,7 @@ export default function ResForm({ onStaffAccess, onBack }) {
           )}
         </Field>
 
-        <Field label="Comensales">
+        <Field label={partyLabel}>
           <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
               <option key={n} value={n}>{n} {n === 1 ? 'persona' : 'personas'}</option>
@@ -258,7 +269,7 @@ export default function ResForm({ onStaffAccess, onBack }) {
           fontFamily: 'inherit',
           marginTop: '4px',
         }}>
-          {submitting ? 'Reservando...' : 'Reservar mesa'}
+          {submitting ? 'Reservando...' : reserveAction}
         </button>
       </div>
     </div>

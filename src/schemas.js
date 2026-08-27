@@ -1,3 +1,7 @@
+// NOTA: los schemas genéricos viven en src/schemas/ (organizationSchema.js,
+// resourceSchema.js, reservationSchema.js). Este archivo se mantiene por
+// compatibilidad con imports existentes y como documentación JSDoc legacy.
+
 /**
  * @typedef {Object} Reservation
  * @property {string} id - ID único de la reserva.
