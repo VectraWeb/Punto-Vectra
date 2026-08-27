@@ -95,6 +95,17 @@ export default defineConfig(({ mode }) => {
       })
     ],
     appType: 'spa',
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/firebase')) return 'firebase';
+            if (id.includes('node_modules/react') || id.includes('node_modules/scheduler')) return 'react';
+            if (id.includes('node_modules/lucide-react')) return 'icons';
+          },
+        },
+      },
+    },
     test: {
       environment: 'jsdom',
       globals: true,

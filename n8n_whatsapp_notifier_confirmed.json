@@ -1,0 +1,1689 @@
+{
+  "name": "Andi - WhatsApp Notifier Confirmed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp/notificar-confirmado",
+        "responseMode": "onReceived",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "notifier-webhook-001",
+      "name": "Entrada: solicitud confirmada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2400,
+        0
+      ],
+      "webhookId": "andi-whatsapp-notifier-confirmed",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "andi-webhook-secret-placeholder",
+          "name": "Andi webhook secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notifier-input-id",
+              "name": "document_id",
+              "value": "={{ String(($json.body && $json.body.document_id) || $json.document_id || '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-cache-key",
+              "name": "cache_key",
+              "value": "={{ 'notified_' + String(($json.body && $json.body.document_id) || $json.document_id || '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-input-tipo",
+              "name": "tipo",
+              "value": "={{ (() => { const fromBody = String((($json.body && ($json.body.tipo || $json.body.tipo_solicitud)) || $json.tipo || '')).trim().toLowerCase(); if (fromBody) return fromBody; const id = String(($json.body && $json.body.document_id) || $json.document_id || '').trim(); if (/^p/i.test(id)) return 'pedido'; if (/^r/i.test(id)) return 'reserva'; return 'reserva'; })() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-input-collection",
+              "name": "firestore_collection",
+              "value": "={{ /^p/i.test(String(($json.body && $json.body.document_id) || $json.document_id || '').trim()) ? 'pedidos' : 'reservations' }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-input-evento",
+              "name": "evento",
+              "value": "={{ String(($json.body && $json.body.evento) || 'solicitud_confirmada').trim().toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-input-motivo",
+              "name": "motivo",
+              "value": "={{ String(($json.body && $json.body.motivo) || '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-input-rejected-key",
+              "name": "rejected_key",
+              "value": "={{ 'rejected_' + String(($json.body && $json.body.document_id) || $json.document_id || '').trim() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-normalize-input-001",
+      "name": "Normalizar entrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "notifier-valid-id-condition",
+              "leftValue": "={{ $json.document_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "notifier-validate-input-001",
+      "name": "¿document_id válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1920,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "incr",
+        "key": "={{ $json.cache_key }}",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "notifier-redis-get-001",
+      "name": "Redis GET: notified",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -1440,
+        -160
+      ],
+      "credentials": {
+        "redis": {
+          "id": "YjKGAHBOZUiS6oYB",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "notifier-cache-exists-condition",
+              "leftValue": "={{ Object.values($json)[0] !== 1 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "notifier-check-cache-001",
+      "name": "¿Ya notificado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1200,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "document",
+        "operation": "get",
+        "projectId": "andimeet-93f62",
+        "database": "(default)",
+        "collection": "={{ $('Normalizar entrada').first().json.firestore_collection }}",
+        "documentId": "={{ $('Normalizar entrada').first().json.document_id }}",
+        "simple": true
+      },
+      "id": "notifier-firestore-get-001",
+      "name": "Firestore GET: solicitud",
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        -960,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notifier-data-document-id",
+              "name": "document_id",
+              "value": "={{ $('Normalizar entrada').first().json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-data-cache-key",
+              "name": "cache_key",
+              "value": "={{ $('Normalizar entrada').first().json.cache_key }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-data-phone",
+              "name": "phone",
+              "value": "={{ (() => { let p = String($json.telefono || $json.phone || $json.customerPhone || $json.pedido_telefono || '').replace(/@s\\.whatsapp\\.net$/i, '').replace(/\\D/g, ''); if (!p) return ''; if (p.startsWith('0')) p = p.slice(1); if (p.startsWith('54')) return p; const m = p.match(/^(\\d{2,4})15(\\d{6,8})$/); if (m) p = m[1] + '9' + m[2]; return '54' + p; })() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-data-name",
+              "name": "name",
+              "value": "={{ String($json.nombre || $json.customerName || '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-data-type",
+              "name": "request_type",
+              "value": "={{ String($json.tipo_solicitud || $json.tipoSolicitud || $json.request_type || (($json.pedidoEstado !== undefined || $json.modalidad !== undefined) ? 'pedido' : 'reserva')).trim().toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-data-table",
+              "name": "table_number",
+              "value": "={{ String($json.numero_mesa || $json.mesa || $json.tableId || $json.mesa_id || '').replace(/^mesa\\s+/i, '').replace(/^m(?=\\d)/i, '').trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-data-status",
+              "name": "status",
+              "value": "={{ String($json.estado || $json.status || '').trim().toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-data-confirmed",
+              "name": "is_confirmed",
+              "value": "={{ (() => { const estado = String($json.estado || $json.status || '').trim().toLowerCase(); const pedidoEstado = String($json.pedidoEstado || '').trim().toLowerCase(); const mesa = String($json.numero_mesa || $json.mesa || $json.tableId || $json.mesa_id || '').trim() !== ''; return ['confirmado', 'confirmada', 'confirmed'].includes(estado) || pedidoEstado === 'en_preparacion' || mesa; })() }}",
+              "type": "boolean"
+            },
+            {
+              "id": "notifier-data-already-sent",
+              "name": "already_sent",
+              "value": "={{ $json.notificacion_enviada === true || $json.notificacion_enviada === 'true' }}",
+              "type": "boolean"
+            },
+            {
+              "id": "notifier-data-prep-min",
+              "name": "prep_min",
+              "value": "={{ $json.tiempoPreparacionMin || $json.tiempo_preparacion_min || $json.prep_min || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "notifier-data-envio-min",
+              "name": "envio_min",
+              "value": "={{ $json.tiempoEnvioMin || $json.tiempo_envio_min || $json.envio_min || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "notifier-data-total-min",
+              "name": "total_min",
+              "value": "={{ $json.tiempoTotalMin || $json.tiempo_total_min || $json.total_min || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "notifier-data-motivo",
+              "name": "motivo",
+              "value": "={{ String($json.pedidoRechazoMotivo || $json.rechazoMotivo || $json.motivo_rechazo || $json.motivo || '').trim() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-normalize-data-001",
+      "name": "Normalizar datos Firestore",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "notifier-confirmed-pending-condition",
+              "leftValue": "={{ $json.is_confirmed === true && $json.already_sent === false && $json.phone !== '' && $json.name !== '' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "notifier-check-state-001",
+      "name": "¿Confirmada y pendiente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -240,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "notifier-reserva-rule",
+                    "leftValue": "={{ $json.request_type }}",
+                    "rightValue": "reserva",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reserva"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "notifier-pedido-rule",
+                    "leftValue": "={{ $json.request_type }}",
+                    "rightValue": "pedido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pedido"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Tipo no soportado"
+        }
+      },
+      "id": "notifier-switch-type-001",
+      "name": "Switch: tipo de solicitud",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notifier-reserva-document-id",
+              "name": "document_id",
+              "value": "={{ $json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-reserva-cache-key",
+              "name": "cache_key",
+              "value": "={{ $json.cache_key }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-reserva-phone",
+              "name": "phone",
+              "value": "={{ $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-reserva-message",
+              "name": "message",
+              "value": "={{ 'Hola ' + $json.name + ', tu reserva ha sido confirmada. Te hemos asignado la mesa #' + $json.table_number + '. ¡Te esperamos!' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-reservation-message-001",
+      "name": "Preparar mensaje: reserva",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notifier-pedido-document-id",
+              "name": "document_id",
+              "value": "={{ $json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-pedido-cache-key",
+              "name": "cache_key",
+              "value": "={{ $json.cache_key }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-pedido-phone",
+              "name": "phone",
+              "value": "={{ $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-pedido-message",
+              "name": "message",
+              "value": "={{ (() => { const total = parseInt($json.total_min || 0); const prep = parseInt($json.prep_min || 0); const envio = parseInt($json.envio_min || 0); const base = 'Hola ' + $json.name + ', tu pedido está confirmado y en preparación.'; if (total > 0) { let detalle = ''; if (envio > 0) detalle = ' (' + prep + ' min preparación + ' + envio + ' min envío)'; else if (prep > 0) detalle = ' (' + prep + ' min preparación)'; return base + ' Tiempo estimado: ' + total + ' min' + detalle + '. ¡Gracias por tu pedido!'; } return base + ' ¡Gracias por tu pedido!'; })() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-order-message-001",
+      "name": "Preparar mensaje: pedido",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "andimeet",
+        "remoteJid": "={{ $json.phone }}",
+        "messageText": "={{ $json.message }}",
+        "options_message": {
+          "delay": 1200
+        }
+      },
+      "id": "notifier-evolution-http-001",
+      "name": "Enviar WhatsApp: Evolution API",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        640,
+        -160
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "evolutionApi": {
+          "id": "QA2TB3jQdXMkKDOZ",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notifier-mark-document-id",
+              "name": "document_id",
+              "value": "={{ $('Normalizar datos Firestore').first().json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-mark-sent",
+              "name": "notificacion_enviada",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-mark-sent-001",
+      "name": "Marcar notificacion_enviada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "document",
+        "operation": "upsert",
+        "projectId": "andimeet-93f62",
+        "database": "(default)",
+        "collection": "={{ $('Normalizar entrada').first().json.firestore_collection }}",
+        "updateKey": "document_id",
+        "columns": "notificacion_enviada"
+      },
+      "id": "notifier-firestore-update-001",
+      "name": "Firestore UPDATE: notificacion_enviada",
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        1360,
+        -280
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "notifier-end-sent-001",
+      "name": "Fin: notificación enviada",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        -280
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "notifier-end-duplicate-001",
+      "name": "Fin: ya notificado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        -280
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "notifier-end-invalid-001",
+      "name": "Fin: entrada inválida",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1920,
+        240
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "notifier-end-ignored-001",
+      "name": "Fin: no corresponde notificar",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        480,
+        320
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "notifier-end-unsupported-001",
+      "name": "Fin: tipo no soportado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "evt-confirm-1",
+                    "leftValue": "={{ $('Normalizar entrada').first().json.evento }}",
+                    "rightValue": "solicitud_confirmada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Confirmación"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "evt-reject-1",
+                    "leftValue": "={{ $('Normalizar entrada').first().json.evento }}",
+                    "rightValue": "solicitud_rechazada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Rechazo"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Evento desconocido"
+        }
+      },
+      "id": "notifier-switch-event-001",
+      "name": "Switch: evento",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -1680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "incr",
+        "key": "={{ $json.rejected_key }}",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "notifier-redis-get-rejected-001",
+      "name": "Redis GET: rejected",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -1440,
+        160
+      ],
+      "credentials": {
+        "redis": {
+          "id": "YjKGAHBOZUiS6oYB",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "notifier-rejected-exists-condition",
+              "leftValue": "={{ Object.values($json)[0] !== 1 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "notifier-check-rejected-001",
+      "name": "¿Ya rechazado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1200,
+        160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "notifier-fin-rejected-001",
+      "name": "Fin: ya rechazado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "evt-confirm-2",
+                    "leftValue": "={{ $('Normalizar entrada').first().json.evento }}",
+                    "rightValue": "solicitud_confirmada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Confirmación"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "evt-reject-2",
+                    "leftValue": "={{ $('Normalizar entrada').first().json.evento }}",
+                    "rightValue": "solicitud_rechazada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Rechazo"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Evento desconocido"
+        }
+      },
+      "id": "notifier-switch-event-002",
+      "name": "Switch: evento (2)",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notifier-reject-document-id",
+              "name": "document_id",
+              "value": "={{ $json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-reject-phone",
+              "name": "phone",
+              "value": "={{ $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-reject-message",
+              "name": "message",
+              "value": "={{ (() => { const tipo = String($json.request_type || '').trim().toLowerCase(); const motivo = String($json.motivo || '').trim(); const base = tipo === 'pedido' ? 'Hola ' + $json.name + ', tu pedido fue rechazado por el restaurante.' : 'Hola ' + $json.name + ', tu reserva fue rechazada por el restaurante.'; return motivo ? base + ' Motivo: ' + motivo + '.' : base; })() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-reject-message-001",
+      "name": "Preparar mensaje: rechazo",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "evt-confirm-3",
+                    "leftValue": "={{ $('Normalizar entrada').first().json.evento }}",
+                    "rightValue": "solicitud_confirmada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Confirmación"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "evt-reject-3",
+                    "leftValue": "={{ $('Normalizar entrada').first().json.evento }}",
+                    "rightValue": "solicitud_rechazada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Rechazo"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Evento desconocido"
+        }
+      },
+      "id": "notifier-switch-postsend-001",
+      "name": "Switch: post-envío",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "notifier-mark-rejected-document-id",
+              "name": "document_id",
+              "value": "={{ $('Normalizar datos Firestore').first().json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "notifier-mark-rejected-sent",
+              "name": "rechazo_notificado",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-mark-rejected-001",
+      "name": "Marcar rechazo notificado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "document",
+        "operation": "upsert",
+        "projectId": "andimeet-93f62",
+        "database": "(default)",
+        "collection": "={{ $('Normalizar entrada').first().json.firestore_collection }}",
+        "updateKey": "document_id",
+        "columns": "rechazo_notificado"
+      },
+      "id": "notifier-firestore-update-rejected-001",
+      "name": "Firestore UPDATE: rechazo_notificado",
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        1360,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "notifier-fin-reject-sent-001",
+      "name": "Fin: rechazo enviado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "notifier-schedule-reminder-001",
+      "name": "Programar cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2400,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "document",
+        "operation": "query",
+        "projectId": "andimeet-93f62",
+        "database": "(default)",
+        "query": "{\n  \"structuredQuery\": {\n    \"from\": [{ \"collectionId\": \"reservations\" }],\n    \"where\": {\n      \"compositeFilter\": {\n        \"op\": \"AND\",\n        \"filters\": [\n          {\n            \"fieldFilter\": {\n              \"field\": { \"fieldPath\": \"date\" },\n              \"op\": \"GREATER_THAN_OR_EQUAL\",\n              \"value\": { \"stringValue\": \"{{ (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }); })() }}\" }\n            }\n          },\n          {\n            \"fieldFilter\": {\n              \"field\": { \"fieldPath\": \"date\" },\n              \"op\": \"LESS_THAN_OR_EQUAL\",\n              \"value\": { \"stringValue\": \"{{ new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }) }}\" }\n            }\n          }\n        ]\n      }\n    }\n  }\n}",
+        "simple": true
+      },
+      "id": "notifier-firestore-all-reservas",
+      "name": "Firestore GET ALL: reservas",
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        -2160,
+        480
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.all().map(i => i.json);\nlet docs = [];\nfor (const it of input) {\n  if (Array.isArray(it)) docs = docs.concat(it);\n  else if (it && Array.isArray(it.documents)) docs = docs.concat(it.documents);\n  else if (it && Array.isArray(it.items)) docs = docs.concat(it.items);\n  else if (it && Array.isArray(it.body)) docs = docs.concat(it.body);\n  else if (it && it.body) docs.push(it.body);\n  else docs.push(it);\n}\n\nconst getField = (d, k) => {\n  if (!d) return null;\n  if (d.fields && d.fields[k] !== undefined) {\n    const f = d.fields[k];\n    if (f === null || f === undefined) return null;\n    if (f.stringValue !== undefined) return f.stringValue;\n    if (f.integerValue !== undefined) return parseInt(f.integerValue);\n    if (f.booleanValue !== undefined) return f.booleanValue;\n    if (f.doubleValue !== undefined) return parseFloat(f.doubleValue);\n    return null;\n  }\n  return d[k] !== undefined ? d[k] : null;\n};\n\nconst getId = (d) => {\n  if (!d) return '';\n  if (d.id) return d.id;\n  if (d._id) return d._id;\n  if (d.name) return d.name.split('/').pop();\n  return '';\n};\n\nconst nowStr = new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' });\nconst nowParts = nowStr.replace(' ', 'T').split('T');\nconst hoy = nowParts[0];\nconst [h, m] = nowParts[1].slice(0, 5).split(':').map(Number);\nlet nowMins = h * 60 + m;\nif (h < 12) nowMins += 24 * 60;\n\nconst ayerD = new Date(nowStr.replace(' ', 'T') + '-03:00');\nayerD.setDate(ayerD.getDate() - 1);\nconst ayer = ayerD.toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });\n\nconst t2m = (time, service) => {\n  const p = String(time || '').split(':').map(Number);\n  if (p.length !== 2 || isNaN(p[0])) return null;\n  let mins = p[0] * 60 + p[1];\n  if (service === 'cena' && p[0] < 12) mins += 24 * 60;\n  return mins;\n};\n\nconst normalizePhone = (v) => {\n  let s = String(v || '').replace(/@s\\.whatsapp\\.net$/i, '').replace(/[^0-9]/g, '');\n  if (!s) return '';\n  if (s.startsWith('0')) s = s.slice(1);\n  if (s.startsWith('54')) return s;\n  return '54' + s;\n};\n\nconst out = [];\nfor (const d of docs) {\n  const id = getId(d);\n  const date = getField(d, 'date');\n  const time = getField(d, 'time');\n  const service = getField(d, 'service') || '';\n  const estado = String(getField(d, 'estado') || '').toLowerCase();\n  const name = String(getField(d, 'customerName') || '').trim();\n  const phone = normalizePhone(getField(d, 'customerPhone') || getField(d, 'phone'));\n  const mesaRaw = String(getField(d, 'mesa') || getField(d, 'tableId') || getField(d, 'mesa_id') || '');\n  const rMins = t2m(time, service);\n  if (!id || !date || rMins === null || !phone || !name) continue;\n  if (!/^r/i.test(id)) continue; // solo reservas (los docs p... son pedidos viejos)\n  if (['cancelado', 'no_show', 'ausente', 'finalizado'].includes(estado)) continue;\n  if (estado === 'pendiente' && !mesaRaw) continue; // pendiente sin mesa: no fue confirmada por un humano\n  const cenaMadrugada = rMins >= 19 * 60;\n  const dateOk = (cenaMadrugada && h < 12) ? date === ayer : date === hoy;\n  if (!dateOk) continue;\n  const until = rMins - nowMins;\n  if (until <= 13 || until > 15) continue;\n  const mesaNum = mesaRaw.replace(/^mesa\\s+/i, '').replace(/^m(?=\\d)/i, '');\n  out.push({ json: {\n    document_id: id,\n    reminder_key: 'reminder15_' + id,\n    phone,\n    name,\n    time,\n    mesa: mesaNum,\n  } });\n}\nreturn out;"
+      },
+      "id": "notifier-filter-upcoming",
+      "name": "Filtrar próximas reservas (15 min)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1920,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "incr",
+        "key": "={{ $json.reminder_key }}",
+        "expire": true,
+        "ttl": 86400
+      },
+      "id": "notifier-redis-get-reminder",
+      "name": "Redis GET: reminder15",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -1680,
+        480
+      ],
+      "credentials": {
+        "redis": {
+          "id": "YjKGAHBOZUiS6oYB",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "notifier-reminder-exists-condition",
+              "leftValue": "={{ Object.values($json)[0] !== 1 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "notifier-check-reminder-001",
+      "name": "¿Recordatorio ya enviado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1440,
+        480
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "notifier-fin-reminder-skip-001",
+      "name": "Fin: recordatorio ya enviado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "rem-prep-doc",
+              "name": "document_id",
+              "value": "={{ $json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "rem-prep-key",
+              "name": "reminder_key",
+              "value": "={{ $json.reminder_key }}",
+              "type": "string"
+            },
+            {
+              "id": "rem-prep-phone",
+              "name": "phone",
+              "value": "={{ $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "rem-prep-msg",
+              "name": "message",
+              "value": "={{ (() => { const f = $json; const mesa = f.mesa ? ' (mesa #' + f.mesa + ')' : ''; return 'Hola ' + f.name + ', tu reserva de las ' + f.time + ' es en 15 minutos' + mesa + '. ¡Te esperamos en Andi! 🍽️'; })() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-reminder-message-001",
+      "name": "Preparar mensaje: recordatorio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1200,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "andimeet",
+        "remoteJid": "={{ $json.phone }}",
+        "messageText": "={{ $json.message }}",
+        "options_message": {
+          "delay": 1000
+        }
+      },
+      "id": "notifier-reminder-send-001",
+      "name": "Enviar WhatsApp: recordatorio",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        480
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "evolutionApi": {
+          "id": "QA2TB3jQdXMkKDOZ",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "rem-mark-doc",
+              "name": "document_id",
+              "value": "={{ $json.document_id }}",
+              "type": "string"
+            },
+            {
+              "id": "rem-mark-flag",
+              "name": "recordatorio15_enviado",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notifier-reminder-mark-001",
+      "name": "Marcar recordatorio enviado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -720,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "document",
+        "operation": "upsert",
+        "projectId": "andimeet-93f62",
+        "database": "(default)",
+        "collection": "reservations",
+        "updateKey": "document_id",
+        "columns": "recordatorio15_enviado"
+      },
+      "id": "notifier-firestore-reminder-update",
+      "name": "Firestore UPDATE: recordatorio15",
+      "type": "n8n-nodes-base.googleFirebaseCloudFirestore",
+      "typeVersion": 1.1,
+      "position": [
+        -480,
+        480
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "4oMTtyVYbyEwbL9v",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "notifier-fin-reminder-sent-001",
+      "name": "Fin: recordatorio enviado",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        480
+      ]
+    }
+  ],
+  "connections": {
+    "Entrada: solicitud confirmada": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar entrada": {
+      "main": [
+        [
+          {
+            "node": "¿document_id válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿document_id válido?": {
+      "main": [
+        [
+          {
+            "node": "Switch: evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin: entrada inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET: notified": {
+      "main": [
+        [
+          {
+            "node": "¿Ya notificado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Ya notificado?": {
+      "main": [
+        [
+          {
+            "node": "Fin: ya notificado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Firestore GET: solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firestore GET: solicitud": {
+      "main": [
+        [
+          {
+            "node": "Normalizar datos Firestore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar datos Firestore": {
+      "main": [
+        [
+          {
+            "node": "Switch: evento (2)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Confirmada y pendiente?": {
+      "main": [
+        [
+          {
+            "node": "Switch: tipo de solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin: no corresponde notificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: tipo de solicitud": {
+      "main": [
+        [
+          {
+            "node": "Preparar mensaje: reserva",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar mensaje: pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin: tipo no soportado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensaje: reserva": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp: Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensaje: pedido": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp: Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp: Evolution API": {
+      "main": [
+        [
+          {
+            "node": "Switch: post-envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar notificacion_enviada": {
+      "main": [
+        [
+          {
+            "node": "Firestore UPDATE: notificacion_enviada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firestore UPDATE: notificacion_enviada": {
+      "main": [
+        [
+          {
+            "node": "Fin: notificación enviada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: evento": {
+      "main": [
+        [
+          {
+            "node": "Redis GET: notified",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Redis GET: rejected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin: no corresponde notificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET: rejected": {
+      "main": [
+        [
+          {
+            "node": "¿Ya rechazado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Ya rechazado?": {
+      "main": [
+        [
+          {
+            "node": "Fin: ya rechazado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Firestore GET: solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: evento (2)": {
+      "main": [
+        [
+          {
+            "node": "¿Confirmada y pendiente?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar mensaje: rechazo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin: no corresponde notificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensaje: rechazo": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp: Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: post-envío": {
+      "main": [
+        [
+          {
+            "node": "Marcar notificacion_enviada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar rechazo notificado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin: no corresponde notificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar rechazo notificado": {
+      "main": [
+        [
+          {
+            "node": "Firestore UPDATE: rechazo_notificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firestore UPDATE: rechazo_notificado": {
+      "main": [
+        [
+          {
+            "node": "Fin: rechazo enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Programar cada minuto": {
+      "main": [
+        [
+          {
+            "node": "Firestore GET ALL: reservas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firestore GET ALL: reservas": {
+      "main": [
+        [
+          {
+            "node": "Filtrar próximas reservas (15 min)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar próximas reservas (15 min)": {
+      "main": [
+        [
+          {
+            "node": "Redis GET: reminder15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redis GET: reminder15": {
+      "main": [
+        [
+          {
+            "node": "¿Recordatorio ya enviado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Recordatorio ya enviado?": {
+      "main": [
+        [
+          {
+            "node": "Fin: recordatorio ya enviado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar mensaje: recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensaje: recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp: recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp: recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Marcar recordatorio enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar recordatorio enviado": {
+      "main": [
+        [
+          {
+            "node": "Firestore UPDATE: recordatorio15",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firestore UPDATE: recordatorio15": {
+      "main": [
+        [
+          {
+            "node": "Fin: recordatorio enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "notifier-workflow-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

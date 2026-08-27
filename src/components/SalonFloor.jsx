@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { Save, RotateCcw, Move } from 'lucide-react';
 import { C as PALETTE, LIVE_STATES, rectsOverlap } from '../utils';
 import { useCleaningCountdown } from '../hooks/useCleaningTimers';
@@ -14,31 +14,39 @@ const TABLE_DIMS = {
 };
 
 // Resuelve una posición arrastrada para que no se superponga con otros sectores
-// (se empuja hacia el lado que requiera menos desplazamiento)
+// (se empuja hacia el lado que requiera menos desplazamiento) y queda
+// SIEMPRE dentro del lienzo. Repite el ciclo tras clampear: el clamp puede
+// volver a meter el sector encima de otro cuando el empuje salía del canvas.
 function resolveSectorDrag(x, y, w, h, others) {
-  let nx = x;
-  let ny = y;
-  for (let iter = 0; iter <= others.length; iter++) {
-    let pushed = false;
-    for (const o of others) {
-      if (!rectsOverlap({ x: nx, y: ny, w, h }, o)) continue;
-      const ox = Math.min(nx + w, o.x + o.w) - Math.max(nx, o.x);
-      const oy = Math.min(ny + h, o.y + o.h) - Math.max(ny, o.y);
-      if (ox <= oy) {
-        const dRight = o.x + o.w - nx;
-        const dLeft = nx + w - o.x;
-        nx += dRight <= dLeft ? dRight : -dLeft;
-      } else {
-        const dDown = o.y + o.h - ny;
-        const dUp = ny + h - o.y;
-        ny += dDown <= dUp ? dDown : -dUp;
+  let out = { x, y };
+  const clamp = (p) => ({
+    x: Math.max(0, Math.min(CANVAS_W - w, p.x)),
+    y: Math.max(0, Math.min(CANVAS_H - h, p.y)),
+  });
+  for (let pass = 0; pass < 2; pass++) {
+    out = clamp(out);
+    for (let iter = 0; iter <= others.length; iter++) {
+      let pushed = false;
+      for (const o of others) {
+        if (!rectsOverlap({ x: out.x, y: out.y, w, h }, o)) continue;
+        const ox = Math.min(out.x + w, o.x + o.w) - Math.max(out.x, o.x);
+        const oy = Math.min(out.y + h, o.y + o.h) - Math.max(out.y, o.y);
+        if (ox <= oy) {
+          const dRight = o.x + o.w - out.x;
+          const dLeft = out.x + w - o.x;
+          out = { ...out, x: out.x + (dRight <= dLeft ? dRight : -dLeft) };
+        } else {
+          const dDown = o.y + o.h - out.y;
+          const dUp = out.y + h - o.y;
+          out = { ...out, y: out.y + (dDown <= dUp ? dDown : -dUp) };
+        }
+        pushed = true;
+        break;
       }
-      pushed = true;
-      break;
+      if (!pushed) break;
     }
-    if (!pushed) break;
   }
-  return { x: nx, y: ny };
+  return clamp(out);
 }
 
 // Resuelve un redimensionado para que no se superponga: recorta el tamaño
@@ -62,6 +70,11 @@ function resolveSectorResize(x, y, w, h, handle, others) {
     }
     if (!clamped) break;
   }
+  // Siempre dentro del lienzo, aunque el otro sector esté pegado al borde
+  out.w = Math.max(80, Math.min(out.w, CANVAS_W));
+  out.h = Math.max(60, Math.min(out.h, CANVAS_H));
+  out.x = Math.max(0, Math.min(out.x, CANVAS_W - out.w));
+  out.y = Math.max(0, Math.min(out.y, CANVAS_H - out.h));
   return out;
 }
 
@@ -116,7 +129,7 @@ const formatCountdown = (sec) => {
 const TableShape = React.memo(function TableShape({
   t, pos, dim, s, timer, sectorColor, tableNum,
   isEditing, isEditingSectors, isMobile,
-  onClick, onDragStart,
+  onClick, onDragStart, highlighted,
 }) {
   const ct = useCleaningCountdown(timer?.expiresAt);
   const bg = tableColor(s.status, s.res?.liveState, ct);
@@ -129,8 +142,7 @@ const TableShape = React.memo(function TableShape({
   return (
     <div
       data-table-id={t.id}
-      onPointerDown={(e) => onDragStart(t.id, e)}
-      onTouchStart={(e) => { if (isEditing) onDragStart(t.id, e); }}
+      onPointerDown={(e) => { if (isEditing) onDragStart(t.id, e); }}
       onClick={() => {
         if (!isEditing && onClick) onClick();
       }}
@@ -151,9 +163,11 @@ const TableShape = React.memo(function TableShape({
         WebkitUserSelect: 'none',
         touchAction: 'none',
         WebkitTouchCallout: 'none',
-        boxShadow: sectorColor
-          ? `inset 0 0 0 3px ${sectorColor}, 0 2px 6px rgba(0,0,0,0.1)`
-          : '0 2px 6px rgba(0,0,0,0.1)',
+        boxShadow: highlighted
+          ? `0 0 0 4px #f6c945, 0 0 0 8px rgba(246,201,69,0.35), 0 2px 6px rgba(0,0,0,0.1)`
+          : sectorColor
+            ? `inset 0 0 0 3px ${sectorColor}, 0 2px 6px rgba(0,0,0,0.1)`
+            : '0 2px 6px rgba(0,0,0,0.1)',
         transition: isEditing ? 'none' : 'background 0.3s',
         zIndex: isEditingSectors ? 1 : 10,
         pointerEvents: isEditingSectors ? 'none' : 'auto',
@@ -214,11 +228,16 @@ const SalonFloor = React.memo(function SalonFloor({
   positions, setPositions, groups, setGroups, saveLayout,
   isEditing, onToggleEdit,
   sectors, isEditingSectors, onToggleEditSectors, onSaveSectors,
+  highlightTableId, focusRequest,
+  ownerByTable, staff, groupOwners, onChooseGroupOwner,
+  onSaveError,
 }) {
   const [dirty, setDirty] = useState(false);
+  const [pendingGroupChoice, setPendingGroupChoice] = useState(null);
   const containerRef = useRef(null);
   const dragRef = useRef(null);
   const sectorDragRef = useRef(null);
+  const lastFocusKeyRef = useRef(0);
 
   const [fitScale, setFitScale] = useState(1);
   const [zoom, setZoom] = useState(1);
@@ -229,6 +248,9 @@ const SalonFloor = React.memo(function SalonFloor({
   const pinchRef = useRef(null);
   const panRef = useRef(null);
   const lastTapRef = useRef(0);
+  const suppressClickRef = useRef(false);
+  const sectorsRef = useRef(sectors);
+  sectorsRef.current = sectors;
 
   const effectiveScale = fitScale * zoom;
 
@@ -257,19 +279,20 @@ const SalonFloor = React.memo(function SalonFloor({
   }, [isMobile]);
 
   const zoomAt = useCallback((factor, cx, cy) => {
-    setZoom(prev => {
-      const newZ = Math.min(3, Math.max(1, prev * factor));
-      if (newZ === 1) {
-        setOffset({ x: 0, y: 0 });
-        return 1;
-      }
-      const k = newZ / prev;
-      setOffset(prevOff => clampOffset({
-        x: cx + k * (prevOff.x - cx),
-        y: cy + k * (prevOff.y - cy),
-      }));
-      return newZ;
-    });
+    const prev = zoomRef.current;
+    const newZ = Math.min(3, Math.max(1, prev * factor));
+    if (newZ === 1) {
+      setZoom(1);
+      setOffset({ x: 0, y: 0 });
+      return;
+    }
+    const k = newZ / prev;
+    const off = offsetRef.current;
+    setOffset(clampOffset({
+      x: cx + k * (off.x - cx),
+      y: cy + k * (off.y - cy),
+    }));
+    setZoom(newZ);
   }, [clampOffset]);
 
   const resetView = useCallback(() => {
@@ -277,12 +300,23 @@ const SalonFloor = React.memo(function SalonFloor({
     setOffset({ x: 0, y: 0 });
   }, []);
 
+  // Focus a una mesa desde la lista de reservas: solo resalta la mesa
+  // (contorno dorado + banner) — sin zoom, sin pan.
+  useLayoutEffect(() => {
+    if (!focusRequest) return;
+    if (lastFocusKeyRef.current === focusRequest.key) return;
+    const t = tables.find(tb => tb.id === focusRequest.tableId);
+    const p = positions[focusRequest.tableId];
+    if (!t || !p) return;
+    lastFocusKeyRef.current = focusRequest.key;
+  }, [focusRequest, tables, positions]);
+
   // Wheel zoom (PC) — listener no-pasivo para poder cancelar el scroll
-  useEffect(() => {
+   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e) => {
-      if (isEditing) return;
+      if (isEditing || isEditingSectors) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const cx = e.clientX - rect.left;
@@ -292,20 +326,28 @@ const SalonFloor = React.memo(function SalonFloor({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [isEditing, zoomAt]);
+  }, [isEditing, isEditingSectors, zoomAt]);
 
   useEffect(() => {
-    if (tables.length > 0 && Object.keys(positions).length === 0) {
-      setPositions(defaultPositions(tables));
+    if (tables.length === 0) return;
+    // Siembra solo las mesas que no tienen posición guardada: así las mesas
+    // nuevas (agregadas en Configuración) no se apilan en la esquina (0,0).
+    const missing = tables.filter(t => !positions[t.id]);
+    if (missing.length === 0) return;
+    const defaults = defaultPositions(tables);
+    const patch = {};
+    for (const t of missing) {
+      if (defaults[t.id]) patch[t.id] = defaults[t.id];
     }
+    setPositions(prev => ({ ...prev, ...patch }));
   }, [tables, positions, setPositions]);
 
   useEffect(() => {
-    if (isEditing) {
+    if (isEditing || isEditingSectors) {
       setZoom(1);
       setOffset({ x: 0, y: 0 });
     }
-  }, [isEditing]);
+  }, [isEditing, isEditingSectors]);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
@@ -332,7 +374,7 @@ const SalonFloor = React.memo(function SalonFloor({
 
   // Rect de cada mesa del lienzo (dimensiones conocidas)
   const tableRect = useCallback((t, pos) => {
-    const d = TABLE_DIMS[t.shape] || TABLE_DIMS.round;
+    const d = (t && TABLE_DIMS[t.shape]) || TABLE_DIMS.round;
     return { x: pos.x, y: pos.y, w: d.w, h: d.h };
   }, []);
 
@@ -372,8 +414,8 @@ const SalonFloor = React.memo(function SalonFloor({
     const startPositions = {};
     for (const id of block) startPositions[id] = positions[id] || { x: 0, y: 0 };
 
-    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    const startX = e.clientX ?? 0;
+    const startY = e.clientY ?? 0;
 
     el.style.cursor = 'grabbing';
     el.style.zIndex = '100';
@@ -384,12 +426,12 @@ const SalonFloor = React.memo(function SalonFloor({
     let rafId = null;
 
     const onMove = (ev) => {
-      const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
-      const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      const cx = ev.clientX ?? 0;
+      const cy = ev.clientY ?? 0;
       const rawDx = (cx - startX) / effectiveScale;
       const rawDy = (cy - startY) / effectiveScale;
-      const dx = isMobile ? -rawDy : rawDx;
-      const dy = isMobile ? rawDx : rawDy;
+      const dx = isMobile ? rawDy : rawDx;
+      const dy = isMobile ? -rawDx : rawDy;
 
       // Arrastre libre: las mesas pueden superponerse (solo se limitan al lienzo)
       const resolved = {};
@@ -416,9 +458,8 @@ const SalonFloor = React.memo(function SalonFloor({
     const onUp = () => {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('touchmove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('pointercancel', onUp);
       el.style.pointerEvents = '';
       el.style.zIndex = '';
       el.style.willChange = '';
@@ -451,10 +492,30 @@ const SalonFloor = React.memo(function SalonFloor({
             final[id] = { x: final[id].x + snapDeltaX, y: final[id].y + snapDeltaY };
           }
           const otherBlock = (groups || []).find(g => g.includes(best.targetId)) || [best.targetId];
+          const mergedGroup = [...block, ...otherBlock];
           setGroups(prev => [
             ...prev.filter(g => !block.some(id => g.includes(id)) && !otherBlock.some(id => g.includes(id))),
-            [...block, ...otherBlock],
+            mergedGroup,
           ]);
+
+          // Si el grupo cruza sectores y no hay mozo elegido, preguntar
+          // al instante (sin salir del modo edición).
+          const ownerIds = [...new Set(mergedGroup.map(id => ownerByTable?.[id]).filter(Boolean))];
+          const gKey = [...mergedGroup].sort().join('|');
+          if (ownerIds.length > 1 && !(groupOwners && groupOwners[gKey])) {
+            setPendingGroupChoice({
+              key: gKey,
+              owners: ownerIds.map(oid => {
+                const memberId = mergedGroup.find(id => ownerByTable?.[id] === oid);
+                return {
+                  id: oid,
+                  name: (staff || []).find(s => s.id === oid)?.name || 'Mozo',
+                  num: memberId ? (tableNums?.[memberId] || '') : '',
+                };
+              }),
+              afterChoose: null,
+            });
+          }
         }
 
         setPositions(prev => ({ ...prev, ...final }));
@@ -464,13 +525,15 @@ const SalonFloor = React.memo(function SalonFloor({
     };
 
     window.addEventListener('pointermove', onMove, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('touchend', onUp);
-  }, [isEditing, positions, tables, groups, effectiveScale, isMobile, setPositions, setGroups, tableRect, closestSnap]);
+    window.addEventListener('pointercancel', onUp);
+  }, [isEditing, positions, tables, groups, effectiveScale, isMobile, setPositions, setGroups, tableRect, closestSnap, ownerByTable, tableNums, staff, groupOwners]);
 
   const handleTouchStart = useCallback((e) => {
-    if (isEditing) return;
+    if (isEditing || isEditingSectors) return;
+    // Sobre una mesa o un botón el tap abre la mesa/acción: no registrar
+    // doble-tap ni pan, así el click no se convierte en zoom/arrastre.
+    if (e.target.closest && e.target.closest('[data-table-id], button')) return;
     if (e.touches.length === 2) {
       e.preventDefault();
       return;
@@ -492,21 +555,25 @@ const SalonFloor = React.memo(function SalonFloor({
         }
       }
     }
-  }, [isEditing, zoomAt]);
+  }, [isEditing, isEditingSectors, zoomAt]);
 
   const handleTouchMove = useCallback((e) => {
-    if (isEditing) return;
+    if (isEditing || isEditingSectors) return;
     if (e.touches.length === 2) {
       e.preventDefault();
       return;
     } else if (e.touches.length === 1 && panRef.current) {
       e.preventDefault();
+      const t = e.touches[0];
+      const dx = t.clientX - (panRef.current.x + offsetRef.current.x);
+      const dy = t.clientY - (panRef.current.y + offsetRef.current.y);
+      if (dx * dx + dy * dy > 16) suppressClickRef.current = true;
       setOffset(clampOffset({
-        x: e.touches[0].clientX - panRef.current.x,
-        y: e.touches[0].clientY - panRef.current.y,
+        x: t.clientX - panRef.current.x,
+        y: t.clientY - panRef.current.y,
       }));
     }
-  }, [clampOffset, isEditing]);
+  }, [clampOffset, isEditing, isEditingSectors]);
 
   const handleTouchEnd = useCallback(() => {
     pinchRef.current = null;
@@ -528,16 +595,33 @@ const SalonFloor = React.memo(function SalonFloor({
   // ── Pan con mouse en PC ────────────────────────────────────────────────
   const mousePanRef = useRef(null);
 
+  // Tras un pan/arrastre real, el click generado al soltar NO debe abrir
+  // la mesa. Se captura en el contenedor antes de llegar a las mesas.
+  const handleContainerClickCapture = useCallback((e) => {
+    if (suppressClickRef.current) {
+      e.stopPropagation();
+      e.preventDefault();
+      suppressClickRef.current = false;
+    }
+  }, []);
+
   const handleMouseDown = useCallback((e) => {
     if (isEditing || isEditingSectors || zoom <= 1) return;
     if (e.button !== 0) return;
+    if (e.target.closest && e.target.closest('button')) return;
     e.preventDefault();
-    mousePanRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
-  }, [isEditing, isEditingSectors, zoom, offset]);
+    suppressClickRef.current = false;
+    const off = offsetRef.current;
+    mousePanRef.current = { x: e.clientX - off.x, y: e.clientY - off.y };
+  }, [isEditing, isEditingSectors, zoom]);
 
   const handleMouseMove = useCallback((e) => {
     if (!mousePanRef.current) return;
     e.preventDefault();
+    const off = offsetRef.current;
+    const dx = e.clientX - (mousePanRef.current.x + off.x);
+    const dy = e.clientY - (mousePanRef.current.y + off.y);
+    if (dx * dx + dy * dy > 16) suppressClickRef.current = true;
     setOffset(clampOffset({
       x: e.clientX - mousePanRef.current.x,
       y: e.clientY - mousePanRef.current.y,
@@ -598,8 +682,9 @@ const SalonFloor = React.memo(function SalonFloor({
       setDirty(false);
     } catch (err) {
       console.error('[SalonFloor] Error guardando layout:', err);
+      if (onSaveError) onSaveError('No se pudo guardar el plano. Revisá la conexión e intentá de nuevo.');
     }
-  }, [positions, tables, saveLayout, setGroups, closestSnap]);
+  }, [positions, tables, saveLayout, setGroups, closestSnap, onSaveError]);
 
   // ── Separar un grupo unido: se quita del layout y se separan visualmente ──
   const unjoinGroup = useCallback((group) => {
@@ -625,22 +710,22 @@ const SalonFloor = React.memo(function SalonFloor({
     if (!isEditingSectors) return;
     if (e.cancelable) e.preventDefault();
     e.stopPropagation();
-    const sector = (sectors || []).find(s => s.id === sectorId);
+    const sector = (sectorsRef.current || []).find(s => s.id === sectorId);
     if (!sector) return;
-    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    const startX = e.clientX ?? 0;
+    const startY = e.clientY ?? 0;
     const orig = { x: sector.x, y: sector.y, w: sector.w, h: sector.h };
 
     let rafId = null;
 
     const onMove = (ev) => {
-      const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
-      const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      const cx = ev.clientX ?? 0;
+      const cy = ev.clientY ?? 0;
       const rawDx = (cx - startX) / effectiveScale;
       const rawDy = (cy - startY) / effectiveScale;
-      const dx = isMobile ? -rawDy : rawDx;
-      const dy = isMobile ? rawDx : rawDy;
-      const others = sectors.filter(s => s.id !== sectorId);
+      const dx = isMobile ? rawDy : rawDx;
+      const dy = isMobile ? -rawDx : rawDy;
+      const others = sectorsRef.current.filter(s => s.id !== sectorId);
       const resolved = resolveSectorDrag(orig.x + dx, orig.y + dy, orig.w, orig.h, others);
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
@@ -656,42 +741,40 @@ const SalonFloor = React.memo(function SalonFloor({
     const onUp = () => {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('touchmove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('pointercancel', onUp);
       if (sectorDragRef.current && sectorDragRef.current.sectorId === sectorId && onSaveSectors) {
         const d = sectorDragRef.current;
-        const updated = sectors.map(s => s.id === sectorId ? { ...s, x: orig.x + d.dx, y: orig.y + d.dy } : s);
+        const updated = sectorsRef.current.map(s => s.id === sectorId ? { ...s, x: orig.x + d.dx, y: orig.y + d.dy } : s);
         onSaveSectors(updated);
       }
       sectorDragRef.current = null;
     };
 
     window.addEventListener('pointermove', onMove, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('touchend', onUp);
-  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors, isMobile]);
+    window.addEventListener('pointercancel', onUp);
+  }, [isEditingSectors, effectiveScale, onSaveSectors, isMobile]);
 
   const handleSectorResize = useCallback((sectorId, handle, e) => {
     if (!isEditingSectors) return;
     if (e.cancelable) e.preventDefault();
     e.stopPropagation();
-    const sector = (sectors || []).find(s => s.id === sectorId);
+    const sector = (sectorsRef.current || []).find(s => s.id === sectorId);
     if (!sector) return;
-    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    const startX = e.clientX ?? 0;
+    const startY = e.clientY ?? 0;
     const orig = { x: sector.x, y: sector.y, w: sector.w, h: sector.h };
 
     let rafId = null;
 
     const onMove = (ev) => {
-      const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
-      const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      const cx = ev.clientX ?? 0;
+      const cy = ev.clientY ?? 0;
       const rawDx = (cx - startX) / effectiveScale;
       const rawDy = (cy - startY) / effectiveScale;
-      const dx = isMobile ? -rawDy : rawDx;
-      const dy = isMobile ? rawDx : rawDy;
+      const dx = isMobile ? rawDy : rawDx;
+      const dy = isMobile ? -rawDx : rawDy;
       let { x, y, w, h } = orig;
 
       if (handle.includes('e')) w = Math.max(80, orig.w + dx);
@@ -699,7 +782,7 @@ const SalonFloor = React.memo(function SalonFloor({
       if (handle.includes('s')) h = Math.max(60, orig.h + dy);
       if (handle.includes('n')) { h = Math.max(60, orig.h - dy); y = orig.y + (orig.h - h); }
 
-      const others = sectors.filter(s => s.id !== sectorId);
+      const others = sectorsRef.current.filter(s => s.id !== sectorId);
       const resolved = resolveSectorResize(x, y, w, h, handle, others);
       x = resolved.x; y = resolved.y; w = resolved.w; h = resolved.h;
 
@@ -719,22 +802,32 @@ const SalonFloor = React.memo(function SalonFloor({
     const onUp = () => {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('touchmove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('pointercancel', onUp);
       if (sectorDragRef.current && sectorDragRef.current.id === sectorId && onSaveSectors) {
         const d = sectorDragRef.current;
-        const updated = sectors.map(s => s.id === sectorId ? { ...s, x: d.x, y: d.y, w: d.w, h: d.h } : s);
+        const updated = sectorsRef.current.map(s => s.id === sectorId ? { ...s, x: d.x, y: d.y, w: d.w, h: d.h } : s);
         onSaveSectors(updated);
       }
       sectorDragRef.current = null;
     };
 
     window.addEventListener('pointermove', onMove, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('touchend', onUp);
-  }, [isEditingSectors, sectors, effectiveScale, onSaveSectors, isMobile]);
+    window.addEventListener('pointercancel', onUp);
+  }, [isEditingSectors, effectiveScale, onSaveSectors, isMobile]);
+
+  // "Listo" sale del modo edición guardando los cambios pendientes,
+  // así un snapshot posterior no revierte las uniones hechas.
+  const handleFinishEdit = () => {
+    if (dirty) {
+      handleSave()
+        .catch(() => {})
+        .finally(() => onToggleEdit());
+    } else {
+      onToggleEdit();
+    }
+  };
 
   const handleReset = useCallback(() => {
     setPositions(defaultPositions(tables));
@@ -772,6 +865,81 @@ const SalonFloor = React.memo(function SalonFloor({
     return out;
   }, [tables, positions, groups]);
 
+  // ── Info por grupo: número único, mozos dueños y suma de comensales ──
+  // Todas las mesas unidas se llaman por el mismo número. Si el grupo cruza
+  // sectores (2+ mozos) se puede elegir qué mozo conserva la mesa.
+  const groupInfo = useMemo(() => {
+    const map = new Map();
+    const FREE = { status: 'free' };
+    for (const g of groups || []) {
+      const key = [...g].sort().join('|');
+      const owners = [];
+      for (const id of g) {
+        const oid = ownerByTable ? ownerByTable[id] : null;
+        if (!oid || owners.some(o => o.id === oid)) continue;
+        const num = (tableNums && tableNums[id]) || '';
+        const name = (staff || []).find(s => s.id === oid)?.name || 'Mozo';
+        owners.push({ id: oid, name, num });
+      }
+      const chosenOwnerId = (groupOwners && groupOwners[key]) || null;
+      let displayNum = '';
+      if (chosenOwnerId) {
+        const o = owners.find(o => o.id === chosenOwnerId);
+        if (o && o.num) displayNum = o.num;
+      }
+      if (!displayNum) {
+        displayNum = g.map(id => (tableNums ? tableNums[id] : '')).find(n => n && n !== '') || '';
+      }
+      let totalParty = 0;
+      let groupStatus = null;
+      for (const id of g) {
+        const st = tableStatus(id) || FREE;
+        totalParty += st.res?.partySize || 0;
+        if (!groupStatus) groupStatus = st;
+        else if (groupStatus.status === 'free' && st.status !== 'free') groupStatus = st;
+      }
+      map.set(g, {
+        key, owners, chosenOwnerId, displayNum, totalParty, groupStatus,
+        multiOwner: owners.length > 1,
+      });
+    }
+    return map;
+  }, [groups, ownerByTable, tableNums, staff, groupOwners, tableStatus]);
+
+  // Click en un grupo unido: si cruza sectores y no hay mozo elegido,
+  // primero se pregunta qué mozo conserva la mesa.
+  const handleGroupClick = (group) => {
+    const info = groupInfo.get(group);
+    if (!info) return;
+    const proceed = (ownerId) => {
+      const cap = group.reduce((a, id) => a + ((tables.find(x => x.id === id)?.capacity) || 0), 0);
+      const primary = tables.find(t => t.id === group[0]) || tables.find(t => group.includes(t.id));
+      let s = info.groupStatus || { status: 'free' };
+      if (info.totalParty > 0 && s.res) {
+        s = { ...s, res: { ...s.res, partySize: info.totalParty } };
+      }
+      let num = info.displayNum;
+      if (ownerId) {
+        const o = info.owners.find(o => o.id === ownerId);
+        if (o && o.num) num = o.num;
+      }
+      onTableClick({ ...primary, capacity: cap, joinedIds: group, groupNum: num }, s);
+    };
+    if (info.multiOwner && !info.chosenOwnerId) {
+      setPendingGroupChoice({ key: info.key, owners: info.owners, afterChoose: proceed });
+    } else {
+      proceed(info.chosenOwnerId || null);
+    }
+  };
+
+  const handleGroupOwnerChoose = (ownerId) => {
+    if (!pendingGroupChoice) return;
+    const { key, afterChoose } = pendingGroupChoice;
+    setPendingGroupChoice(null);
+    if (onChooseGroupOwner) onChooseGroupOwner(key, ownerId);
+    if (afterChoose) afterChoose(ownerId);
+  };
+
   return (
     <div style={{ padding: '0 4px 12px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', padding: '0 4px' }}>
@@ -790,7 +958,7 @@ const SalonFloor = React.memo(function SalonFloor({
           }}>
             {isEditingSectors ? 'Listo' : 'Sectores'}
           </button>
-          <button onClick={onToggleEdit} style={{
+          <button onClick={handleFinishEdit} style={{
             background: isEditing ? PALETTE.terra : PALETTE.creamDeep,
             color: isEditing ? '#fff' : PALETTE.muted,
             border: 'none', borderRadius: '8px', padding: '5px 10px',
@@ -822,6 +990,7 @@ const SalonFloor = React.memo(function SalonFloor({
 
       <div
         ref={containerRef}
+        onClickCapture={handleContainerClickCapture}
         onTouchEnd={handleTouchEnd}
         style={{
           width: '100%',
@@ -954,8 +1123,7 @@ const SalonFloor = React.memo(function SalonFloor({
               <div
                 key={sec.id}
                 data-sector-id={sec.id}
-                onPointerDown={(e) => handleSectorDragStart(sec.id, e)}
-                onTouchStart={(e) => { if (isEditingSectors) handleSectorDragStart(sec.id, e); }}
+                onPointerDown={(e) => { if (isEditingSectors) handleSectorDragStart(sec.id, e); }}
                 style={{
                   position: 'absolute',
                   left: sec.x, top: sec.y, width: sec.w, height: sec.h,
@@ -995,7 +1163,6 @@ const SalonFloor = React.memo(function SalonFloor({
                       <div
                         key={h.key}
                         onPointerDown={(e) => handleSectorResize(sec.id, h.key, e)}
-                        onTouchStart={(e) => handleSectorResize(sec.id, h.key, e)}
                         style={hStyle}
                       />
                     );
@@ -1018,6 +1185,7 @@ const SalonFloor = React.memo(function SalonFloor({
             const maxX = Math.max(...rects.map(r => r.x + r.w));
             const maxY = Math.max(...rects.map(r => r.y + r.h));
             const cap = members.reduce((a, t) => a + (t.capacity || 0), 0);
+            const info = groupInfo.get(g) || null;
             const groupRect = {
               left: minX - 6, top: minY - 6,
               width: maxX - minX + 12, height: maxY - minY + 12,
@@ -1028,17 +1196,37 @@ const SalonFloor = React.memo(function SalonFloor({
                 left: groupRect.left, top: groupRect.top,
                 width: groupRect.width, height: groupRect.height,
                 border: '2px dashed rgba(31,58,46,0.3)',
-                borderRadius: '16px', pointerEvents: 'none', zIndex: isEditingSectors ? 1 : 5,
+                borderRadius: '16px', pointerEvents: 'none', zIndex: isEditingSectors ? 1 : 15,
               }}>
-                {/* Capacidad total del grupo */}
+                {/* Comensales totales del grupo (o capacidad si está libre) */}
                 <span style={{
                   position: 'absolute', top: '-9px', left: '10px',
                   background: PALETTE.forest, color: PALETTE.cream,
                   fontSize: '10px', fontWeight: 700, padding: '2px 8px',
                   borderRadius: '8px', lineHeight: 1.4,
                 }}>
-                  {cap}p
+                  {info && info.totalParty > 0 ? `${info.totalParty} comensales` : `${cap}p`}
                 </span>
+                {!isEditingSectors && info && info.multiOwner && (
+                  <button
+                    title="Elegir mozo para la mesa unida"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      setPendingGroupChoice({ key: info.key, owners: info.owners, afterChoose: null });
+                    }}
+                    style={{
+                      position: 'absolute', bottom: '-10px', left: '10px',
+                      background: info.chosenOwnerId ? PALETTE.forest : PALETTE.soon,
+                      color: '#fff', border: '2px solid #fff', borderRadius: '8px',
+                      padding: '2px 8px', fontSize: '9px', fontWeight: 700,
+                      cursor: 'pointer', pointerEvents: 'auto', fontFamily: 'inherit',
+                    }}
+                  >
+                    {info.chosenOwnerId
+                      ? (info.owners.find(o => o.id === info.chosenOwnerId)?.name || 'Mozo')
+                      : 'Elegir mozo'}
+                  </button>
+                )}
                 {isEditing && (
                   <button
                     title="Separar mesas"
@@ -1060,6 +1248,7 @@ const SalonFloor = React.memo(function SalonFloor({
           {tables.map((t) => {
             const pos = positions[t.id] || { x: 0, y: 0 };
             const group = (groups || []).find(g => g.includes(t.id)) || null;
+            const info = group ? groupInfo.get(group) : null;
             let s = tableStatus(t.id) || { status: 'free' };
             // Si el grupo tiene reserva (mesa primaria ocupada), todas las
             // mesas unidas comparten ese estado visualmente.
@@ -1075,10 +1264,7 @@ const SalonFloor = React.memo(function SalonFloor({
             }) || null;
 
             const handleClick = group
-              ? () => {
-                  const cap = group.reduce((a, id) => a + ((tables.find(x => x.id === id)?.capacity) || 0), 0);
-                  onTableClick({ ...t, capacity: cap, joinedIds: group }, s);
-                }
+              ? () => handleGroupClick(group)
               : () => onTableClick(t, s);
 
             return (
@@ -1090,19 +1276,87 @@ const SalonFloor = React.memo(function SalonFloor({
                 s={s}
                 timer={timer}
                 sectorColor={secFor ? secFor.color : null}
-                tableNum={tableNums[t.id] || ''}
+                tableNum={info ? info.displayNum : tableNums[t.id] || ''}
                 isEditing={isEditing}
                 isEditingSectors={isEditingSectors}
                 isMobile={isMobile}
                 onClick={handleClick}
                 onDragStart={handleDragStart}
+                highlighted={highlightTableId === t.id}
               />
             );
           })}
         </div>
       </div>
 
+      {/* ── ELEGIR MOZO PARA MESA UNIDA (cruza 2 sectores) ── */}
+      {pendingGroupChoice && (
+        <>
+          <div onClick={() => setPendingGroupChoice(null)} style={{
+            position: 'fixed', inset: 0, background: 'rgba(31,58,46,0.5)',
+            zIndex: 390, backdropFilter: 'blur(3px)',
+          }} />
+          <div style={{
+            position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+            width: 'min(92vw, 340px)', background: PALETTE.cream, borderRadius: '20px',
+            padding: '22px 18px 14px', zIndex: 400,
+            boxShadow: '0 16px 48px rgba(0,0,0,0.3)', animation: 'modalIn 0.2s ease-out',
+          }}>
+            <h4 style={{
+              margin: '0 0 6px', fontFamily: '"Fraunces", serif', fontStyle: 'italic',
+              fontSize: '18px', fontWeight: 600, color: PALETTE.forest,
+            }}>
+              Mesa en 2 sectores
+            </h4>
+            <p style={{ margin: '0 0 14px', fontSize: '12px', color: PALETTE.muted, lineHeight: 1.5 }}>
+              Elegí qué mozo conserva esta mesa unida:
+            </p>
+            {(pendingGroupChoice.owners || []).map(o => (
+              <button key={o.id} onClick={() => handleGroupOwnerChoose(o.id)} style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 14px', marginBottom: '8px', background: PALETTE.white,
+                border: `1.5px solid ${PALETTE.creamDeep}`, borderRadius: '12px',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: PALETTE.espresso }}>{o.name}</span>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: PALETTE.terra }}>
+                  {o.num ? `Mesa ${o.num}` : 'Sin número'}
+                </span>
+              </button>
+            ))}
+            <button onClick={() => setPendingGroupChoice(null)} style={{
+              width: '100%', padding: '10px', background: 'transparent', border: 'none',
+              cursor: 'pointer', color: PALETTE.muted, fontSize: '12px', fontFamily: 'inherit',
+            }}>
+              Cerrar
+            </button>
+          </div>
+        </>
+      )}
+
       {/* ── LEYENDA DE COLORES ── */}
+      {highlightTableId && (
+        <div style={{
+          position: 'sticky',
+          margin: '4px 8px 0',
+          padding: '12px 16px',
+          background: PALETTE.forest,
+          color: '#fff',
+          borderRadius: '12px',
+          display: 'flex', alignItems: 'center', gap: '10px',
+          fontSize: '13px', fontWeight: 600,
+          zIndex: 20,
+        }}>
+          <span style={{
+            width: '14px', height: '14px', borderRadius: '50%',
+            background: '#f6c945',
+            boxShadow: '0 0 0 4px rgba(246,201,69,0.35)',
+            animation: 'andi-pulse 1s ease-in-out infinite',
+          }} />
+          Mesa destacada: la reserva está en la mesa marcada con anillo dorado
+        </div>
+      )}
+
       <div style={{
         display: 'flex', flexWrap: 'wrap', gap: '6px 16px',
         padding: '14px 20px', marginTop: '8px',

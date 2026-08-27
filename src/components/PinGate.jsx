@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Lock } from 'lucide-react';
 import { C, isStaffAuthenticated, markStaffAuthenticated } from '../utils';
 
-const STAFF_PIN = import.meta.env.VITE_STAFF_PIN || '2024';
+const STAFF_PIN = import.meta.env.VITE_STAFF_PIN || '';
 
 export default function PinGate({ onAuthenticated, onBack, children }) {
   const [authenticated, setAuthenticated] = useState(() => isStaffAuthenticated());
@@ -19,6 +19,33 @@ export default function PinGate({ onAuthenticated, onBack, children }) {
 
   if (authenticated) {
     return children;
+  }
+
+  if (!STAFF_PIN) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: '#111',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: '"Manrope", system-ui, sans-serif',
+        padding: '24px', color: C.cream, textAlign: 'center',
+      }}>
+        <div style={{ maxWidth: '320px' }}>
+          <h2 style={{ fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic', margin: '0 0 10px' }}>
+            Acceso deshabilitado
+          </h2>
+          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', margin: 0 }}>
+            No hay PIN de staff configurado (VITE_STAFF_PIN). Contactá al administrador del sistema.
+          </p>
+          <button onClick={onBack} style={{
+            marginTop: '20px', padding: '10px 20px', background: C.terra, border: 'none',
+            borderRadius: '12px', cursor: 'pointer', color: '#fff', fontSize: '13px',
+            fontWeight: 600, fontFamily: 'inherit',
+          }}>
+            ← Volver a reservas
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const handleSubmit = () => {

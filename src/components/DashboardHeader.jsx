@@ -11,7 +11,7 @@ export function DashboardHeader({
   const [showCalendar, setShowCalendar] = useState(false);
 
   return (
-      <header style={{ background: C.forest, color: C.cream, padding: '24px 20px 28px', borderBottomLeftRadius: '28px', borderBottomRightRadius: '28px' }}>
+      <header style={{ background: C.forest, color: C.cream, padding: 'calc(24px + env(safe-area-inset-top, 0px)) 20px 28px', borderBottomLeftRadius: '28px', borderBottomRightRadius: '28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
           <div>
             <p style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', opacity: 0.55, margin: 0 }}>Recepción</p>

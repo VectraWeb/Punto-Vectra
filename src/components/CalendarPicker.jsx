@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { toLocalISO } from '../utils';
 
 export default function CalendarPicker({ date, onSelect, onClose, colors: C }) {
   const [viewDate, setViewDate] = useState(() => {
@@ -67,8 +68,9 @@ export default function CalendarPicker({ date, onSelect, onClose, colors: C }) {
         {cells}
       </div>
       <button onClick={() => {
-        const d = new Date();
-        onSelect(d.toISOString().slice(0, 10));
+        // toLocalISO (no toISOString): con UTC, pasadas las 21:00 en
+        // Argentina (UTC-3) "Hoy" seleccionaba el día siguiente.
+        onSelect(toLocalISO(new Date()));
       }} style={{
         width: '100%', marginTop: '10px', padding: '8px', borderRadius: '10px',
         background: C.creamDeep, border: 'none', cursor: 'pointer',

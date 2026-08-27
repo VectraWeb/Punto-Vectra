@@ -164,7 +164,7 @@ export function useCleaningTimers(reservations, date, tables) {
       delete timersRef.current[res.id];
       removeShared(timer.tableId);
     }
-    doFinalizeRef.current(res);
+    return doFinalizeRef.current(res);
   }, [removeShared]);
 
   const extendCleaning = useCallback(async (res) => {

@@ -5,6 +5,7 @@ const TABLE_DIMS = {
   rectangular: { w: 130, h: 65 },
   round:       { w: 90, h: 90 },
   square:      { w: 100, h: 100 },
+  'square-sm': { w: 70, h: 70 },
 };
 
 // Mapea las mesas físicas del plano con los números que el administrador le

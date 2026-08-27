@@ -8,6 +8,15 @@ export default function SectoresModal({ sectors, staff, onSave, onClose }) {
   const [editingId, setEditingId] = useState(null);
   const editing = list.find(s => s.id === editingId) || null;
 
+  // Sincronizar con el prop si cambió externamente (plano u otro dispositivo):
+  // evita guardar una copia vieja que borre sectores recién creados.
+  const [prevSectors, setPrevSectors] = useState(sectors);
+  if (prevSectors !== sectors) {
+    setPrevSectors(sectors);
+    setList([...sectors]);
+    setEditingId(null);
+  }
+
   const staffCount = (staff || []).filter(s => s.active !== false).length;
   const availableColors = SECTOR_COLORS.slice(0, Math.max(staffCount, 1));
   const activeStaff = (staff || []).filter(s => s && s.active !== false);

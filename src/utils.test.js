@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { t2m, m2t, genSlots, buildTables, todayISO, detectService, SERVICES, DEFAULT_CONFIG } from './utils.js';
+import { t2m, m2t, genSlots, buildTables, todayISO, detectService, SERVICES, DEFAULT_CONFIG, timeBelongsToService, serviceFromTime } from './utils.js';
 
 describe('t2m (time to minutes)', () => {
   it('converts normal time correctly', () => {
@@ -102,6 +102,54 @@ describe('SERVICES', () => {
     expect(SERVICES.mediodia.end).toBe('15:00');
     expect(SERVICES.cena.start).toBe('19:30');
     expect(SERVICES.cena.end).toBe('01:00');
+  });
+});
+
+describe('timeBelongsToService', () => {
+  it('acepta la apertura del mediodía (regresión: 11:30 quedaba fuera)', () => {
+    expect(timeBelongsToService('11:30', 'mediodia')).toBe(true);
+    expect(timeBelongsToService('11:45', 'mediodia')).toBe(true);
+    expect(timeBelongsToService('15:00', 'mediodia')).toBe(true);
+  });
+
+  it('rechaza fuera del mediodía', () => {
+    expect(timeBelongsToService('11:00', 'mediodia')).toBe(false);
+    expect(timeBelongsToService('15:15', 'mediodia')).toBe(false);
+    expect(timeBelongsToService('19:00', 'mediodia')).toBe(false);
+  });
+
+  it('acepta la cena cruzando medianoche', () => {
+    expect(timeBelongsToService('19:30', 'cena')).toBe(true);
+    expect(timeBelongsToService('00:30', 'cena')).toBe(true);
+    expect(timeBelongsToService('01:00', 'cena')).toBe(true);
+  });
+
+  it('rechaza fuera de la cena', () => {
+    expect(timeBelongsToService('18:00', 'cena')).toBe(false);
+    expect(timeBelongsToService('01:15', 'cena')).toBe(false);
+  });
+
+  it('rechaza inputs inválidos', () => {
+    expect(timeBelongsToService('', 'cena')).toBe(false);
+    expect(timeBelongsToService('abc', 'cena')).toBe(false);
+    expect(timeBelongsToService('20:00', 'nada')).toBe(false);
+  });
+});
+
+describe('serviceFromTime', () => {
+  it('detecta el mediodía desde las 11:30 (regresión)', () => {
+    expect(serviceFromTime('11:30')).toBe('mediodia');
+    expect(serviceFromTime('13:00')).toBe('mediodia');
+  });
+
+  it('detecta la cena incluyendo medianoche', () => {
+    expect(serviceFromTime('20:00')).toBe('cena');
+    expect(serviceFromTime('00:30')).toBe('cena');
+  });
+
+  it('devuelve el fallback fuera de horario', () => {
+    expect(serviceFromTime('16:00')).toBeUndefined();
+    expect(serviceFromTime('16:00', 'cena')).toBe('cena');
   });
 });
 

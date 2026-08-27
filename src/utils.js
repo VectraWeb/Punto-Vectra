@@ -1,4 +1,4 @@
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, ShoppingCart, Clock, CheckCircle, XCircle, PackageCheck } from 'lucide-react';
 
 // ─── Paleta ──────────────────────────────────────────────────────────────────
 export const C = {
@@ -24,6 +24,15 @@ export const LIVE_STATES = {
   sobremesa: { label: 'Sobremesa', color: '#6b8e7b', dot: '#4d6b5a' },
   esperando_cuenta: { label: 'Cuenta', color: '#9b59b6', dot: '#7d3f9c' },
   para_limpiar: { label: 'A limpiar', color: '#e67e22', dot: '#c05e0a' },
+};
+
+// ─── Estados de pedidos ──────────────────────────────────────────────────────
+export const PEDIDO_ESTADOS = {
+  pendiente:      { label: 'Pendiente',       color: C.soon,     icon: Clock },
+  en_preparacion: { label: 'En preparación',  color: C.terraSoft, icon: ShoppingCart },
+  listo:          { label: 'Listo',           color: C.free,     icon: CheckCircle },
+  entregado:      { label: 'Entregado',       color: C.forest,   icon: PackageCheck },
+  cancelado:      { label: 'Cancelado',       color: '#b0b0b0',  icon: XCircle },
 };
 
 // ─── Servicios ───────────────────────────────────────────────────────────────
@@ -164,7 +173,9 @@ export const timeBelongsToService = (time, svc) => {
   let start = sh * 60 + sm;
   let end = eh * 60 + em;
   if (end < start) end += 24 * 60;
-  const t = h * 60 + m + (h < 12 ? 24 * 60 : 0);
+  // El +24h solo aplica a la cena (cruza medianoche). Para el mediodía,
+  // "11:30" es válido y NO debe desplazarse al día siguiente.
+  const t = h * 60 + m + (svc === 'cena' && h < 12 ? 24 * 60 : 0);
   return t >= start && t <= end;
 };
 
@@ -178,15 +189,54 @@ export const serviceFromTime = (time, fallback) => {
   return fallback;
 };
 
+// Hora sugerida para pedidos/reservas: si la hora actual está dentro de la
+// atención se usa tal cual; si no, salta al inicio del próximo turno.
+export const defaultServiceTime = () => {
+  const d = new Date();
+  const now = d.getHours() * 60 + d.getMinutes();
+  const mStart = t2m(SERVICES.mediodia.start, 'mediodia');
+  const mEnd = t2m(SERVICES.mediodia.end, 'mediodia');
+  const cStart = t2m(SERVICES.cena.start, 'cena');
+  const cEnd = t2m(SERVICES.cena.end, 'cena');
+  const inLunch = now >= mStart && now <= mEnd;
+  const inDinner = now >= cStart || (now + 24 * 60 >= cStart && now + 24 * 60 <= cEnd);
+  if (inLunch || inDinner) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return now < mStart ? SERVICES.mediodia.start : SERVICES.cena.start;
+};
+
 // ─── Utilidad N8N ────────────────────────────────────────────────────────────
 const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || '';
-export const notificarN8N = (datos) => {
-  if (!N8N_WEBHOOK_URL) return;
-  fetch(N8N_WEBHOOK_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(datos),
-  }).catch(err => console.error('[Andi] Error silencioso al notificar a n8n:', err));
+const N8N_WEBHOOK_SECRET = import.meta.env.VITE_N8N_WEBHOOK_SECRET || '';
+export const notificarN8N = async (datos) => {
+  if (!N8N_WEBHOOK_URL) {
+    console.warn('[Andi] VITE_N8N_WEBHOOK_URL no configurada: no se notificará a n8n.', datos);
+    return;
+  }
+  if (!N8N_WEBHOOK_SECRET) {
+    console.warn('[Andi] VITE_N8N_WEBHOOK_SECRET no configurada: el webhook de n8n rechazará el aviso (403) si exige header. Seteala al mismo valor que la credencial "Andi webhook secret".', datos);
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (N8N_WEBHOOK_SECRET) headers['x-andi-secret'] = N8N_WEBHOOK_SECRET;
+
+  // Reintentos con backoff: el notificador de n8n deduplica por document_id
+  // (Redis), así que reintentar nunca duplica mensajes al cliente.
+  const delays = [0, 2000, 8000];
+  let lastErr = null;
+  for (const delay of delays) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    try {
+      const res = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(datos),
+      });
+      if (res.ok) return;
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  console.error('[Andi] n8n no alcanzado tras reintentos:', datos, lastErr);
 };
 
 // ─── Calcula duración (min) de cada estado desde stateLog ─────────────────
@@ -207,7 +257,9 @@ export const computeStateDurations = (stateLog) => {
     const dur = Math.round((toMs(sorted[i + 1].at) - toMs(sorted[i].at)) / 60000);
     result.push({ state: sorted[i].state, durationMin: dur });
   }
-  return result.filter(d => d.durationMin >= 0 && d.durationMin <= 600);
+  // Estados administrativos de cierre no aportan tiempo real de servicio
+  const EXCLUDED = new Set(['finalizado', 'liberada', 'liberado']);
+  return result.filter(d => !EXCLUDED.has(d.state) && d.durationMin >= 0 && d.durationMin <= 600);
 };
 
 // ─── Analytics helpers ───────────────────────────────────────────────────────
@@ -237,7 +289,8 @@ export const SECTOR_COLORS = [
 
 const STAFF_AUTH_KEY = 'isStaff';
 
-const staffPin = () => import.meta.env.VITE_STAFF_PIN || '2024';
+// Sin VITE_STAFF_PIN el acceso staff queda deshabilitado (falla cerrado).
+const staffPin = () => import.meta.env.VITE_STAFF_PIN || '';
 
 export function isStaffAuthenticated() {
   return sessionStorage.getItem(STAFF_AUTH_KEY) === btoa('andi:' + staffPin());

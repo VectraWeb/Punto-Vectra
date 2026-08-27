@@ -25,10 +25,10 @@ import StaffModal from './StaffModal';
 import SectoresModal from './SectoresModal';
 import PedidosPanel from './PedidosPanel';
 import {
-  C, LIVE_STATES, SERVICES, DEFAULT_CONFIG,
+  C, LIVE_STATES, SERVICES,
   t2m, genSlots, buildTables, todayISO,
-  detectService, notificarN8N, computeStateDurations,
-  getAssignedTables,
+  detectService, computeStateDurations,
+  getAssignedTables, notificarN8N,
 } from '../utils';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
@@ -58,9 +58,14 @@ export default function StaffDashboard({ onLogout }) {
   const nowMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
   const [analyticsMonth, setAnalyticsMonth] = useState(nowMonth);
   const [mainTab, setMainTab] = useState('reservas');
+  const [highlightTableId, setHighlightTableId] = useState(null);
+  const [focusRequest, setFocusRequest] = useState(null);
+  const highlightTimerRef = useRef(null);
+  const [planoHover, setPlanoHover] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
   const [optimisticStates, setOptimisticStates] = useState({});
   const [quickActionMenu, setQuickActionMenu] = useState(null);
+  const [modalMode, setModalMode] = useState('reserva');
   const [showStaff, setShowStaff] = useState(false);
   const [showSectors, setShowSectors] = useState(false);
   const [selectedMozoTab, setSelectedMozoTab] = useState(null);
@@ -93,14 +98,42 @@ export default function StaffDashboard({ onLogout }) {
   const slots = useMemo(() => genSlots(service), [service]);
 
   // Posiciones del salón: suscripción única compartida con SalonFloor
-  const { positions, setPositions, groups, setGroups, saveLayout } = useSalonLayout();
+  const { positions, setPositions, groups, setGroups, saveLayout, groupOwners, saveGroupOwner } = useSalonLayout();
 
   // Números elegidos por cada mozo mapeados a las mesas físicas de su sector.
   const { tableNumByTable, ownerByTable, mozoTableIds } = useMozoTableNumbers(tables, staff, sectors, positions);
 
+  // Grupos de mesas unidas: número único para todas sus mesas y el mozo
+  // elegido cuando el grupo cruza sectores.
+  const { groupNumByTable, groupOwnerByTable } = useMemo(() => {
+    const nums = {};
+    const owners = {};
+    for (const g of groups || []) {
+      const key = [...g].sort().join('|');
+      const chosen = (groupOwners && groupOwners[key]) || null;
+      let num = '';
+      if (chosen) {
+        for (const id of g) {
+          if (ownerByTable[id] === chosen && tableNumByTable[id]) {
+            num = tableNumByTable[id];
+            break;
+          }
+        }
+      }
+      if (!num) num = g.map(id => tableNumByTable[id]).find(n => n && n !== '') || '';
+      for (const id of g) {
+        if (num) nums[id] = num;
+        if (chosen) owners[id] = chosen;
+      }
+    }
+    return { groupNumByTable: nums, groupOwnerByTable: owners };
+  }, [groups, groupOwners, ownerByTable, tableNumByTable]);
+
   // ── Loading state ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!configLoaded.current && config !== DEFAULT_CONFIG) {
+    // config arranca en null: sin la guarda `config`, el null !== DEFAULT_CONFIG
+    // cortaba el loading en el primer render (antes de que llegara la config).
+    if (!configLoaded.current && config) {
       configLoaded.current = true;
       setLoading(false);
     }
@@ -131,10 +164,12 @@ export default function StaffDashboard({ onLogout }) {
   // ── Persistir configuración ────────────────────────────────────────────────────────
   const saveConfig = useCallback(async (c) => {
     try {
-      await setDoc(cfgRef(), { mesaTipos: c, sectors }, { merge: true });
+      // merge: true preserva los campos que no se tocan (p. ej. sectors):
+      // NO se incluye `sectors` acá para no pisarlo con un valor desactualizado.
+      await setDoc(cfgRef(), { mesaTipos: c }, { merge: true });
       await syncMesasWithConfig(c);
     } catch (e) { console.error(e); }
-  }, [sectors]);
+  }, []);
 
   const saveSectorsFromPlano = useCallback(async (updatedSectors) => {
     setSectors(updatedSectors);
@@ -152,9 +187,15 @@ export default function StaffDashboard({ onLogout }) {
     const { _oldMesaRef, _prevResId, _prevMesaRef, ...cleanData } = data;
     // La mesa toma el número que el mozo eligió para ella: el plano se adapta
     // al mozo, y la reserva queda vinculada a ese número, no al físico.
-    const mesaNum = cleanData.tableId ? tableNumByTable[cleanData.tableId] : null;
+    // Si la mesa está unida a otras, usa el número único del grupo.
+    const mesaNum = cleanData.tableId ? (groupNumByTable[cleanData.tableId] || tableNumByTable[cleanData.tableId]) : null;
 
     if (!cleanData.tableId) {
+      // Si se está QUITANDO la mesa de una reserva existente, hay que
+      // liberar el doc de mesasReservadas viejo: si queda, bloquea la mesa
+      // para cualquier reserva futura ("acaba de ser reservada").
+      if (_oldMesaRef) await deleteDoc(_oldMesaRef).catch(() => {});
+      if (_prevMesaRef) await deleteDoc(_prevMesaRef).catch(() => {});
       await setDoc(resDocRef(id), {
         ...cleanData, id, date,
         mesa_id: null,
@@ -190,22 +231,65 @@ export default function StaffDashboard({ onLogout }) {
           ...cleanData, id, date,
           mesa_id: cleanData.tableId,
           mesa: mesaNum ? `Mesa ${mesaNum}` : null,
-          estado: cleanData.tableId ? (cleanData.estado || 'confirmada') : 'pendiente',
+          estado: cleanData.tableId ? 'confirmada' : 'pendiente',
           liveState: cleanData.liveState || null,
           updatedAt: serverTimestamp(),
           createdAt: cleanData.createdAt || serverTimestamp(),
         });
       });
-  }, [date, tableNumByTable]);
+
+      notificarN8N({
+        evento: 'solicitud_confirmada',
+        document_id: id,
+        tipo: 'reserva',
+      });
+  }, [date, tableNumByTable, groupNumByTable]);
 
   const deleteRes = useCallback(async (resData) => {
     try {
-      if (resData.tableId) {
-        const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
-        await deleteDoc(mesaRef);
-      }
-      await deleteDoc(resDocRef(resData.id));
+      await runTransaction(db, async (transaction) => {
+        // Solo liberamos la mesa si sigue perteneciendo a ESTA reserva:
+        // si otro dispositivo la reasignó, el mesaRef ahora apunta a la nueva
+        // y borrarlo dejaría una mesa ocupada sin protección.
+        if (resData.tableId && resData.service) {
+          const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
+          const mesaSnap = await transaction.get(mesaRef);
+          if (mesaSnap.exists && mesaSnap.data().reservationId === resData.id) {
+            transaction.delete(mesaRef);
+          }
+        }
+        transaction.delete(resDocRef(resData.id));
+      });
     } catch (e) { console.error(e); throw e; }
+  }, [date]);
+
+  const rejectRes = useCallback(async (resData, motivo) => {
+    try {
+      await runTransaction(db, async (transaction) => {
+        // Si la reserva ya tenía mesa asignada, liberarla (rechazo tardío).
+        if (resData.tableId && resData.service) {
+          const mesaRef = mesaReservadaRef(resData.tableId, date, resData.service);
+          const mesaSnap = await transaction.get(mesaRef);
+          if (mesaSnap.exists && mesaSnap.data().reservationId === resData.id) {
+            transaction.delete(mesaRef);
+          }
+        }
+        transaction.update(resDocRef(resData.id), {
+          estado: 'cancelado',
+          rechazoMotivo: motivo.trim(),
+          updatedAt: serverTimestamp(),
+        });
+      });
+      notificarN8N({
+        evento: 'solicitud_rechazada',
+        document_id: resData.id,
+        tipo: 'reserva',
+        motivo: motivo.trim(),
+      });
+    } catch (e) {
+      console.error('[Andi] Error rechazando reserva:', e);
+      throw e;
+    }
   }, [date]);
 
   // ── Actualizar solo el estado en vivo de una reserva ──────────────────────
@@ -230,51 +314,6 @@ export default function StaffDashboard({ onLogout }) {
       setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
     }
   }, []);
-
-  const finalizeReservation = useCallback(async (res) => {
-    setQuickActionMenu(null);
-    setShowLiveMenu(null);
-    setOptimisticStates(prev => ({ ...prev, [res.id]: 'finalizada' }));
-
-    const toMs = (ts) => {
-      if (!ts) return Date.now();
-      if (typeof ts === 'number') return ts;
-      if (ts.toMillis) return ts.toMillis();
-      if (ts.seconds) return ts.seconds * 1000;
-      return new Date(ts).getTime();
-    };
-
-    const startTs = toMs(res.startedAt || res.createdAt);
-    const duracionMinutos = Math.round((Date.now() - startTs) / 60000);
-    const tableName = res.mesa || tables.find(t => t.id === res.tableId)?.name || res.tableId;
-
-    notificarN8N({
-      evento: 'reserva_finalizada',
-      cliente_nombre: res.customerName,
-      mesa: tableName,
-      mesa_id: res.tableId,
-      servicio: res.service,
-      duracion_total_minutos: duracionMinutos
-    });
-
-    try {
-      if (res.tableId) {
-        await deleteDoc(mesaReservadaRef(res.tableId, date, res.service));
-      }
-      await updateDoc(resDocRef(res.id), {
-        liveState: 'finalizado',
-        leftAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      updateDoc(resDocRef(res.id), {
-        stateLog: arrayUnion({ state: 'finalizado', at: new Date().toISOString() }),
-      }).catch(err => console.warn('[Andi] Fallo al registrar stateLog:', err));
-      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
-    } catch (e) {
-      console.warn('[Andi] Fallo al finalizar reserva, revirtiendo estado...', e);
-      setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
-    }
-  }, [date, tables]);
 
   // ── Resetear estado en vivo (Limpiar mesa) ──────────────────────────────
   const resetLiveState = useCallback(async (res) => {
@@ -348,6 +387,20 @@ export default function StaffDashboard({ onLogout }) {
 
   // ── Cleaning Timers ──────────────────────────────────────────────────────────
   const { cleaningTimers, finishNow, extendCleaning, cancelCleaning } = useCleaningTimers(reservations, date, tables);
+
+  // ── Finalizar reserva desde el menú rápido ─────────────────────────────
+  // Delega en doFinalize (useCleaningTimers) para tener UNA sola implementación:
+  // notificación a n8n, liberación de mesa, métricas y stateLog consistentes.
+  const handleFinalizeQuick = useCallback((res) => {
+    setQuickActionMenu(null);
+    setShowLiveMenu(null);
+    setOptimisticStates(prev => ({ ...prev, [res.id]: 'finalizada' }));
+    Promise.resolve(finishNow(res))
+      .catch(() => {})
+      .finally(() => {
+        setOptimisticStates(prev => { const n = { ...prev }; delete n[res.id]; return n; });
+      });
+  }, [finishNow]);
 
   const analyticsData = useMemo(() => {
     const src = analyticsPeriod === 'day' ? reservations : analyticsRes;
@@ -463,13 +516,65 @@ export default function StaffDashboard({ onLogout }) {
     }
   }, [deleteRes, showToast]);
 
+  // Botón "Plano" en la tarjeta: ir al plano y resaltar la mesa de la reserva.
+  // El highlight + banner expiran a los 5s; el foco se re-arma con cada click
+  // (key nueva) para que se pueda repetir las veces que se quiera.
+  const handleGoToTable = useCallback((r) => {
+    const tableId = r?.tableId || r?.mesa_id || r?.mesa;
+    if (!tableId) {
+      showToast('Esta reserva no tiene mesa asignada.');
+      return;
+    }
+    setPlanoHover(false);
+    setMainTab('plano');
+    setHighlightTableId(tableId);
+    setFocusRequest({ tableId, key: Date.now() });
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setHighlightTableId(null), 5000);
+  }, [showToast]);
+
+  // ── CRUD de pedidos (staff) ────────────────────────────────────────────────
+  const savePedido = useCallback(async (data) => {
+    const id = `p${Date.now()}`;
+    try {
+      await setDoc(doc(db, 'pedidos', id), {
+        id,
+        customerName: data.customerName.trim(),
+        customerPhone: data.phone.trim(),
+        modalidad: data.modalidad,
+        direccion: data.modalidad === 'envio' ? data.direccion.trim() : '',
+        notes: data.details.trim(),
+        tipo: 'pedido',
+        source: 'staff',
+        pedidoEstado: 'pendiente',
+        estado: 'pendiente',
+        service,
+        date,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+      setShowModal(false); setEditing(null); setPreTable(null);
+      showToast('Pedido guardado.');
+    } catch {
+      showToast('Error al guardar el pedido. Intentá de nuevo.');
+    }
+  }, [service, date, setShowModal, setEditing, setPreTable, showToast]);
+
   // ── Callbacks estables para el plano (mantienen efectivo el React.memo) ────
-  const toggleEditingLayout = useCallback(() => setEditingLayout(v => !v), []);
-  const toggleEditingSectors = useCallback(() => setEditingSectors(v => !v), []);
+  // Modos de edición mutuamente excluyentes: editar mesas y sectores a la vez
+  // dejaba las mesas sin pointerEvents y los gestos en un estado raro.
+  const toggleEditingLayout = useCallback(() => {
+    setEditingLayout(v => !v);
+    setEditingSectors(false);
+  }, []);
+  const toggleEditingSectors = useCallback(() => {
+    setEditingSectors(v => !v);
+    setEditingLayout(false);
+  }, []);
   const handleTableClick = useCallback((t, s) => {
     if (editingSectors) return;
     if (s.status === 'free') {
-      setPreTable(t); setEditing(null); setShowModal(true);
+      setModalMode('reserva'); setPreTable(t); setEditing(null); setShowModal(true);
     } else {
       setShowLiveMenu(s.res);
     }
@@ -583,9 +688,9 @@ export default function StaffDashboard({ onLogout }) {
         {[
           ['reservas', 'Mozos', `${sortedRes.length} items`],
           ['plano', 'Plano', 'Arrastrable'],
-          ['pedidos', 'Pedidos', 'Bot'],
+          ['pedidos', 'Pedidos', 'Bot y web'],
         ].map(([key, label, sub]) => (
-          <button key={key} onClick={() => setMainTab(key)} style={{
+          <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
             background: mainTab === key ? C.forest : C.creamDeep,
             color: mainTab === key ? C.cream : C.muted,
@@ -601,7 +706,11 @@ export default function StaffDashboard({ onLogout }) {
       {mainTab === 'reservas' && (() => {
         const activeStaff = (staff || []).filter(s => s && s.active !== false);
         const selected = activeStaff.find(s => s.id === selectedMozoTab) || null;
-        const mozoRes = selected ? svcRes.filter(r => r.staffName === selected.name) : [];
+        // Reservas por mozo (por nombre, como se guarda en la reserva).
+        const mozoSvcRes = (s) => svcRes.filter(r => r.staffName === s.name);
+        // La lista general muestra solo reservas PENDIENTES sin mozo asignado:
+        // las que ya tienen mozo viven en el bloque de ese mozo.
+        const unassignedRes = sortedRes.filter(r => !r.staffName && r.estado === 'pendiente');
 
         const handleMozoTap = (s) => {
           setSelectedMozoTab(prev => (prev === s.id ? '__todas__' : s.id));
@@ -619,7 +728,7 @@ export default function StaffDashboard({ onLogout }) {
                 background: showReservas ? C.forest : C.creamDeep,
                 color: showReservas ? C.cream : C.espresso,
               }}>
-                <div style={{ fontSize: '15px', fontWeight: 700 }}>Reservas</div>
+                <div style={{ fontSize: '15px', fontWeight: 700 }}>Reservas pendientes</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{
                     background: showReservas ? C.cream : C.forestSoft,
@@ -627,7 +736,7 @@ export default function StaffDashboard({ onLogout }) {
                     padding: '4px 10px', borderRadius: '8px',
                     fontSize: '12px', fontWeight: 700,
                   }}>
-                    {sortedRes.length}
+                    {unassignedRes.length}
                   </div>
                   <div style={{
                     width: '24px', height: '24px', borderRadius: '50%',
@@ -642,16 +751,18 @@ export default function StaffDashboard({ onLogout }) {
               </button>
 
               {showReservas && (
-                sortedRes.length > 0 ? (
+                unassignedRes.length > 0 ? (
                   <ReservationList
-                    sortedRes={sortedRes}
+                    sortedRes={unassignedRes}
                     tables={tables}
-                    onEdit={(r) => { setEditing(r); setShowModal(true); }}
+                    onEdit={(r) => { setModalMode('reserva'); setEditing(r); setShowModal(true); }}
                     onAction={(r) => setShowLiveMenu(r)}
+                    onGoToTable={handleGoToTable}
+                    onReject={rejectRes}
                   />
                 ) : (
                   <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
-                    No hay reservas para este servicio
+                    No hay reservas pendientes sin mozo asignado
                   </div>
                 )
               )}
@@ -682,9 +793,24 @@ export default function StaffDashboard({ onLogout }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '14px', fontWeight: 600 }}>{s.name}</div>
                         <div style={{ fontSize: '11px', opacity: 0.75 }}>
-                          {assigned.length} mesa{assigned.length !== 1 ? 's' : ''} · {count > 0 ? `${count} reserva${count !== 1 ? 's' : ''}` : 'Sin reservas'}
+                          {assigned.length} mesa{assigned.length !== 1 ? 's' : ''}
+                          {count > 0 && ' · '}
+                          {count > 0 && `${count} reserva${count !== 1 ? 's' : ''}`}
                         </div>
                       </div>
+                      {count > 0 && (
+                        <div style={{
+                          flexShrink: 0, minWidth: '40px', textAlign: 'center',
+                          background: expanded ? 'rgba(255,255,255,0.2)' : C.forest,
+                          color: expanded ? C.cream : C.cream,
+                          padding: '6px 10px', borderRadius: '10px',
+                          fontSize: '18px', fontWeight: 800, fontFamily: '"Fraunces", serif',
+                          boxShadow: !expanded ? `0 3px 10px rgba(31,58,46,0.25)` : 'none',
+                          lineHeight: 1,
+                        }}>
+                          {count}
+                        </div>
+                      )}
                       <div style={{
                         width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
                         background: expanded ? C.cream : C.forestSoft,
@@ -721,9 +847,9 @@ export default function StaffDashboard({ onLogout }) {
                                 <button key={`${s.id}-${i}`} disabled={!t} onClick={() => {
                                   if (t) {
                                     if (hasRes) {
-                                      if (st.status === 'free') { setPreTable(t); setEditing(null); setShowModal(true); }
+                                      if (st.status === 'free') { setModalMode('reserva'); setPreTable(t); setEditing(null); setShowModal(true); }
                                       else { setShowLiveMenu(st.res); }
-                                    } else { setPreTable(t); setEditing(null); setShowModal(true); }
+                                    } else { setModalMode('reserva'); setPreTable(t); setEditing(null); setShowModal(true); }
                                   }
                                 }} style={{
                                   aspectRatio: '1', borderRadius: '10px', border: `1.5px solid ${border}`,
@@ -743,6 +869,25 @@ export default function StaffDashboard({ onLogout }) {
                             Sin mesas asignadas
                           </div>
                         )}
+
+                        {/* Reservas del mozo dentro de su bloque */}
+                        {mozoSvcRes(s).length > 0 ? (
+                          <div style={{ marginTop: '12px', background: C.white, borderRadius: '12px', padding: '10px' }}>
+                            <ReservationList
+                              sortedRes={mozoSvcRes(s)}
+                              tables={tables}
+                              onEdit={(r) => { setModalMode('reserva'); setEditing(r); setShowModal(true); }}
+                              onAction={(r) => setShowLiveMenu(r)}
+                              onGoToTable={handleGoToTable}
+                              onPlanoHover={setPlanoHover}
+                              onReject={rejectRes}
+                            />
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: '12px', padding: '10px', textAlign: 'center', color: C.muted, fontSize: '12px', background: C.white, borderRadius: '10px' }}>
+                            Sin reservas para este mozo
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -750,20 +895,11 @@ export default function StaffDashboard({ onLogout }) {
               })}
             </div>
 
-            {/* Reservas del mozo seleccionado */}
-            {selected && (
-              mozoRes.length > 0 ? (
-                <ReservationList
-                  sortedRes={mozoRes}
-                  tables={tables}
-                  onEdit={(r) => { setEditing(r); setShowModal(true); }}
-                  onAction={(r) => setShowLiveMenu(r)}
-                />
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
-                  {selected.name} no tiene reservas en este servicio
-                </div>
-              )
+            {/* Reservas del mozo seleccionado (bloque colapsado: ayuda rápidamente) */}
+            {selected && !mozoSvcRes(selected).length && (
+              <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px', marginTop: '8px' }}>
+                {selected.name} no tiene reservas en este servicio
+              </div>
             )}
           </div>
         );
@@ -788,21 +924,35 @@ export default function StaffDashboard({ onLogout }) {
           onToggleEditSectors={toggleEditingSectors}
           onSaveSectors={saveSectorsFromPlano}
           onTableClick={handleTableClick}
+          highlightTableId={highlightTableId}
+          focusRequest={focusRequest}
+          ownerByTable={ownerByTable}
+          staff={staff}
+          groupOwners={groupOwners}
+          onChooseGroupOwner={saveGroupOwner}
+          onSaveError={showToast}
         />
       )}
 
-      {/* ── PEDIDOS DEL BOT ── */}
+      {/* ── PEDIDOS ── */}
       {mainTab === 'pedidos' && (
         <PedidosPanel date={date} service={service} />
       )}
 
-      {/* ── FAB: Nueva reserva ── */}
-      <button onClick={() => { setEditing(null); setPreTable(null); setShowModal(true); }} style={{
+      {/* ── FAB: Nueva reserva / pedido según el panel activo ── */}
+      <button onClick={() => {
+        setEditing(null); setPreTable(null);
+        setModalMode(mainTab === 'pedidos' ? 'pedido' : 'reserva');
+        setShowModal(true);
+      }} style={{
         position: 'fixed', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', right: '24px',
         width: '60px', height: '60px', borderRadius: '30px',
         background: C.terra, color: '#fff', border: 'none',
         boxShadow: '0 8px 24px rgba(196,96,47,0.4)', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
+        opacity: planoHover ? 0.08 : 1,
+        pointerEvents: planoHover ? 'none' : 'auto',
+        transition: 'opacity 0.15s ease',
       }}>
         <Plus size={26} />
       </button>
@@ -811,7 +961,7 @@ export default function StaffDashboard({ onLogout }) {
       <div className="mobile-bottom-nav" style={{
         position: 'fixed', bottom: 0, left: 0, right: 0,
         background: C.cream, borderTop: `1px solid ${C.creamDeep}`,
-        padding: '8px 16px calc(8px + env(safe-area-inset-bottom, 0px))',
+        padding: '10px 16px calc(12px + env(safe-area-inset-bottom, 0px))',
         display: 'flex', gap: '8px', zIndex: 200,
         boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
       }}>
@@ -820,7 +970,7 @@ export default function StaffDashboard({ onLogout }) {
           ['plano', 'Plano', ''],
           ['pedidos', 'Pedidos', ''],
         ].map(([key, label, count]) => (
-          <button key={key} onClick={() => setMainTab(key)} style={{
+          <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 8px', borderRadius: '12px', border: 'none', cursor: 'pointer',
             background: mainTab === key ? C.forest : 'transparent',
             color: mainTab === key ? C.cream : C.muted,
@@ -840,7 +990,7 @@ export default function StaffDashboard({ onLogout }) {
           tables={tables}
           cleaningTimer={cleaningTimers[showLiveMenu.tableId] || null}
           onSelect={(state) => updateLiveState(showLiveMenu, state)}
-          onEdit={() => { setEditing(showLiveMenu); setShowLiveMenu(null); setShowModal(true); }}
+          onEdit={() => { setModalMode('reserva'); setEditing(showLiveMenu); setShowLiveMenu(null); setShowModal(true); }}
           onClose={() => setShowLiveMenu(null)}
           onFinalize={() => finishNow(showLiveMenu)}
           onReset={() => resetLiveState(showLiveMenu)}
@@ -853,17 +1003,20 @@ export default function StaffDashboard({ onLogout }) {
       {showModal && (
         <ResModal
           editing={editing}
+          initialMode={modalMode}
           preTable={preTable}
           tables={tables}
           slots={slots}
           service={service}
           tableStatus={tableStatus}
           staff={staff}
-          tableNums={tableNumByTable}
-          ownerByTable={ownerByTable}
+          tableNums={{ ...tableNumByTable, ...groupNumByTable }}
+          ownerByTable={{ ...ownerByTable, ...groupOwnerByTable }}
           mozoTableIds={mozoTableIds}
           onSave={handleSave}
+          onSavePedido={savePedido}
           onDelete={handleDelete}
+          onReject={rejectRes}
           onClose={() => { setShowModal(false); setEditing(null); setPreTable(null); }}
         />
       )}
@@ -943,7 +1096,7 @@ export default function StaffDashboard({ onLogout }) {
               {nextStates.map(stateKey => {
                 if (stateKey === 'finalizar') {
                   return (
-                    <button key="finalizar" onClick={() => finalizeReservation(quickActionMenu.res)} style={{
+                    <button key="finalizar" onClick={() => handleFinalizeQuick(quickActionMenu.res)} style={{
                       background: C.free, color: '#fff', border: 'none', padding: '10px 12px',
                       fontSize: '13px', fontWeight: 600, cursor: 'pointer', borderRadius: '8px', textAlign: 'center'
                     }}>
