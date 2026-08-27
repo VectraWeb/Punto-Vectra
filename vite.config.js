@@ -19,7 +19,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: useMock ? {
         'firebase/app': path.resolve(__dirname, './src/firebaseMock.js'),
-        'firebase/firestore': path.resolve(__dirname, './src/firebaseMock.js')
+        'firebase/firestore': path.resolve(__dirname, './src/firebaseMock.js'),
+        'firebase/auth': path.resolve(__dirname, './src/firebaseMock.js')
       } : {}
     },
     plugins: [
