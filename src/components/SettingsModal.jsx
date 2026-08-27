@@ -55,7 +55,7 @@ function TipoMesaCard({ item, onChange, onRemove }) {
   );
 }
 
-export default function SettingsModal({ config, onSave, onClose, organization = null, onSaveOrg = null }) {
+export default function SettingsModal({ config, onSave, onClose, organization = null, onSaveOrg = null, isRestaurant = true }) {
   const [local, setLocal] = useState(() => {
     if (Array.isArray(config) && config.length > 0) return config.map(c => ({ ...c }));
     return [
@@ -105,39 +105,47 @@ export default function SettingsModal({ config, onSave, onClose, organization = 
         <button onClick={onClose} style={{ background: C.creamDeep, border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
       </div>
 
-      <p style={{ fontSize: '11px', color: C.muted, marginBottom: '12px', lineHeight: 1.4 }}>
-        Definí los tipos de {organization?.configuration?.resourcePlural || 'mesa'}: capacidad (personas), forma y cantidad. Total: <strong>{totalMesas} {organization?.configuration?.resourcePlural ? organization.configuration.resourcePlural.toLowerCase() : 'mesas'}</strong>.
-      </p>
-
       {onSaveOrg && (
         <OrganizationSetup organization={organization} onSave={onSaveOrg} />
       )}
 
-      <div className="settings-scroll" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px', maxHeight: '60vh', overflowY: 'auto' }}>
-        {local.map((item, i) => (
-          <TipoMesaCard key={i} item={item} index={i} onChange={v => updateItem(i, v)} onRemove={() => removeItem(i)} />
-        ))}
-      </div>
+      {isRestaurant ? (
+        <>
+          <p style={{ fontSize: '11px', color: C.muted, marginBottom: '12px', lineHeight: 1.4 }}>
+            Definí los tipos de {organization?.configuration?.resourcePlural || 'mesa'}: capacidad (personas), forma y cantidad. Total: <strong>{totalMesas} {organization?.configuration?.resourcePlural ? organization.configuration.resourcePlural.toLowerCase() : 'mesas'}</strong>.
+          </p>
 
-      <button onClick={addItem} style={{
-        width: '100%', padding: '10px', background: 'transparent', border: `1.5px dashed ${C.creamDeep}`,
-        borderRadius: '12px', cursor: 'pointer', color: C.forest, fontSize: '12px', fontWeight: 600,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '12px',
-      }}>
-        <Plus size={14} /> Agregar nuevo tipo de {organization?.configuration?.resourceLabel?.toLowerCase() || 'mesa'}
-      </button>
+          <div className="settings-scroll" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px', maxHeight: '60vh', overflowY: 'auto' }}>
+            {local.map((item, i) => (
+              <TipoMesaCard key={i} item={item} index={i} onChange={v => updateItem(i, v)} onRemove={() => removeItem(i)} />
+            ))}
+          </div>
 
-      {error && (
-        <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '11px', color: '#991b1b', marginBottom: '12px' }}>
-          {error}
-        </div>
+          <button onClick={addItem} style={{
+            width: '100%', padding: '10px', background: 'transparent', border: `1.5px dashed ${C.creamDeep}`,
+            borderRadius: '12px', cursor: 'pointer', color: C.forest, fontSize: '12px', fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '12px',
+          }}>
+            <Plus size={14} /> Agregar nuevo tipo de {organization?.configuration?.resourceLabel?.toLowerCase() || 'mesa'}
+          </button>
+
+          {error && (
+            <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '11px', color: '#991b1b', marginBottom: '12px' }}>
+              {error}
+            </div>
+          )}
+
+          <button onClick={() => { onSave(local); onClose(); }} style={{
+            width: '100%', padding: '14px',
+            background: C.forest, border: 'none', borderRadius: '12px',
+            cursor: 'pointer', color: C.cream, fontSize: '14px', fontWeight: 600,
+          }}>Guardar configuración</button>
+        </>
+      ) : (
+        <p style={{ fontSize: '12px', color: C.muted, lineHeight: 1.5, background: C.creamDeep, borderRadius: '12px', padding: '12px 14px' }}>
+          Para {organization?.configuration?.resourcePlural?.toLowerCase() || 'este rubro'} los recursos se gestionan individualmente desde el botón <strong>Recursos</strong> (crear, renombrar, capacidad y eliminar). La posición se ajusta desde el plano.
+        </p>
       )}
-
-      <button onClick={() => { onSave(local); onClose(); }} style={{
-        width: '100%', padding: '14px',
-        background: C.forest, border: 'none', borderRadius: '12px',
-        cursor: 'pointer', color: C.cream, fontSize: '14px', fontWeight: 600,
-      }}>Guardar configuración</button>
     </Overlay>
   );
 }

@@ -8,8 +8,12 @@ import { db } from '../firebase';
 import { C, SERVICES, serviceFromTime, defaultServiceTime, todayISO } from '../utils';
 import { Field } from './ui';
 import PhoneField from './PhoneField';
+import DynamicFields from './reservations/DynamicFields';
 import { useOrganization } from '../hooks/useOrganization';
-import { resourceLabelOf, reserveActionOf, bookingFieldsOf } from '../config/businessTypes';
+import {
+  resourceLabelOf, reserveActionOf, bookingFieldsOf,
+  businessUsesGuests, serviceLabelOf, CORE_BOOKING_FIELD_NAMES,
+} from '../config/businessTypes';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resDocRef = (id) => doc(db, 'reservations', id);
@@ -26,11 +30,14 @@ const inp = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResForm — Formulario de reserva para clientes
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function ResForm({ onStaffAccess, onBack }) {
-  const organization = useOrganization();
+export default function ResForm({ onStaffAccess, onBack, organization: organizationProp }) {
+  const orgFromHook = useOrganization();
+  const organization = organizationProp || orgFromHook;
   const resourceLabel = resourceLabelOf(organization);
   const reserveAction = reserveActionOf(organization);
-  const guestsField = bookingFieldsOf(organization).find(f => f.name === 'guests');
+  const bookingFields = bookingFieldsOf(organization);
+  const usesGuests = businessUsesGuests(organization);
+  const guestsField = bookingFields.find(f => f.name === 'guests');
   const partyLabel = resourceLabel === 'Mesa' ? 'Comensales' : (guestsField?.label || 'Cantidad de personas');
 
   const [date, setDate] = useState(todayISO());
@@ -59,23 +66,34 @@ export default function ResForm({ onStaffAccess, onBack }) {
     partySize: 2,
     time: defaultServiceTime(),
     notes: '',
+    metadata: {},
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setMeta = (k, v) => setForm(f => ({ ...f, metadata: { ...(f.metadata || {}), [k]: v } }));
 
   // Servicio (Mediodía/Cena) derivado de la hora elegida
   const service = serviceFromTime(form.time);
   const timeOutOfRange = form.time && !service;
+  const serviceLabel = serviceLabelOf(organization, service);
 
-  // Cierre semanal: los martes no se atiende
-  const closedTuesday = new Date(date + 'T12:00:00').getDay() === 2;
+  // Cierre semanal: los martes no se atiende (solo restaurante).
+  const closedTuesday = organization.businessType === 'restaurant' && new Date(date + 'T12:00:00').getDay() === 2;
+
+  // Campos personalizados requeridos (solo los que se renderizan).
+  const requiredCustom = bookingFields.filter(f => f && f.required && !CORE_BOOKING_FIELD_NAMES.has(f.name));
+  const customOk = requiredCustom.every(f => {
+    const v = form.metadata?.[f.name];
+    return v !== undefined && v !== null && v !== '';
+  });
 
   // ── Validación ───────────────────────────────────────────────────────────
   const valid = form.customerName.trim().length >= 2
     && form.phone.trim().length >= 6
     && form.time
     && service
-    && form.partySize > 0
+    && (usesGuests ? form.partySize > 0 : true)
+    && customOk
     && date
     && !closedTuesday
     && !submitting;
@@ -95,7 +113,7 @@ export default function ResForm({ onStaffAccess, onBack }) {
         id,
         customerName: form.customerName.trim(),
         phone: form.phone.trim(),
-        partySize: form.partySize,
+        partySize: usesGuests ? form.partySize : 1,
         staffId: null,
         staffName: '',
         time: form.time,
@@ -105,7 +123,7 @@ export default function ResForm({ onStaffAccess, onBack }) {
         mesa_id: null,
         resourceId: null,
         organizationId: organization.id,
-        metadata: {},
+        metadata: form.metadata || {},
         estado: 'pendiente',
         date,
         updatedAt: serverTimestamp(),
@@ -115,7 +133,7 @@ export default function ResForm({ onStaffAccess, onBack }) {
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
-        setForm({ customerName: '', phone: '', partySize: 2, time: defaultServiceTime(), notes: '' });
+        setForm({ customerName: '', phone: '', partySize: 2, time: defaultServiceTime(), notes: '', metadata: {} });
       }, 3000);
     } catch (e) {
       console.error('Error al crear la reserva:', e);
@@ -136,10 +154,10 @@ export default function ResForm({ onStaffAccess, onBack }) {
           Reserva confirmada
         </h2>
         <p style={{ fontSize: '14px', color: C.muted, margin: 0 }}>
-          {date} · {form.time} · {service === 'mediodia' ? 'Mediodía' : 'Cena'}
+          {date} · {form.time} · {serviceLabel || ''}
         </p>
         <p style={{ fontSize: '14px', color: C.muted, margin: '4px 0 0' }}>
-          Te esperamos en <strong>Andi</strong>
+          Te esperamos en <strong>{organization.name}</strong>
         </p>
         {onBack && (
           <button onClick={onBack} style={{
@@ -215,13 +233,15 @@ export default function ResForm({ onStaffAccess, onBack }) {
           )}
         </Field>
 
-        <Field label={partyLabel}>
-          <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
-              <option key={n} value={n}>{n} {n === 1 ? 'persona' : 'personas'}</option>
-            ))}
-          </select>
-        </Field>
+        {usesGuests && (
+          <Field label={partyLabel}>
+            <select value={form.partySize} onChange={e => set('partySize', parseInt(e.target.value))} style={inp}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
+                <option key={n} value={n}>{n} {n === 1 ? 'persona' : 'personas'}</option>
+              ))}
+            </select>
+          </Field>
+        )}
 
         <Field label="Horario">
           <input type="time" value={form.time}
@@ -232,13 +252,19 @@ export default function ResForm({ onStaffAccess, onBack }) {
         {service && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', padding: '10px 14px', background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px', color: '#6b5a00', lineHeight: '1.4' }}>
             {service === 'mediodia' ? <Calendar size={15} /> : <Clock size={15} />}
-            <span><strong>{service === 'mediodia' ? 'Mediodía' : 'Cena'}</strong> · de {SERVICES[service].start} a {SERVICES[service].end}</span>
+            <span><strong>{serviceLabel}</strong> · de {SERVICES[service].start} a {SERVICES[service].end}</span>
           </div>
         )}
 
+        <DynamicFields
+          fields={bookingFields}
+          values={form.metadata || {}}
+          onChange={setMeta}
+        />
+
         {timeOutOfRange && (
           <div style={{ padding: '10px 14px', background: '#fdf6e3', border: `1px solid ${C.soon}`, borderRadius: '12px', fontSize: '13px', color: '#6b5a00', lineHeight: '1.4' }}>
-            Ese horario está fuera de nuestra atención: Mediodía de {SERVICES.mediodia.start} a {SERVICES.mediodia.end} y Cena de {SERVICES.cena.start} a {SERVICES.cena.end}.
+            Ese horario está fuera de nuestra atención: {serviceLabelOf(organization, 'mediodia')} de {SERVICES.mediodia.start} a {SERVICES.mediodia.end} y {serviceLabelOf(organization, 'cena')} de {SERVICES.cena.start} a {SERVICES.cena.end}.
           </div>
         )}
 

@@ -89,15 +89,32 @@ export async function ensureDefaultOrganization() {
 
 /** Guarda la organización y espeja los labels en config/restaurant (merge). */
 export async function saveOrganization(org) {
-  const data = organizationDocData(org);
+  // Preservar el dueño actual si el objeto recibido no lo trae (evita
+  // desvincular la organización en ediciones parciales desde la UI).
+  let ownerUid = org.ownerUid || null;
+  if (!ownerUid && org.id) {
+    try {
+      const snap = await getDoc(orgDocRef(org.id));
+      if (snap.exists() && snap.data().ownerUid) ownerUid = snap.data().ownerUid;
+    } catch (e) {
+      console.warn('[organizationService] Error leyendo dueño previo:', e);
+    }
+  }
+
+  const data = organizationDocData({ ...org, ownerUid });
   await setDoc(orgDocRef(org.id), { ...data, createdAt: org.createdAt || new Date().toISOString() });
-  // Espejo legacy: mantiene compatibles los lectores de config/restaurant.
-  const mirror = {
-    businessType: data.businessType,
-    organizationName: data.name,
-  };
-  if (data.configuration?.resourceLabel) mirror.resourceLabel = data.configuration.resourceLabel;
-  if (data.configuration?.resourcePlural) mirror.resourcePlural = data.configuration.resourcePlural;
-  await setDoc(legacyCfgRef(), mirror, { merge: true });
-  return normalizeOrganization({ id: org.id, ...data });
+
+  // Espejo legacy: solo para la organización default (config/restaurant es
+  // global y no debe reflejar datos de otras organizaciones).
+  if ((org.id || DEFAULT_ORG_ID) === DEFAULT_ORG_ID) {
+    const mirror = {
+      businessType: data.businessType,
+      organizationName: data.name,
+    };
+    if (data.configuration?.resourceLabel) mirror.resourceLabel = data.configuration.resourceLabel;
+    if (data.configuration?.resourcePlural) mirror.resourcePlural = data.configuration.resourcePlural;
+    await setDoc(legacyCfgRef(), mirror, { merge: true });
+  }
+
+  return normalizeOrganization({ id: org.id || DEFAULT_ORG_ID, ...data });
 }

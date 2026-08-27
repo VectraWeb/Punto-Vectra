@@ -10,6 +10,7 @@ export default function ResModal({
   editing, initialMode, preTable, tables, service, tableStatus, staff, tableNums,
   ownerByTable, mozoTableIds, onSave, onSavePedido, onDelete, onReject, onClose,
   resourceLabel = 'Mesa', bookingFields = [],
+  serviceLabels = null, showStaffSelect = true, showOrders = true,
 }) {
   const [mode, setMode] = useState(initialMode === 'pedido' ? 'pedido' : 'reserva');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -86,7 +87,7 @@ export default function ResModal({
       </div>
 
       {/* Toggle Reservas / Pedidos */}
-      {!editing && (
+      {!editing && showOrders && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
           <button onClick={() => setMode('reserva')} style={{
             flex: 1, padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer',
@@ -128,7 +129,7 @@ export default function ResModal({
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => <option key={n} value={n}>{n} personas</option>)}
             </select>
           </Field>
-          {staff.length > 0 && (
+          {showStaffSelect && staff.length > 0 && (
             <Field label="Mozo asignado">
               <select value={form.staffId} onChange={e => handleStaffChange(e.target.value)} style={inp}>
                 <option value="">— sin asignar —</option>
@@ -169,7 +170,7 @@ export default function ResModal({
             fontSize: '12px', background: C.soon + '22', color: C.espresso,
             border: `1px solid ${C.soon}66`, borderRadius: '10px', padding: '10px 12px',
           }}>
-            El horario <strong>{form.time}</strong> corresponde al servicio de <strong>{SERVICES[svcForTime].name}</strong>. La reserva se guardará en <strong>{SERVICES[svcForTime].name}</strong>.
+            El horario <strong>{form.time}</strong> corresponde al turno de <strong>{serviceLabels?.[svcForTime] || SERVICES[svcForTime].name}</strong>. La reserva se guardará en <strong>{serviceLabels?.[svcForTime] || SERVICES[svcForTime].name}</strong>.
           </div>
         )}
 

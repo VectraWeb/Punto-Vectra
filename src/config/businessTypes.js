@@ -11,6 +11,12 @@ export const BUSINESS_TYPES = {
     article: { singular: 'la', plural: 'las', fem: true },
     reserveAction: 'Reservar mesa',
     reserveHint: 'Elegí fecha, horario y comensales',
+    resourceType: 'table',
+    hasWaiters: true,
+    hasSectors: true,
+    hasOrders: true,
+    serviceLabels: { mediodia: 'Mediodía', cena: 'Cena' },
+    defaultResourceSeed: { count: 6, capacity: 4 },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de personas', type: 'number', required: true },
       { name: 'occasion', label: 'Ocasión', type: 'select', required: false, options: ['Ninguna', 'Cumpleaños', 'Aniversario', 'Negocios'] },
@@ -24,6 +30,12 @@ export const BUSINESS_TYPES = {
     article: { singular: 'el', plural: 'los', fem: false },
     reserveAction: 'Reservar turno',
     reserveHint: 'Elegí profesional, fecha y horario',
+    resourceType: 'professional',
+    hasWaiters: false,
+    hasSectors: false,
+    hasOrders: false,
+    serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
+    defaultResourceSeed: { count: 3, capacity: 1 },
     defaultBookingFields: [
       { name: 'service', label: 'Servicio', type: 'select', required: true, options: ['Corte', 'Color', 'Peinado', 'Barba'] },
       { name: 'duration', label: 'Duración (min)', type: 'number', required: false },
@@ -37,6 +49,12 @@ export const BUSINESS_TYPES = {
     article: { singular: 'la', plural: 'las', fem: true },
     reserveAction: 'Reservar cancha',
     reserveHint: 'Elegí cancha, fecha y horario',
+    resourceType: 'court',
+    hasWaiters: false,
+    hasSectors: false,
+    hasOrders: false,
+    serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
+    defaultResourceSeed: { count: 3, capacity: 10 },
     defaultBookingFields: [
       { name: 'players', label: 'Cantidad de jugadores', type: 'number', required: false },
       { name: 'sport', label: 'Deporte', type: 'select', required: false, options: ['Fútbol', 'Padel', 'Tenis', 'Básquet'] },
@@ -50,6 +68,12 @@ export const BUSINESS_TYPES = {
     article: { singular: 'la', plural: 'las', fem: true },
     reserveAction: 'Reservar habitación',
     reserveHint: 'Elegí habitación, fecha y horario',
+    resourceType: 'room',
+    hasWaiters: false,
+    hasSectors: false,
+    hasOrders: false,
+    serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
+    defaultResourceSeed: { count: 4, capacity: 2 },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de huéspedes', type: 'number', required: true },
       { name: 'beds', label: 'Camas', type: 'number', required: false },
@@ -63,6 +87,12 @@ export const BUSINESS_TYPES = {
     article: { singular: 'el', plural: 'los', fem: false },
     reserveAction: 'Reservar espacio',
     reserveHint: 'Elegí espacio, fecha y horario',
+    resourceType: 'space',
+    hasWaiters: false,
+    hasSectors: false,
+    hasOrders: false,
+    serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
+    defaultResourceSeed: { count: 4, capacity: 4 },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de personas', type: 'number', required: false },
       { name: 'purpose', label: 'Motivo', type: 'text', required: false },
@@ -76,6 +106,12 @@ export const BUSINESS_TYPES = {
     article: { singular: 'el', plural: 'los', fem: false },
     reserveAction: 'Reservar turno',
     reserveHint: 'Elegí profesional, fecha y horario',
+    resourceType: 'professional',
+    hasWaiters: false,
+    hasSectors: false,
+    hasOrders: false,
+    serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
+    defaultResourceSeed: { count: 2, capacity: 1 },
     defaultBookingFields: [
       { name: 'service', label: 'Servicio', type: 'select', required: true, options: ['Consulta', 'Control', 'Urgencia'] },
       { name: 'reason', label: 'Motivo de consulta', type: 'text', required: false },
@@ -89,6 +125,12 @@ export const BUSINESS_TYPES = {
     article: { singular: 'el', plural: 'los', fem: false },
     reserveAction: 'Reservar recurso',
     reserveHint: 'Elegí recurso, fecha y horario',
+    resourceType: 'custom',
+    hasWaiters: false,
+    hasSectors: false,
+    hasOrders: false,
+    serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
+    defaultResourceSeed: { count: 3, capacity: 4 },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de personas', type: 'number', required: false },
     ],
@@ -137,6 +179,29 @@ export function reserveActionOf(organization) {
   const t = getBusinessType(organization?.businessType);
   if (organization?.configuration?.reserveAction) return organization.configuration.reserveAction;
   return t.reserveAction;
+}
+
+// Label visible de un servicio/turno según el rubro (restaurante: Mediodía/Cena;
+// resto: Mañana/Tarde).
+export function serviceLabelOf(organization, serviceKey) {
+  const t = getBusinessType(organization?.businessType);
+  return (t.serviceLabels && t.serviceLabels[serviceKey]) || serviceKey;
+}
+
+// ¿El rubro usa comensales/personas como campo base del formulario público?
+export function businessUsesGuests(organization) {
+  const fields = bookingFieldsOf(organization);
+  return fields.some(f => f && f.name === 'guests');
+}
+
+// ¿El rubro tiene pedidos de comida?
+export function businessHasOrders(organization) {
+  return getBusinessType(organization?.businessType).hasOrders !== false && organization?.businessType === 'restaurant';
+}
+
+// Plantilla inicial de recursos para un negocio nuevo.
+export function defaultResourceSeedOf(organization) {
+  return getBusinessType(organization?.businessType).defaultResourceSeed || { count: 3, capacity: 1 };
 }
 
 // El tipo de recurso reservable que genera un negocio (ej: restaurant → table).

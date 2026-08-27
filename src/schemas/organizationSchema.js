@@ -24,6 +24,7 @@ export function normalizeOrganization(raw, fallbackId = DEFAULT_ORG_ID) {
     name: raw.name || raw.businessName || base.name,
     businessType,
     logo: raw.logo || '',
+    ownerUid: raw.ownerUid || null,
     configuration: {
       resourceLabel: raw.resourceLabel || raw.configuration?.resourceLabel,
       resourcePlural: raw.resourcePlural || raw.configuration?.resourcePlural,
@@ -49,6 +50,7 @@ export function organizationDocData(org) {
     name: org.name || DEFAULT_ORGANIZATION.name,
     businessType: org.businessType || DEFAULT_BUSINESS_TYPE,
     logo: org.logo || '',
+    ownerUid: org.ownerUid || null,
     configuration: org.configuration || {},
     bookingFields: org.bookingFields || [],
     updatedAt: new Date().toISOString(),

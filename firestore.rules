@@ -14,6 +14,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Organización del usuario autenticado (null si no tiene users/{uid}).
+    function userOrganizationId() {
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return user.data.organizationId;
+    }
+
+    // ─── USERS ────────────────────────────────────────────────────────────
+    // Structure: users/{uid} → { organizationId, email, createdAt }
+    // Cada usuario administra solo su propio vínculo.
+    match /users/{uid} {
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+
+      allow create: if isAuthenticated()
+        && request.auth.uid == uid
+        && request.resource.data.organizationId is string;
+
+      allow update: if isAuthenticated()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['organizationId', 'email', 'createdAt']);
+
+      allow delete: if isAuthenticated() && request.auth.uid == uid;
+    }
+
     // --- RESERVATIONS (FLAT) ---
     // Structure: reservations/{reservationId}  (date is a field, not a path segment)
     // Used by: client form (create), staff dashboard (read/update/delete), n8n
@@ -147,33 +170,49 @@ service cloud.firestore {
 
     // --- ORGANIZATIONS ---
     // Structure: organizations/{organizationId} (id "default" = negocio principal)
-    // Configuración de negocio: sin datos personales.
+    // Configuración de negocio: sin datos personales, lectura pública.
+    // Escritura: solo el dueño (ownerUid). Si ownerUid es null (nueva), el
+    // primer usuario autenticado puede reclamarla (la fija a su uid).
     match /organizations/{organizationId} {
       allow read: if true;
 
-      allow create, update: if isAuthenticated()
+      allow create: if isAuthenticated()
+        && (request.resource.data.ownerUid == null || request.resource.data.ownerUid == request.auth.uid)
         && request.resource.data.keys().hasOnly([
-          'id', 'name', 'businessType', 'logo',
+          'id', 'name', 'businessType', 'logo', 'ownerUid',
           'configuration', 'bookingFields', 'createdAt', 'updatedAt'
         ]);
 
-      allow delete: if isAuthenticated();
+      // El dueño no puede cambiar de manos: solo quien ya es dueño edita.
+      allow update: if isAuthenticated()
+        && (resource.data.ownerUid == null || resource.data.ownerUid == request.auth.uid)
+        && request.resource.data.ownerUid == (resource.data.ownerUid != null ? resource.data.ownerUid : request.auth.uid)
+        && request.resource.data.keys().hasOnly([
+          'id', 'name', 'businessType', 'logo', 'ownerUid',
+          'configuration', 'bookingFields', 'createdAt', 'updatedAt'
+        ]);
+
+      allow delete: if isAuthenticated()
+        && resource.data.ownerUid == request.auth.uid;
     }
 
     // --- RESOURCES ---
     // Structure: resources/{resourceId} (negocios no-restaurante)
-    // Sin datos personales: lectura pública (vista cliente y bot).
+    // Lectura pública (vista cliente y bot). Escritura: solo el dueño de la
+    // organización indicada en organizationId.
     match /resources/{resourceId} {
       allow read: if true;
 
       allow create, update: if isAuthenticated()
+        && request.resource.data.organizationId == userOrganizationId()
         && request.resource.data.keys().hasOnly([
           'organizationId', 'name', 'type', 'capacity', 'status',
           'position', 'width', 'height', 'shape',
           'metadata', 'number', 'generated', 'updatedAt'
         ]);
 
-      allow delete: if isAuthenticated();
+      allow delete: if isAuthenticated()
+        && resource.data.organizationId == userOrganizationId();
     }
   }
 }

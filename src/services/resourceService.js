@@ -7,7 +7,7 @@
 import { collection, doc, getDocs, writeBatch, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { buildResources } from '../utils';
-import { DEFAULT_ORG_ID, resourceTypeOf } from '../config/businessTypes';
+import { DEFAULT_ORG_ID, resourceTypeOf, defaultResourceSeedOf } from '../config/businessTypes';
 import { normalizeResource, resourceDocData, resourceToMesa } from '../schemas/resourceSchema';
 
 export const mesasCol = () => collection(db, 'mesas');
@@ -217,6 +217,67 @@ export async function deleteResource(id, opts = {}) {
   const { organization } = opts;
   const useLegacy = isLegacyOrganization(organization) || opts.legacy === true;
   await deleteDoc(useLegacy ? mesaDoc(id) : resourceDoc(id));
+}
+
+/**
+ * Siembra el set inicial de recursos del rubro (defaultResourceSeed) si la
+ * colección "resources" está vacía. Usado al crear/cambiar de rubro.
+ */
+export async function seedDefaultResourcesForOrg(organization) {
+  const useLegacy = isLegacyOrganization(organization);
+  const col = useLegacy ? mesasCol() : resourcesCol();
+  const snap = await getDocs(col);
+  if (!snap.empty) return;
+
+  const seed = defaultResourceSeedOf(organization);
+  const label = organization?.configuration?.resourceLabel || 'Recurso';
+  const type = resourceTypeOf(organization);
+  const items = [];
+  for (let i = 1; i <= seed.count; i++) {
+    items.push({
+      id: type === 'table' ? `m${i}` : `res${i}`,
+      name: `${label} ${i}`,
+      type,
+      capacity: seed.capacity,
+      number: i,
+    });
+  }
+
+  const batch = writeBatch(db);
+  for (const r of items) {
+    if (useLegacy) {
+      batch.set(mesaDoc(r.id), legacyDocData(r));
+    } else {
+      batch.set(resourceDoc(r.id), resourceDocData({
+        ...r,
+        organizationId: organization?.id || DEFAULT_ORG_ID,
+        status: 'active',
+        position: null,
+        metadata: {},
+      }, { generated: true }));
+    }
+  }
+  await batch.commit();
+}
+
+/**
+ * Siembra un set de recursos personalizados en resources/{id} (onboarding).
+ * Solo agrega: no borra recursos existentes de la organización.
+ */
+export async function seedResourcesCustom(organizationId, resources, organization) {
+  const batch = writeBatch(db);
+  for (const r of resources || []) {
+    batch.set(resourceDoc(r.id), resourceDocData({
+      ...r,
+      organizationId,
+      type: r.type || resourceTypeOf(organization),
+      status: 'active',
+      position: null,
+      metadata: r.metadata || {},
+      shape: r.shape,
+    }, { generated: false }));
+  }
+  await batch.commit();
 }
 
 // ─── Compat helpers (adaptadores para mesasHelpers/useMesas) ────────────────

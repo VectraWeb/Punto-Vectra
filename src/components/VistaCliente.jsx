@@ -5,13 +5,14 @@ import ResForm from './ResForm';
 import PedidoForm from './PedidoForm';
 import { C } from '../utils';
 import { useOrganization } from '../hooks/useOrganization';
-import { reserveActionOf, getBusinessType } from '../config/businessTypes';
+import { reserveActionOf, getBusinessType, businessHasOrders } from '../config/businessTypes';
 
-export default function VistaCliente({ onStaffAccess }) {
+export default function VistaCliente({ onStaffAccess, organizationId }) {
   const [mode, setMode] = useState(null); // null = selector inicial
-  const organization = useOrganization();
+  const organization = useOrganization(organizationId);
   const reserveAction = reserveActionOf(organization);
   const reserveHint = getBusinessType(organization.businessType).reserveHint;
+  const hasOrders = businessHasOrders(organization);
 
   // ── Triple clic en logo → acceso staff ──────────────────────────────────
   const clickCount = useRef(0);
@@ -45,7 +46,7 @@ export default function VistaCliente({ onStaffAccess }) {
 
       <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: '480px' }}>
         {mode === 'reserva' ? (
-          <ResForm onBack={() => { window.scrollTo(0, 0); setMode(null); }} onStaffAccess={onStaffAccess} />
+          <ResForm organization={organization} onBack={() => { window.scrollTo(0, 0); setMode(null); }} onStaffAccess={onStaffAccess} />
         ) : mode === 'pedido' ? (
           <PedidoForm onBack={() => { window.scrollTo(0, 0); setMode(null); }} onStaffAccess={onStaffAccess} />
         ) : (
@@ -80,7 +81,8 @@ export default function VistaCliente({ onStaffAccess }) {
                 </div>
               </button>
 
-              <button onClick={() => setMode('pedido')} style={{
+              {hasOrders && (
+                <button onClick={() => setMode('pedido')} style={{
                 width: '100%', padding: '20px', display: 'flex', alignItems: 'center', gap: '14px',
                 background: C.white, border: `1.5px solid ${C.creamDeep}`, borderRadius: '16px',
                 cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
@@ -97,6 +99,7 @@ export default function VistaCliente({ onStaffAccess }) {
                   <div style={{ fontSize: '12px', color: C.muted, marginTop: '2px' }}>Contanos qué querés y lo preparamos</div>
                 </div>
               </button>
+              )}
             </div>
           </div>
         )}

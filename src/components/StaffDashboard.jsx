@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { syncMesasWithConfig } from '../services/mesasHelpers';
-import { syncResourcesWithConfig } from '../services/resourceService';
+import { seedDefaultResourcesForOrg } from '../services/resourceService';
 import { saveOrganization } from '../services/organizationService';
 import { createReservation, cancelReservation, rejectReservation } from '../services/reservationService';
 import { checkResourceAvailability } from '../services/availabilityService';
@@ -36,7 +36,7 @@ import {
   detectService, computeStateDurations,
   getAssignedTables, notificarN8N,
 } from '../utils';
-import { resourceLabelOf, resourcePluralOf, resourceTypeOf } from '../config/businessTypes';
+import { resourceLabelOf, resourcePluralOf, serviceLabelOf, DEFAULT_ORG_ID } from '../config/businessTypes';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resDocRef = (id) => doc(db, 'reservations', id);
@@ -47,9 +47,9 @@ const cfgRef = () => doc(db, 'config', 'restaurant');
 const FREE_TABLE_STATUS = { status: 'free' };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// StaffDashboard — Dashboard completo para mozos (antes era App)
+// StaffDashboard — Dashboard completo del negocio
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function StaffDashboard({ onLogout }) {
+export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_ID }) {
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(todayISO);
   const [service, setService] = useState(detectService);
@@ -94,7 +94,8 @@ export default function StaffDashboard({ onLogout }) {
 
   // ── Hooks de datos externos ────────────────────────────────────────────────
   const { config, sectors, setSectors, saveSectors } = useConfig();
-  const organization = useOrganization(undefined, { ensure: true });
+  const organization = useOrganization(organizationId, { ensure: organizationId === DEFAULT_ORG_ID });
+  const isRestaurant = organization.businessType === 'restaurant';
   const resourceLabel = resourceLabelOf(organization);
   const resourcePlural = resourcePluralOf(organization);
   const mesas = useMesas(config, organization);
@@ -103,9 +104,9 @@ export default function StaffDashboard({ onLogout }) {
   const analyticsRes = useAnalyticsReservations(date, showAnalytics, analyticsPeriod, analyticsMonth);
 
   const tables = useMemo(() => {
-    const base = mesas.length > 0 ? mesas : buildTables(config);
+    const base = mesas.length > 0 ? mesas : (isRestaurant ? buildTables(config) : []);
     return base;
-  }, [mesas, config]);
+  }, [mesas, config, isRestaurant]);
   const slots = useMemo(() => genSlots(service), [service]);
 
   // Posiciones del salón: suscripción única compartida con SalonFloor
@@ -191,13 +192,14 @@ export default function StaffDashboard({ onLogout }) {
   // ── Guardar organización (tipo de negocio + labels) ────────────────────
   const saveOrg = useCallback(async (nextOrg) => {
     await saveOrganization(nextOrg);
-    // Re-sincroniza recursos con el nuevo tipo de negocio (no destructivo:
-    // los docs legacy en "mesas" se conservan si el negocio sigue siéndolo).
-    if (config) {
-      await syncResourcesWithConfig(config, {
-        organization: nextOrg,
-        resourceType: resourceTypeOf(nextOrg),
-      }).catch((e) => console.warn('[Andi] Error re-sincronizando recursos:', e));
+    if (nextOrg.businessType === 'restaurant') {
+      // Restaurante: las mesas se generan desde la config (mesaTipos).
+      if (config) await syncMesasWithConfig(config).catch((e) => console.warn('[Andi] Error re-sincronizando mesas:', e));
+    } else {
+      // Otros rubros: si aún no hay recursos del nuevo tipo, se siembra el
+      // set inicial del rubro (las mesas legacy quedan intactas en "mesas").
+      await seedDefaultResourcesForOrg(nextOrg)
+        .catch((e) => console.warn('[Andi] Error sembrando recursos:', e));
     }
   }, [config]);
 
@@ -555,10 +557,14 @@ export default function StaffDashboard({ onLogout }) {
     if (editingSectors) return;
     if (s.status === 'free') {
       setModalMode('reserva'); setPreTable(t); setEditing(null); setShowModal(true);
-    } else {
+    } else if (isRestaurant) {
+      // Restaurante: máquina de estados en vivo del mozo.
       setShowLiveMenu(s.res);
+    } else {
+      // Otros rubros: abrir la reserva para editarla/cancelarla.
+      setModalMode('reserva'); setEditing(s.res); setPreTable(null); setShowModal(true);
     }
-  }, [editingSectors]);
+  }, [editingSectors, isRestaurant]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
   if (loading) {
@@ -630,10 +636,11 @@ export default function StaffDashboard({ onLogout }) {
         setShowSectors={setShowSectors}
         setShowResources={setShowResources}
         orgName={organization.name || 'Andi'}
+        isRestaurant={isRestaurant}
         onLogout={onLogout}
       />
 
-      {/* ── SELECTOR DE SERVICIO ── */}
+      {/* ── SELECTOR DE SERVICIO / TURNO ── */}
       <div style={{ padding: '20px 16px 8px', display: 'flex', gap: '8px' }}>
         {Object.entries(SERVICES).map(([k, s]) => {
           const Icon = s.icon;
@@ -649,7 +656,7 @@ export default function StaffDashboard({ onLogout }) {
               transition: 'all 0.2s ease',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 600 }}>
-                <Icon size={14} />{s.name}
+                <Icon size={14} />{serviceLabelOf(organization, k)}
               </div>
               <span style={{ fontSize: '10px', opacity: 0.7 }}>{s.start} — {s.end}</span>
             </button>
@@ -660,17 +667,17 @@ export default function StaffDashboard({ onLogout }) {
       {/* ── STATS ── */}
       <div style={{ padding: '0 16px 16px', display: 'flex', gap: '8px' }}>
         <Stat color={C.free} label="Libres" value={stats.free} />
-        <Stat color={C.terra} label="Ocupadas" value={stats.busy} />
-        <Stat color={C.forestSoft} label="Próximas" value={stats.reserved} />
+        <Stat color={C.terra} label={isRestaurant ? 'Ocupadas' : 'Ocupados'} value={stats.busy} />
+        <Stat color={C.forestSoft} label={isRestaurant ? 'Próximas' : 'Próximos'} value={stats.reserved} />
         <Stat color={C.soon} label="A limpiar" value={stats.soon} />
       </div>
 
-      {/* ── TABS: RESERVAS / PLANO (desktop: inline, móvil: bottom nav) ── */}
+      {/* ── TABS: RESERVAS / PLANO / PEDIDOS (solo restaurante) ── */}
       <div className="desktop-tabs" style={{ padding: '0 16px', display: 'flex', gap: '4px', marginBottom: '12px' }}>
         {[
-          ['reservas', 'Mozos', `${sortedRes.length} items`],
+          ['reservas', isRestaurant ? 'Mozos' : 'Reservas', `${sortedRes.length} items`],
           ['plano', 'Plano', 'Arrastrable'],
-          ['pedidos', 'Pedidos', 'Bot y web'],
+          ...(isRestaurant ? [['pedidos', 'Pedidos', 'Bot y web']] : []),
         ].map(([key, label, sub]) => (
           <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
@@ -684,8 +691,52 @@ export default function StaffDashboard({ onLogout }) {
         ))}
       </div>
 
-      {/* ── RESERVAS: lista de mozos + reservas ── */}
+      {/* ── RESERVAS: lista de mozos + reservas (o lista genérica) ── */}
       {mainTab === 'reservas' && (() => {
+        if (!isRestaurant) {
+          // Rubros sin mozos: pendientes + confirmadas del turno.
+          const pending = sortedRes.filter(r => !(r.tableId || r.resourceId) && r.estado === 'pendiente');
+          const confirmed = sortedRes.filter(r => (r.tableId || r.resourceId) && r.estado !== 'cancelado');
+          return (
+            <div style={{ padding: '0 16px 24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: C.forest }}>
+                Reservas pendientes <span style={{ color: C.muted, fontWeight: 600 }}>({pending.length})</span>
+              </div>
+              {pending.length > 0 ? (
+                <ReservationList
+                  sortedRes={pending}
+                  tables={tables}
+                  onEdit={(r) => { setModalMode('reserva'); setEditing(r); setShowModal(true); }}
+                  onAction={(r) => { setModalMode('reserva'); setEditing(r); setShowModal(true); }}
+                  onGoToTable={handleGoToTable}
+                  onReject={rejectRes}
+                />
+              ) : (
+                <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
+                  No hay reservas pendientes
+                </div>
+              )}
+              <div style={{ fontSize: '15px', fontWeight: 700, color: C.forest, marginTop: '8px' }}>
+                Confirmadas <span style={{ color: C.muted, fontWeight: 600 }}>({confirmed.length})</span>
+              </div>
+              {confirmed.length > 0 ? (
+                <ReservationList
+                  sortedRes={confirmed}
+                  tables={tables}
+                  onEdit={(r) => { setModalMode('reserva'); setEditing(r); setShowModal(true); }}
+                  onAction={(r) => { setModalMode('reserva'); setEditing(r); setShowModal(true); }}
+                  onGoToTable={handleGoToTable}
+                  onReject={rejectRes}
+                />
+              ) : (
+                <div style={{ padding: '20px', textAlign: 'center', color: C.muted, fontSize: '13px', background: C.creamDeep, borderRadius: '12px' }}>
+                  Sin reservas confirmadas en este turno
+                </div>
+              )}
+            </div>
+          );
+        }
+
         const activeStaff = (staff || []).filter(s => s && s.active !== false);
         const selected = activeStaff.find(s => s.id === selectedMozoTab) || null;
         // Reservas por mozo (por nombre, como se guarda en la reserva).
@@ -925,7 +976,7 @@ export default function StaffDashboard({ onLogout }) {
       {/* ── FAB: Nueva reserva / pedido según el panel activo ── */}
       <button onClick={() => {
         setEditing(null); setPreTable(null);
-        setModalMode(mainTab === 'pedidos' ? 'pedido' : 'reserva');
+        setModalMode(isRestaurant && mainTab === 'pedidos' ? 'pedido' : 'reserva');
         setShowModal(true);
       }} style={{
         position: 'fixed', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', right: '24px',
@@ -949,9 +1000,9 @@ export default function StaffDashboard({ onLogout }) {
         boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
       }}>
         {[
-          ['reservas', 'Mozos', ''],
+          ['reservas', isRestaurant ? 'Mozos' : 'Reservas', ''],
           ['plano', 'Plano', ''],
-          ['pedidos', 'Pedidos', ''],
+          ...(isRestaurant ? [['pedidos', 'Pedidos', '']] : []),
         ].map(([key, label, count]) => (
           <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 8px', borderRadius: '12px', border: 'none', cursor: 'pointer',
@@ -998,6 +1049,9 @@ export default function StaffDashboard({ onLogout }) {
           mozoTableIds={mozoTableIds}
           resourceLabel={resourceLabel}
           bookingFields={organization.bookingFields}
+          serviceLabels={{ mediodia: serviceLabelOf(organization, 'mediodia'), cena: serviceLabelOf(organization, 'cena') }}
+          showStaffSelect={isRestaurant}
+          showOrders={isRestaurant}
           onSave={handleSave}
           onSavePedido={savePedido}
           onDelete={handleDelete}
@@ -1011,6 +1065,7 @@ export default function StaffDashboard({ onLogout }) {
         <SettingsModal
           config={config}
           organization={organization}
+          isRestaurant={isRestaurant}
           onSave={saveConfig}
           onSaveOrg={saveOrg}
           onClose={() => setShowSettings(false)}
