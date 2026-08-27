@@ -17,6 +17,8 @@ export const BUSINESS_TYPES = {
     hasOrders: true,
     serviceLabels: { mediodia: 'Mediodía', cena: 'Cena' },
     defaultResourceSeed: { count: 6, capacity: 4 },
+    terminology: { reservation: 'Reserva', order: 'Pedido', customer: 'Cliente' },
+    features: { reservations: true, orders: true, catalog: true, payments: true, inventory: false, employees: true, waitlist: true },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de personas', type: 'number', required: true },
       { name: 'occasion', label: 'Ocasión', type: 'select', required: false, options: ['Ninguna', 'Cumpleaños', 'Aniversario', 'Negocios'] },
@@ -36,6 +38,8 @@ export const BUSINESS_TYPES = {
     hasOrders: false,
     serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
     defaultResourceSeed: { count: 3, capacity: 1 },
+    terminology: { reservation: 'Turno', order: 'Servicio', customer: 'Cliente' },
+    features: { reservations: true, orders: false, catalog: true, payments: true, inventory: false, employees: false, waitlist: true },
     defaultBookingFields: [
       { name: 'service', label: 'Servicio', type: 'select', required: true, options: ['Corte', 'Color', 'Peinado', 'Barba'] },
       { name: 'duration', label: 'Duración (min)', type: 'number', required: false },
@@ -55,6 +59,8 @@ export const BUSINESS_TYPES = {
     hasOrders: false,
     serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
     defaultResourceSeed: { count: 3, capacity: 10 },
+    terminology: { reservation: 'Reserva', order: 'Pedido', customer: 'Cliente' },
+    features: { reservations: true, orders: false, catalog: true, payments: true, inventory: false, employees: false, waitlist: true },
     defaultBookingFields: [
       { name: 'players', label: 'Cantidad de jugadores', type: 'number', required: false },
       { name: 'sport', label: 'Deporte', type: 'select', required: false, options: ['Fútbol', 'Padel', 'Tenis', 'Básquet'] },
@@ -74,6 +80,8 @@ export const BUSINESS_TYPES = {
     hasOrders: false,
     serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
     defaultResourceSeed: { count: 4, capacity: 2 },
+    terminology: { reservation: 'Estadía', order: 'Consumo', customer: 'Huésped' },
+    features: { reservations: true, orders: true, catalog: true, payments: true, inventory: false, employees: false, waitlist: true },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de huéspedes', type: 'number', required: true },
       { name: 'beds', label: 'Camas', type: 'number', required: false },
@@ -93,6 +101,8 @@ export const BUSINESS_TYPES = {
     hasOrders: false,
     serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
     defaultResourceSeed: { count: 4, capacity: 4 },
+    terminology: { reservation: 'Reserva', order: 'Servicio', customer: 'Miembro' },
+    features: { reservations: true, orders: false, catalog: true, payments: true, inventory: false, employees: false, waitlist: true },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de personas', type: 'number', required: false },
       { name: 'purpose', label: 'Motivo', type: 'text', required: false },
@@ -112,6 +122,8 @@ export const BUSINESS_TYPES = {
     hasOrders: false,
     serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
     defaultResourceSeed: { count: 2, capacity: 1 },
+    terminology: { reservation: 'Turno', order: 'Consulta', customer: 'Paciente' },
+    features: { reservations: true, orders: false, catalog: true, payments: false, inventory: false, employees: false, waitlist: true },
     defaultBookingFields: [
       { name: 'service', label: 'Servicio', type: 'select', required: true, options: ['Consulta', 'Control', 'Urgencia'] },
       { name: 'reason', label: 'Motivo de consulta', type: 'text', required: false },
@@ -131,6 +143,8 @@ export const BUSINESS_TYPES = {
     hasOrders: false,
     serviceLabels: { mediodia: 'Mañana', cena: 'Tarde' },
     defaultResourceSeed: { count: 3, capacity: 4 },
+    terminology: { reservation: 'Reserva', order: 'Pedido', customer: 'Cliente' },
+    features: { reservations: true, orders: false, catalog: true, payments: false, inventory: false, employees: false, waitlist: true },
     defaultBookingFields: [
       { name: 'guests', label: 'Cantidad de personas', type: 'number', required: false },
     ],
@@ -197,7 +211,27 @@ export function businessUsesGuests(organization) {
 
 // ¿El rubro tiene pedidos de comida?
 export function businessHasOrders(organization) {
-  return getBusinessType(organization?.businessType).hasOrders !== false && organization?.businessType === 'restaurant';
+  return featureEnabled(organization, 'orders');
+}
+
+// Terminología del rubro (todas las vistas consumen esto).
+export function terminologyOf(organization) {
+  const t = getBusinessType(organization?.businessType);
+  return {
+    resource: resourceLabelOf(organization),
+    resourcePlural: resourcePluralOf(organization),
+    reservation: t.terminology?.reservation || 'Reserva',
+    order: t.terminology?.order || 'Pedido',
+    customer: t.terminology?.customer || 'Cliente',
+  };
+}
+
+// Feature flags: la organización puede sobreescribir en configuration.features.
+export function featureEnabled(organization, feature) {
+  const t = getBusinessType(organization?.businessType);
+  const base = t.features || {};
+  const override = organization?.configuration?.features?.[feature];
+  return override !== undefined ? Boolean(override) : Boolean(base[feature]);
 }
 
 // Plantilla inicial de recursos para un negocio nuevo.

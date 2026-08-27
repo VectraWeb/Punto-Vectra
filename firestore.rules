@@ -21,18 +21,28 @@ service cloud.firestore {
     }
 
     // ─── USERS ────────────────────────────────────────────────────────────
-    // Structure: users/{uid} → { organizationId, email, createdAt }
-    // Cada usuario administra solo su propio vínculo.
+    // Structure: users/{uid} → { organizationId, email, role, permissions }
+    // Cada usuario administra solo su propio vínculo. El dueño de la
+    // organización puede gestionar a los miembros.
+    function isOwnerOfUsersOrg(uid) {
+      let user = get(/databases/$(database)/documents/users/$(uid));
+      let org = get(/databases/$(database)/documents/organizations/$(user.data.organizationId));
+      return org.data.ownerUid == request.auth.uid;
+    }
+
     match /users/{uid} {
-      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow read: if isAuthenticated()
+        && (request.auth.uid == uid || isOwnerOfUsersOrg(uid));
 
       allow create: if isAuthenticated()
         && request.auth.uid == uid
         && request.resource.data.organizationId is string;
 
       allow update: if isAuthenticated()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['organizationId', 'email', 'createdAt']);
+        && (request.auth.uid == uid || isOwnerOfUsersOrg(uid))
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'email', 'role', 'permissions', 'name', 'createdAt'
+        ]);
 
       allow delete: if isAuthenticated() && request.auth.uid == uid;
     }
@@ -56,6 +66,7 @@ service cloud.firestore {
           'id', 'customerName', 'phone', 'customerPhone',
           'partySize', 'tableId', 'mesa_id', 'mesa',
           'resourceId', 'organizationId', 'metadata',
+          'branchId', 'customerId', 'serviceIds', 'status',
           'time', 'duration', 'service', 'notes',
           'estado', 'liveState', 'stateLog',
           'startedAt', 'leftAt', 'cleaningStartedAt', 'cleaningCompletedAt',
@@ -80,11 +91,85 @@ service cloud.firestore {
 
       allow update: if isAuthenticated()
         && request.resource.data.keys().hasOnly([
-          'pedidoEstado', 'pedidoRechazoMotivo',
-          'tiempoPreparacionMin', 'tiempoEnvioMin', 'tiempoTotalMin', 'confirmadoAt'
+          'pedidoEstado', 'pedidoRechazoMotivo', 'status',
+          'tiempoPreparacionMin', 'tiempoEnvioMin', 'tiempoTotalMin', 'confirmadoAt',
+          'items', 'totals', 'customerId', 'reservationId', 'resourceId',
+          'organizationId', 'branchId', 'metadata', 'estado'
         ]);
 
       allow delete: if isAuthenticated();
+    }
+
+    // --- BRANCHES (SUCURSALES) ---
+    // Structure: organizations/{organizationId}/branches/{branchId}
+    // Lectura pública (vista cliente). Escritura: dueño de la organización.
+    match /organizations/{organizationId}/branches/{branchId} {
+      allow read: if true;
+
+      allow create, update: if isAuthenticated()
+        && request.resource.data.organizationId == userOrganizationId()
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'name', 'address', 'timezone',
+          'businessHours', 'settings', 'updatedAt'
+        ]);
+
+      allow delete: if isAuthenticated()
+        && resource.data.organizationId == userOrganizationId()
+        && branchId != 'main';
+    }
+
+    // --- CATALOG ---
+    // Structure: catalog/{itemId} (productos, servicios, extras, combos)
+    // Lectura pública (carta/servicios). Escritura: dueño de la organización.
+    match /catalog/{itemId} {
+      allow read: if true;
+
+      allow create, update: if isAuthenticated()
+        && request.resource.data.organizationId == userOrganizationId()
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'branchId', 'type', 'name', 'description',
+          'categoryId', 'price', 'duration', 'active', 'metadata', 'updatedAt'
+        ]);
+
+      allow delete: if isAuthenticated()
+        && resource.data.organizationId == userOrganizationId();
+    }
+
+    // --- CUSTOMERS ---
+    // Structure: customers/{organizationId}_{phone}
+    // Contiene datos personales: lectura solo autenticados de la organización.
+    // Create: cualquier sesión (la vista pública vincula clientes por teléfono).
+    match /customers/{docId} {
+      allow read: if isAuthenticated()
+        && resource.data.organizationId == userOrganizationId();
+
+      allow create: if isAuthenticated()
+        && request.resource.data.organizationId is string
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'branchId', 'name', 'phone', 'email',
+          'contact', 'tags', 'notes', 'preferences', 'stats', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update, delete: if isAuthenticated()
+        && resource.data.organizationId == userOrganizationId()
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'branchId', 'name', 'phone', 'email',
+          'contact', 'tags', 'notes', 'preferences', 'stats', 'createdAt', 'updatedAt'
+        ]);
+    }
+
+    // --- AUDIT LOGS ---
+    // Structure: auditLogs/{autoId}
+    // Solo el dueño de la organización puede leer; cualquier sesión escribe.
+    match /auditLogs/{logId} {
+      allow read: if isAuthenticated()
+        && resource.data.organizationId == userOrganizationId();
+
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly([
+          'organizationId', 'actorId', 'action', 'entityType', 'entityId',
+          'previousData', 'newData', 'metadata', 'createdAt'
+        ]);
     }
 
     // --- RESERVATIONS (LEGACY NESTED) — kept for backward compat, prefer flat ---

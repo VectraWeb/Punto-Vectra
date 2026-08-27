@@ -124,6 +124,7 @@ export default function ResForm({ onStaffAccess, onBack, organization: organizat
         mesa_id: null,
         resourceId: null,
         organizationId: organization.id,
+        branchId: 'main',
         metadata: form.metadata || {},
         estado: 'pendiente',
         date,

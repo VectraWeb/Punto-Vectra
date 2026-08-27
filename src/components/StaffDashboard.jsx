@@ -18,6 +18,7 @@ import { useStaff } from '../hooks/useStaff';
 import { useOrganization } from '../hooks/useOrganization';
 import { useMozoTableNumbers } from '../hooks/useMozoTableNumbers';
 import { useSalonLayout } from '../hooks/useSalonLayout';
+import { useBranches, resolveBranchId } from '../hooks/useBranches';
 import ResourceMap from './resources/ResourceMap';
 import ResourceEditor from './resources/ResourceEditor';
 import LiveStateModal from './LiveStateModal';
@@ -36,7 +37,7 @@ import {
   detectService, computeStateDurations,
   getAssignedTables, notificarN8N,
 } from '../utils';
-import { resourceLabelOf, resourcePluralOf, serviceLabelOf, DEFAULT_ORG_ID } from '../config/businessTypes';
+import { resourceLabelOf, resourcePluralOf, serviceLabelOf, featureEnabled, DEFAULT_ORG_ID } from '../config/businessTypes';
 
 // ─── Firestore helpers ───────────────────────────────────────────────────────
 const resDocRef = (id) => doc(db, 'reservations', id);
@@ -96,8 +97,12 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
   const { config, sectors, setSectors, saveSectors } = useConfig();
   const organization = useOrganization(organizationId, { ensure: organizationId === DEFAULT_ORG_ID });
   const isRestaurant = organization.businessType === 'restaurant';
+  const hasOrdersFeature = featureEnabled(organization, 'orders');
   const resourceLabel = resourceLabelOf(organization);
   const resourcePlural = resourcePluralOf(organization);
+  const branches = useBranches(organizationId, { ensure: organizationId === DEFAULT_ORG_ID });
+  const [branchIdState, setBranchIdState] = useState(null);
+  const currentBranchId = resolveBranchId(branches, branchIdState);
   const mesas = useMesas(config, organization);
   const staff = useStaff();
   const reservations = useReservations(date);
@@ -237,6 +242,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
       resourceLabel,
       resourceName: resourceNum,
       organizationId: organization.id,
+      branchId: currentBranchId,
       existingReservations: reservations,
     });
 
@@ -245,7 +251,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
       document_id: id,
       tipo: 'reserva',
     });
-  }, [date, tableNumByTable, groupNumByTable, reservations, organization, resourceLabel]);
+  }, [date, tableNumByTable, groupNumByTable, reservations, organization, resourceLabel, currentBranchId]);
 
   const deleteRes = useCallback(async (resData) => {
     await cancelReservation(resData, date);
@@ -310,8 +316,10 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
     reservations
       .map(r => optimisticStates[r.id] !== undefined ? { ...r, liveState: optimisticStates[r.id] } : r)
       .filter(r => r.service === service)
-      .filter(r => r.liveState !== 'finalizado'),
-    [reservations, optimisticStates, service]
+      .filter(r => r.liveState !== 'finalizado')
+      // Sucursal: docs legacy sin branchId se consideran de la principal.
+      .filter(r => (r.branchId || 'main') === currentBranchId),
+    [reservations, optimisticStates, service, currentBranchId]
   );
 
   // Estado por mesa pre-calculado: lookup O(1) y referencialmente estable.
@@ -528,6 +536,8 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
     try {
       await setDoc(doc(db, 'pedidos', id), {
         id,
+        organizationId: organization.id,
+        branchId: currentBranchId,
         customerName: data.customerName.trim(),
         customerPhone: data.phone.trim(),
         modalidad: data.modalidad,
@@ -547,7 +557,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
     } catch {
       showToast('Error al guardar el pedido. Intentá de nuevo.');
     }
-  }, [service, date, setShowModal, setEditing, setPreTable, showToast]);
+  }, [service, date, setShowModal, setEditing, setPreTable, showToast, organization, currentBranchId]);
 
   // ── Callbacks estables para el plano (mantienen efectivo el React.memo) ────
   // Modos de edición mutuamente excluyentes: editar mesas y sectores a la vez
@@ -647,6 +657,28 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
         onLogout={onLogout}
       />
 
+      {/* ── SELECTOR DE SUCURSAL (solo si hay más de una) ── */}
+      {branches.length > 1 && (
+        <div style={{ padding: '16px 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, color: C.muted, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            Sucursal
+          </span>
+          <select
+            value={currentBranchId}
+            onChange={e => setBranchIdState(e.target.value)}
+            style={{
+              flex: 1, padding: '8px 10px', fontSize: '13px', borderRadius: '10px',
+              border: `1.5px solid ${C.creamDeep}`, background: C.white, color: C.espresso,
+              fontFamily: 'inherit',
+            }}
+          >
+            {branches.map(b => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* ── SELECTOR DE SERVICIO / TURNO ── */}
       <div style={{ padding: '20px 16px 8px', display: 'flex', gap: '8px' }}>
         {Object.entries(SERVICES).map(([k, s]) => {
@@ -684,7 +716,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
         {[
           ['reservas', isRestaurant ? 'Mozos' : 'Reservas', `${sortedRes.length} items`],
           ['plano', 'Plano', 'Arrastrable'],
-          ...(isRestaurant ? [['pedidos', 'Pedidos', 'Bot y web']] : []),
+          ...(hasOrdersFeature ? [['pedidos', 'Pedidos', 'Bot y web']] : []),
         ].map(([key, label, sub]) => (
           <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
@@ -983,7 +1015,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
       {/* ── FAB: Nueva reserva / pedido según el panel activo ── */}
       <button onClick={() => {
         setEditing(null); setPreTable(null);
-        setModalMode(isRestaurant && mainTab === 'pedidos' ? 'pedido' : 'reserva');
+        setModalMode(hasOrdersFeature && mainTab === 'pedidos' ? 'pedido' : 'reserva');
         setShowModal(true);
       }} style={{
         position: 'fixed', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', right: '24px',
@@ -1009,7 +1041,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
         {[
           ['reservas', isRestaurant ? 'Mozos' : 'Reservas', ''],
           ['plano', 'Plano', ''],
-          ...(isRestaurant ? [['pedidos', 'Pedidos', '']] : []),
+          ...(hasOrdersFeature ? [['pedidos', 'Pedidos', '']] : []),
         ].map(([key, label, count]) => (
           <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 8px', borderRadius: '12px', border: 'none', cursor: 'pointer',
@@ -1058,7 +1090,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
           bookingFields={organization.bookingFields}
           serviceLabels={{ mediodia: serviceLabelOf(organization, 'mediodia'), cena: serviceLabelOf(organization, 'cena') }}
           showStaffSelect={isRestaurant}
-          showOrders={isRestaurant}
+          showOrders={hasOrdersFeature}
           onSave={handleSave}
           onSavePedido={savePedido}
           onDelete={handleDelete}

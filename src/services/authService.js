@@ -12,9 +12,11 @@ import {
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { DEFAULT_ORG_ID, getBusinessType, bookingFieldsOf } from '../config/businessTypes';
+import { DEFAULT_PERMISSIONS } from '../config/permissions';
 import { normalizeOrganization } from '../schemas/organizationSchema';
 import { saveOrganization } from './organizationService';
 import { seedResourcesCustom } from './resourceService';
+import { ensureDefaultBranch } from './branchService';
 
 export const userDocRef = (uid) => doc(db, 'users', uid);
 export const orgDocRef = (id = DEFAULT_ORG_ID) => doc(db, 'organizations', id);
@@ -106,11 +108,16 @@ export async function setupOrganizationForUser({
 
   await saveOrganization(organization);
 
+  // Sucursal principal por defecto.
+  await ensureDefaultBranch(organizationId).catch((e) => console.warn('[auth] Error creando sucursal:', e));
+
   // El vínculo users/{uid} se crea ANTES de los recursos: las reglas de
   // "resources" exigen que el usuario ya tenga su organización asignada.
   await setDoc(userDocRef(uid), {
     organizationId,
     email: email.trim(),
+    role: 'owner',
+    permissions: DEFAULT_PERMISSIONS.owner,
     createdAt: new Date().toISOString(),
   });
 
@@ -153,9 +160,13 @@ export async function claimDefaultOrganization(uid, email) {
     ownerUid: uid,
   });
 
+  await ensureDefaultBranch(DEFAULT_ORG_ID).catch((e) => console.warn('[auth] Error creando sucursal:', e));
+
   await setDoc(userDocRef(uid), {
     organizationId: DEFAULT_ORG_ID,
     email: email.trim(),
+    role: 'owner',
+    permissions: DEFAULT_PERMISSIONS.owner,
     createdAt: new Date().toISOString(),
   });
 
