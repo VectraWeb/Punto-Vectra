@@ -1,0 +1,317 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id              String   @id @default("default")
+  name            String   @default("Andi")
+  businessType    String   @default("restaurant")
+  logo            String   @default("")
+  ownerUid        String?
+  configuration   Json     @default("{}")
+  bookingFields   Json     @default("[]")
+  closedDates     String[] @default([])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  branches        Branch[]
+  users           User[]
+  resources       Resource[]
+  reservations    Reservation[]
+  orders          Order[]
+  catalogItems    CatalogItem[]
+  customers       Customer[]
+  staffMembers    Staff[]
+  auditLogs       AuditLog[]
+}
+
+model User {
+  id              String   @id @default(cuid())
+  uid             String?  @unique
+  organizationId  String
+  email           String   @unique
+  name            String   @default("")
+  passwordHash    String
+  role            String   @default("owner")
+  active          Boolean  @default(true)
+  branchId        String?
+  permissions     Json     @default("{}")
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([uid])
+  @@index([email])
+}
+
+model Branch {
+  id              String
+  organizationId  String
+  name            String   @default("Sucursal principal")
+  address         Json     @default("{}")
+  timezone        String   @default("America/Argentina/Buenos_Aires")
+  businessHours   Json     @default("{}")
+  settings        Json     @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+
+  @@id([organizationId, id])
+}
+
+model Resource {
+  id              String   @id @default(cuid())
+  organizationId  String
+  branchId        String?
+  name            String
+  type            String   @default("table")
+  capacity        Int      @default(0)
+  status          String   @default("active")
+  position        Json?
+  width           Float    @default(0)
+  height          Float    @default(0)
+  shape           String   @default("rectangular")
+  metadata        Json     @default("{}")
+  number          Int?
+  generated       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  reservations    Reservation[]
+
+  @@index([organizationId])
+}
+
+model Reservation {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  branchId              String   @default("main")
+  customerId            String?
+  customerName          String   @default("")
+  phone                 String   @default("")
+  customerPhone         String   @default("")
+  email                 String   @default("")
+  resourceId            String?
+  resourceLabel         String   @default("")
+  resourceName          String   @default("")
+  mesaId                String?
+  mesa                  String?
+  service               String   @default("")
+  date                  String   @default("")
+  time                  String   @default("")
+  duration              Int?
+  partySize             Int?
+  guests                Int?
+  notes                 String   @default("")
+  status                String   @default("pending")
+  estado                String   @default("pendiente")
+  liveState             String?
+  stateLog              Json     @default("[]")
+  staffId               String?
+  staffName             String?
+  source                String   @default("web")
+  metadata              Json     @default("{}")
+  plates                Json     @default("[]")
+  idempotencyKey        String?
+  startedAt             DateTime?
+  leftAt                DateTime?
+  cleaningStartedAt     DateTime?
+  cleaningCompletedAt   DateTime?
+  rechazoMotivo         String?
+  canceladoMotivo       String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization          Organization @relation(fields: [organizationId], references: [id])
+  customer              Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  resource              Resource?    @relation(fields: [resourceId], references: [id])
+
+  @@index([organizationId, date])
+  @@index([organizationId, date, service])
+  @@index([customerId])
+  @@index([resourceId])
+}
+
+model Order {
+  id             String   @id @default(cuid())
+  organizationId String
+  branchId       String   @default("main")
+  customerId     String?
+  customerName   String   @default("")
+  phone          String   @default("")
+  customerPhone  String   @default("")
+  reservationId  String?
+  resourceId     String?
+  items          Json     @default("[]")
+  status         String   @default("created")
+  pedidoEstado   String   @default("pendiente")
+  totals         Json     @default("{}")
+  modalidad      String?
+  direccion      String   @default("")
+  notes          String   @default("")
+  tipo           String   @default("pedido")
+  date           String   @default("")
+  service        String   @default("")
+  source         String   @default("web")
+  pedidoRechazoMotivo String?
+  tiempoPreparacionMin Int?
+  tiempoEnvioMin Int?
+  tiempoTotalMin Int?
+  confirmadoAt   DateTime?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, date])
+  @@index([organizationId, date, service])
+  @@index([customerId])
+}
+
+model CatalogItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  branchId       String?
+  type           String   @default("product")
+  name           String
+  description    String   @default("")
+  categoryId     String?
+  price          Float    @default(0)
+  duration       Int?
+  active         Boolean  @default(true)
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, type])
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  organizationId String
+  branchId       String?
+  name           String   @default("")
+  phone          String
+  email          String   @default("")
+  contact        Json     @default("{}")
+  tags           String[] @default([])
+  notes          String   @default("")
+  preferences    Json     @default("{}")
+  stats          Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  reservations   Reservation[]
+   orders         Order[]
+
+  @@unique([organizationId, phone])
+  @@index([organizationId])
+}
+
+model Staff {
+  id             String   @id @default(cuid())
+  organizationId String
+  branchId       String?
+  name           String
+  role           String   @default("staff")
+  pin            String?
+  phone          String   @default("")
+  email          String   @default("")
+  active         Boolean  @default(true)
+  assignedTables String[] @default([])
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+model Config {
+  id             String   @id @default("restaurant")
+  organizationId String?
+  mesaTipos      Json     @default("[]")
+  sectors        Json     @default("[]")
+  positions      Json     @default("{}")
+  groups         Json     @default("[]")
+  groupOwners    Json     @default("{}")
+  businessType   String?
+  organizationName String?
+  resourceLabel  String?
+  resourcePlural String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("config")
+}
+
+model ResourceLock {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default")
+  reservationId  String
+  resourceId     String
+  date           String   @default("")
+  service        String   @default("")
+  startTime      Int      @default(0)
+  endTime        Int      @default(0)
+  time           String?
+  partySize      Int?
+  expiresAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  @@map("resource_locks")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String   @default("default")
+  actorId        String?
+  action         String
+  entityType     String   @default("generic")
+  entityId       String?
+  previousData   Json?
+  newData        Json?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, action])
+}
+
+model ReservationMetric {
+  id                     String   @id
+  organizationId         String?
+  idReserva              String?
+  idMesa                 String?
+  capacidadMesa          Int?
+  horaInicio             String?
+  horaOcupacion          String?
+  horaFinOcupacion       String?
+  duracionOcupacionMin   Int?
+  horaInicioLimpieza     String?
+  horaFinLimpieza        String?
+  duracionLimpiezaMin    Int?
+  estadoFinal            String?
+  fechaRegistro          String?
+  servicio               String?
+  cliente                String?
+  comensales             Int?
+  createdAt              DateTime @default(now())
+
+  @@map("reservation_metrics")
+}
