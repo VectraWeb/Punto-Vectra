@@ -24,6 +24,18 @@ router.post('/check-availability', async (req, res, next) => {
   }
 });
 
+// Vista cocina: devuelve reservas del día para pantallas de cocina (sin auth)
+router.get('/kitchen', async (req, res, next) => {
+  try {
+    const reservations = await reservationService.getAll({
+      date: req.query.date as string,
+    });
+    res.json({ data: reservations });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.use(authenticate);
 
 router.get('/', async (req, res, next) => {

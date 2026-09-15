@@ -739,7 +739,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
         {[
           ['reservas', isRestaurant ? 'Mozos' : 'Reservas', ''],
           ['plano', 'Plano', ''],
-          ...(hasOrdersFeature ? [['pedidos', 'Pedidos', ''], ['comandas', 'Comandas', '']] : []),
+          ...(hasOrdersFeature ? [['comandas', 'Comandas', ''], ['pedidos', 'Pedidos', '']] : []),
         ].map(([key, label, sub]) => (
           <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 12px', borderRadius: '12px', border: 'none', cursor: 'pointer',
@@ -1030,7 +1030,7 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
         {[
           ['reservas', isRestaurant ? 'Mozos' : 'Reservas', ''],
           ['plano', 'Plano', ''],
-          ...(hasOrdersFeature ? [['pedidos', 'Pedidos', ''], ['comandas', 'Comandas', '']] : []),
+          ...(hasOrdersFeature ? [['comandas', 'Comandas', ''], ['pedidos', 'Pedidos', '']] : []),
         ].map(([key, label, count]) => (
           <button key={key} onClick={() => { setMainTab(key); setPlanoHover(false); }} style={{
             flex: 1, padding: '10px 8px', borderRadius: '12px', border: 'none', cursor: 'pointer',

@@ -5,6 +5,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import VistaCliente from './components/VistaCliente';
 import StaffDashboard from './components/StaffDashboard';
+import KitchenDisplay from './components/KitchenDisplay';
 import LoginScreen from './components/auth/LoginScreen';
 import OnboardingScreen from './components/auth/OnboardingScreen';
 import PinGate from './components/PinGate';
@@ -228,6 +229,14 @@ export default function App() {
     localStorage.removeItem('token');
     setStaffMode(false);
   }, []);
+
+  // Vista cocina: /cocina sin login
+  const isKitchenView = typeof window !== 'undefined' &&
+    window.location.pathname === '/cocina';
+
+  if (isKitchenView) {
+    return <KitchenDisplay />;
+  }
 
   return (
     <>
