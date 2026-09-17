@@ -51,7 +51,7 @@ function ClaimScreen({ user, onDone }) {
       padding: '0 20px',
     }}>
       <div style={{ width: '100%', maxWidth: '420px', textAlign: 'center' }}>
-        <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: '26px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0 }}>
+        <h1 style={{ fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '26px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0 }}>
           Tu cuenta no tiene negocio
         </h1>
         <p style={{ fontSize: '13px', color: C.muted, margin: '10px 0 24px', lineHeight: 1.5 }}>
@@ -103,7 +103,7 @@ function StaffRoot({ onExit }) {
         alignItems: 'center', justifyContent: 'center', fontFamily: '"Manrope", system-ui, sans-serif',
       }}>
         <div style={{
-          fontFamily: '"Fraunces", serif', fontSize: '28px', fontStyle: 'italic',
+          fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '28px', fontStyle: 'italic',
           fontWeight: 700, color: C.forest,
         }}>PuntoVectra</div>
       </div>

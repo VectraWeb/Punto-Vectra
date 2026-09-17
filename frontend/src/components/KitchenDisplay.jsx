@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Clock, Users, Volume2, VolumeX, Trash2 } from 'lucide-react';
 import api from '../services/api/client';
 import { useCatalog } from '../hooks/useCatalog';
-import { C, LIVE_STATES, todayISO, setPrimaryColor, getPrimaryColor } from '../utils';
+import { useOrganization } from '../hooks/useOrganization';
+import { DEFAULT_ORG_ID } from '../config/businessTypes';
+import { C, LIVE_STATES, todayISO, setPrimaryColor, getPrimaryColor, setFavicon } from '../utils';
 
 function ElapsedTimer({ startTime }) {
   const [elapsed, setElapsed] = useState('');
@@ -149,10 +151,17 @@ export default function KitchenDisplay() {
   const [, setTick] = useState(0);
   const [reservations, setReservations] = useState([]);
   const catalog = useCatalog();
+  const [organization] = useOrganization(DEFAULT_ORG_ID);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [filter, setFilter] = useState('all');
   const prevCountRef = useRef(0);
   const audioCtxRef = useRef(null);
+
+  // Sincronizar título de pestaña y favicon con la organización
+  useEffect(() => {
+    setFavicon(organization?.logo || '');
+    document.title = organization?.name || 'PuntoVectra';
+  }, [organization?.name, organization?.logo]);
 
   // Escuchar cambios de color desde otra pestaña o desde el dashboard
   useEffect(() => {
@@ -262,10 +271,22 @@ export default function KitchenDisplay() {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {organization?.logo ? (
+            <img src={organization.logo} alt="Logo" style={{ width: '36px', height: '36px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
+          ) : (
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
+              background: C.terra, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700, fontFamily: 'var(--logo-font, "Fraunces", serif)', fontStyle: 'italic' }}>
+                {(organization?.name || 'P')[0].toUpperCase()}
+              </span>
+            </div>
+          )}
           <span style={{
-            fontFamily: '"Fraunces", serif', fontSize: '22px', fontStyle: 'italic',
+            fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '22px', fontStyle: 'italic',
             fontWeight: 700, color: C.cream,
-          }}>PuntoVectra</span>
+          }}>{organization?.name || 'PuntoVectra'}</span>
           <span style={{
             background: C.terra, color: '#fff',
             padding: '4px 14px', borderRadius: '10px',

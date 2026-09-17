@@ -16,7 +16,7 @@ export function DashboardHeader({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
           <div>
             <p style={{ fontSize: '10px', letterSpacing: '0.25em', textTransform: 'uppercase', opacity: 0.55, margin: 0 }}>Recepción</p>
-            <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: '34px', fontStyle: 'italic', fontWeight: 600, margin: '2px 0 0', lineHeight: 1, letterSpacing: '-0.02em' }}>{orgName}</h1>
+            <h1 style={{ fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '34px', fontStyle: 'italic', fontWeight: 600, margin: '2px 0 0', lineHeight: 1, letterSpacing: '-0.02em' }}>{orgName}</h1>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <div style={{ position: 'relative' }}>

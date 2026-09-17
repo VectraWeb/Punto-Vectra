@@ -79,6 +79,8 @@ export async function saveOrganization(org) {
   if (id !== DEFAULT_ORG_ID) {
     try {
       const mirror = {
+        name: org.name,
+        logo: org.logo || '',
         closedDates: Array.isArray(org.closedDates) ? org.closedDates : [],
       };
       // configuration se fusiona en el backend (merge superficial).

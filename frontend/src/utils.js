@@ -82,6 +82,54 @@ export function getPrimaryColor() { return _currentPrimary; }
 
 export function getCurrentPalette() { return _palette; }
 
+// ─── Tipografía del logo ──────────────────────────────────────────────────
+const DEFAULT_LOGO_FONT = 'Fraunces';
+
+const LOGO_FONTS = [
+  { name: 'Fraunces', family: '"Fraunces", serif' },
+  { name: 'Playfair Display', family: '"Playfair Display", serif' },
+  { name: 'DM Serif Display', family: '"DM Serif Display", serif' },
+  { name: 'Libre Baskerville', family: '"Libre Baskerville", serif' },
+  { name: 'Merriweather', family: '"Merriweather", serif' },
+  { name: 'Poppins', family: '"Poppins", sans-serif' },
+  { name: 'Montserrat', family: '"Montserrat", sans-serif' },
+  { name: 'Raleway', family: '"Raleway", sans-serif' },
+  { name: 'Inter', family: '"Inter", sans-serif' },
+  { name: 'Bebas Neue', family: '"Bebas Neue", sans-serif' },
+];
+
+export { LOGO_FONTS };
+
+function loadLogoFont() {
+  try {
+    return localStorage.getItem('pv_logo_font') || DEFAULT_LOGO_FONT;
+  } catch { return DEFAULT_LOGO_FONT; }
+}
+
+let _currentLogoFont = loadLogoFont();
+
+export function setLogoFont(name) {
+  _currentLogoFont = name;
+  try { localStorage.setItem('pv_logo_font', name); } catch {}
+  applyLogoFont(name);
+}
+
+export function getLogoFont() { return _currentLogoFont; }
+
+export function getLogoFontFamily() {
+  const found = LOGO_FONTS.find(f => f.name === _currentLogoFont);
+  return found ? found.family : `"${DEFAULT_LOGO_FONT}", serif`;
+}
+
+function applyLogoFont(name) {
+  const found = LOGO_FONTS.find(f => f.name === name);
+  if (found) {
+    document.documentElement.style.setProperty('--logo-font', found.family);
+  }
+}
+
+applyLogoFont(_currentLogoFont);
+
 // ─── Paleta CSS vars (se actualiza dinámicamente) ───────────────────────────
 export function applyPaletteToDOM(palette) {
   const p = palette || _palette;
@@ -429,4 +477,14 @@ export function markStaffAuthenticated() {
 
 export function logoutStaff() {
   sessionStorage.removeItem(STAFF_AUTH_KEY);
+}
+
+export function setFavicon(dataUrl) {
+  let link = document.querySelector("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.href = dataUrl || '/vite.svg';
 }

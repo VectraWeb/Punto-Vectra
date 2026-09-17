@@ -99,7 +99,7 @@ export default function OnboardingScreen({ email = '', uid = null, onDone, onBac
           </button>
         )}
         <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: '28px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0 }}>
+          <h1 style={{ fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '28px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0 }}>
             Creá la cuenta de tu negocio
           </h1>
           {email && <p style={{ fontSize: '12px', color: C.muted, margin: '6px 0 0' }}>{email}</p>}

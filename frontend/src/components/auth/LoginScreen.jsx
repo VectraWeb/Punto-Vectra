@@ -64,7 +64,7 @@ export default function LoginScreen({ onBack, onSuccess, onGoRegister }) {
         )}
 
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <h1 style={{ fontFamily: '"Fraunces", serif', fontSize: '34px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0 }}>
+          <h1 style={{ fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '34px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0 }}>
             PuntoVectra
           </h1>
           <p style={{ fontSize: '12px', color: C.muted, margin: '6px 0 0', letterSpacing: '0.15em', textTransform: 'uppercase' }}>

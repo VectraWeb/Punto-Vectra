@@ -118,6 +118,10 @@ export default function StaffDashboard({ onLogout, organizationId = DEFAULT_ORG_
   const [pedidoCount, setPedidoCount] = useState(0);
 
   useEffect(() => {
+    document.title = organization?.name || 'PuntoVectra';
+  }, [organization?.name]);
+
+  useEffect(() => {
     const q = query(
       collection(db, 'pedidos'),
       where('date', '==', date),

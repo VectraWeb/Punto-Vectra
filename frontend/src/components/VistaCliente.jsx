@@ -1,9 +1,9 @@
 // VistaCliente.jsx — Vista pública: selector de Reserva / Pedido
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Calendar, ShoppingBag } from 'lucide-react';
 import ResForm from './ResForm';
 import PedidoForm from './PedidoForm';
-import { C } from '../utils';
+import { C, setFavicon } from '../utils';
 import { useOrganization } from '../hooks/useOrganization';
 import { reserveActionOf, getBusinessType, businessHasOrders } from '../config/businessTypes';
 
@@ -24,6 +24,11 @@ export default function VistaCliente({ onStaffAccess, organizationId }) {
   );
   const todayISO = toLocalISO(new Date());
   const isClosedToday = closedDates.includes(todayISO);
+
+  useEffect(() => {
+    setFavicon(organization?.logo || '');
+    document.title = organization?.name || 'PuntoVectra';
+  }, [organization?.logo, organization?.name]);
 
   // ── Triple clic en logo → acceso staff ──────────────────────────────────
   const clickCount = useRef(0);
@@ -64,8 +69,21 @@ export default function VistaCliente({ onStaffAccess, organizationId }) {
           <div style={{ padding: '0 0 40px' }}>
             {/* Header branding */}
             <div style={{ padding: '40px 24px 28px', textAlign: 'center' }}>
-              <h1 onClick={handleLogoClicks} style={{ fontFamily: '"Fraunces", serif', fontSize: '36px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0, lineHeight: 1, cursor: 'default', userSelect: 'none' }}>
-                PuntoVectra
+              {organization?.logo ? (
+                <img src={organization.logo} alt="Logo" style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover', marginBottom: '10px' }} />
+              ) : (
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '12px', margin: '0 auto 10px',
+                  background: `linear-gradient(135deg, ${C.forest}, ${C.forest}cc)`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <span style={{ color: C.cream, fontSize: '22px', fontWeight: 700, fontFamily: 'var(--logo-font, "Fraunces", serif)', fontStyle: 'italic' }}>
+                    {(organization?.name || 'P')[0].toUpperCase()}
+                  </span>
+                </div>
+              )}
+              <h1 onClick={handleLogoClicks} style={{ fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '36px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0, lineHeight: 1, cursor: 'default', userSelect: 'none' }}>
+                {organization?.name || 'PuntoVectra'}
               </h1>
               <p style={{ fontSize: '12px', color: C.muted, margin: '6px 0 0', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                 ¿Qué querés hacer?

@@ -181,7 +181,7 @@ export default function PedidoForm({ onBack, onStaffAccess, organization: organi
 
       {/* Header branding */}
       <div style={{ padding: '32px 24px 24px', textAlign: 'center' }}>
-        <h1 onClick={handleLogoClicks} style={{ fontFamily: '"Fraunces", serif', fontSize: '36px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0, lineHeight: 1, cursor: 'default', userSelect: 'none' }}>
+        <h1 onClick={handleLogoClicks} style={{ fontFamily: 'var(--logo-font, "Fraunces", serif)', fontSize: '36px', fontStyle: 'italic', fontWeight: 700, color: C.forest, margin: 0, lineHeight: 1, cursor: 'default', userSelect: 'none' }}>
           PuntoVectra
         </h1>
         <p style={{ fontSize: '12px', color: C.muted, margin: '6px 0 0', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
